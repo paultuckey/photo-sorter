@@ -1,16 +1,13 @@
 mod util;
 mod album;
 mod takeout_reader;
-mod tui;
 mod exif_util;
 mod test_util;
 mod markdown_cmd;
 mod sync_cmd;
+mod terminal;
 
 use clap::{Parser, Subcommand};
-use std::fs;
-use std::time::Duration;
-use anyhow::{Context};
 use tracing::{error, info};
 use crate::markdown_cmd::show_exif;
 
@@ -42,7 +39,7 @@ enum Commands {
         )]
         output: Option<String>,
     },
-    Sort {
+    Sync {
         #[arg(
             short,
             long,
@@ -95,8 +92,8 @@ async fn go() -> anyhow::Result<()> {
         Commands::Markdown { input, output } => {
             show_exif(&input, Option::from(&output)).unwrap()
         }
-        Commands::Sort {  directory, input_takeout, input_icloud, output } => {
-            todo!();
+        Commands::Sync {  directory, input_takeout, input_icloud, output } => {
+            terminal::main().unwrap();
         }
     }
     
