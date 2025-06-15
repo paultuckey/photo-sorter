@@ -1,4 +1,4 @@
-use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, SecondsFormat};
+use chrono::{DateTime, Datelike, NaiveDate, NaiveDateTime, NaiveTime, ParseResult, SecondsFormat, Timelike};
 use exif::{Exif, In, Reader, Tag, Value};
 use std::collections::HashMap;
 use std::ffi::OsStr;
@@ -145,6 +145,46 @@ pub(crate) fn is_file_media(path: &String) -> bool {
     // todo: not supported gif
     let file_extensions_with_efix = ["jpg", "jpeg", "heic", "png", "tiff", "tif", "webp"];
     file_extensions_with_efix.contains(&ext.to_string().to_ascii_lowercase().as_str())
+}
+
+/// `yyyy/mm/dd-hh-mm-ss[-i].ext`
+/// OR `undated/checksum.ext`
+pub(crate) fn get_desired_path(
+    checksum: &String,
+    exif_datetime: &Option<String>,
+    ext: &String,
+    de_dupe_int: u16,
+) -> String {
+    let date_dir;
+    let name;
+    if let Some(dt_s) = exif_datetime {
+        let dt = DateTime::parse_from_rfc3339(dt_s);
+        match dt {
+            Ok(dt) => {
+                date_dir = format!("{}/{:0>2}", dt.year(), dt.month());
+                name = format!(
+                    "{:0>2}-{:0>2}{:0>2}{:0>2}",
+                    dt.day(),
+                    dt.hour(),
+                    dt.minute(),
+                    dt.second()
+                );
+            }
+            Err(e) => {
+                warn!("Could not parse EXIF datetime: {:?}", e);
+                date_dir = "undated".to_string();
+                name = checksum.to_owned();
+            }
+        }
+    } else {
+        date_dir = "undated".to_string();
+        name = checksum.to_owned();
+    }
+    let mut de_dupe_str = "".to_string();
+    if de_dupe_int > 0 {
+        de_dupe_str = format!("-{}", de_dupe_int);
+    }
+    format!("{date_dir}/{}{}.{}", name, de_dupe_str, ext)
 }
 
 #[tokio::test()]

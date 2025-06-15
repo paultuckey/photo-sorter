@@ -1,4 +1,4 @@
-use crate::exif_util::parse_exif;
+use crate::media_file::{MediaFileInfo, media_file_info_from_path};
 use crate::util::{checksum_file, checksum_string};
 use anyhow::Context;
 use serde::{Deserialize, Serialize};
@@ -7,16 +7,24 @@ use std::path::Path;
 use tracing::debug;
 
 pub fn show_exif(input: &String, _: Option<&String>) -> anyhow::Result<()> {
-    let p = Path::new(input);
-    let exif_o = parse_exif(p);
+    let media_file_info = media_file_info_from_path(input);
+    let mfm = mfm_from_media_file_info(&media_file_info);
+    println!("Markdown: {}", input);
+    println!();
+    let s = assemble_markdown(&mfm, &"".to_string())?;
+    println!("{}", s);
+    Ok(())
+}
+
+fn mfm_from_media_file_info(media_file_info: &MediaFileInfo) -> MediaFrontMatter {
     let mut mfm = MediaFrontMatter {
-        path: Some(input.clone()),
+        path: Some(media_file_info.original_path.clone()),
         datetime_original: None,
         datetime: None,
         gps_date: None,
         unique_id: None,
     };
-    if let Some(exif) = exif_o {
+    if let Some(exif) = media_file_info.parsed_exif.clone() {
         if let Some(dt) = exif.datetime_original {
             mfm.datetime_original = Some(dt);
         }
@@ -30,11 +38,7 @@ pub fn show_exif(input: &String, _: Option<&String>) -> anyhow::Result<()> {
             mfm.unique_id = Some(unique_id);
         }
     }
-    println!("Markdown:: {}", input);
-    println!();
-    let s = assemble_markdown(&mfm, &"".to_string())?;
-    println!("{}", s);
-    Ok(())
+    mfm
 }
 
 async fn save_markdown(
