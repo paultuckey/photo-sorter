@@ -21,4 +21,5 @@ console = { version = "0.15.11" }
 indicatif = "0.17.6"
 chrono = "0.4.41"
 kamadak-exif = "0.6.1"
+file-format = "0.26.0"
 
