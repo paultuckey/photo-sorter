@@ -6,11 +6,12 @@ use std::fs;
 use std::path::Path;
 use tracing::debug;
 
-pub fn show_exif(input: &String, _: Option<&String>) -> anyhow::Result<()> {
+pub fn main(input: &String, _: &Option<String>, dry_run: &bool) -> anyhow::Result<()> {
+    println!("Inspecting: {}", input);
     let media_file_info = media_file_info_from_path(input);
-    let mfm = mfm_from_media_file_info(&media_file_info);
-    println!("Markdown: {}", input);
+    println!("Markdown:");
     println!();
+    let mfm = mfm_from_media_file_info(&media_file_info);
     let s = assemble_markdown(&mfm, &"".to_string())?;
     println!("{}", s);
     Ok(())

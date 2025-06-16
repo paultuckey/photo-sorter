@@ -1,15 +1,15 @@
-mod util;
 mod album;
-mod takeout_reader;
 mod exif_util;
-mod test_util;
 mod markdown_cmd;
+mod media_file;
 mod sync_cmd;
-mod terminal;
+mod takeout_reader;
+mod test_util;
+mod upload;
+mod util;
 
 use clap::{Parser, Subcommand};
 use tracing::{error, info};
-use crate::markdown_cmd::show_exif;
 
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
@@ -17,7 +17,11 @@ struct Cli {
     /// Turn debugging information on
     #[arg(short, long, action = clap::ArgAction::Count)]
     debug: u8,
-    
+
+    /// If true, don't do anything, just print what would be done.
+    #[arg(long, default_value_t = false)]
+    dry_run: bool,
+
     #[command(subcommand)]
     command: Commands,
 }
@@ -25,40 +29,27 @@ struct Cli {
 #[derive(Subcommand)]
 enum Commands {
     Markdown {
-        #[arg(
-            short,
-            long,
-            help = "Photo or video to generate markdown for"
-        )]
+        #[arg(short, long, help = "Photo or video to generate markdown for")]
         input: String,
-        
+
         #[arg(
             short,
             long,
-            help = "Markdown file to output to"
+            help = "Markdown file to output to, console output if not specified"
         )]
         output: Option<String>,
     },
     Sync {
-        #[arg(
-            short,
-            long,
-            help = "Directory to sync photos into"
-        )]
-        directory: String,
+        #[arg(short, long, help = "Directory to sync photos into")]
+        directory: Option<String>,
 
         #[arg(long)]
         input_takeout: Option<String>,
 
         #[arg(long)]
         input_icloud: Option<String>,
-
-        #[arg(long)]
-        output: Option<String>,
-
     },
 }
-
 
 #[tokio::main]
 async fn main() {
@@ -73,7 +64,7 @@ async fn main() {
 
 async fn go() -> anyhow::Result<()> {
     let cli = Cli::parse();
-    
+    let dry_run = cli.dry_run;
     let mut tracing_level = tracing::Level::INFO;
     match cli.debug {
         0 => info!("Debug mode is off"),
@@ -89,13 +80,15 @@ async fn go() -> anyhow::Result<()> {
         .init();
 
     match cli.command {
-        Commands::Markdown { input, output } => {
-            show_exif(&input, Option::from(&output)).unwrap()
-        }
-        Commands::Sync {  directory, input_takeout, input_icloud, output } => {
-            terminal::main().unwrap();
+        Commands::Markdown { input, output } => markdown_cmd::main(&input, &output, &dry_run)?,
+        Commands::Sync {
+            directory,
+            input_takeout,
+            input_icloud,
+        } => {
+            sync_cmd::main(&directory, &input_takeout, &input_icloud, &dry_run)?;
         }
     }
-    
+
     Ok(())
 }
