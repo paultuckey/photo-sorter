@@ -15,11 +15,11 @@ use tracing::{error, info};
 #[command(version, about, long_about = None)]
 struct Cli {
     /// Turn debugging information on
-    #[arg(short, long, action = clap::ArgAction::Count)]
-    debug: u8,
+    #[arg(short, long)]
+    debug: bool,
 
-    /// If true, don't do anything, just print what would be done.
-    #[arg(long, default_value_t = false)]
+    /// If set, don't do anything, just print what would be done.
+    #[arg(short = 'n', long)]
     dry_run: bool,
 
     #[command(subcommand)]
@@ -64,29 +64,36 @@ async fn main() {
 
 async fn go() -> anyhow::Result<()> {
     let cli = Cli::parse();
-    let dry_run = cli.dry_run;
     let mut tracing_level = tracing::Level::INFO;
-    match cli.debug {
-        0 => info!("Debug mode is off"),
-        _ => {
-            info!("Debug mode is on");
-            tracing_level = tracing::Level::DEBUG;
-        }
+    if cli.debug {
+        tracing_level = tracing::Level::DEBUG;
     }
     tracing_subscriber::fmt()
         .with_max_level(tracing_level)
         // disable printing the name of the module in every log line.
         .with_target(false)
         .init();
+    if cli.debug {
+        info!("Debug mode is on");
+    }
+    if cli.dry_run {
+        info!("Dry run mode is on");
+    }
 
     match cli.command {
-        Commands::Markdown { input, output } => markdown_cmd::main(&input, &output, &dry_run)?,
+        Commands::Markdown { input, output } => markdown_cmd::main(&input, &output, &cli.debug, &cli.dry_run)?,
         Commands::Sync {
             directory,
             input_takeout,
             input_icloud,
         } => {
-            sync_cmd::main(&directory, &input_takeout, &input_icloud, &dry_run)?;
+            sync_cmd::main(
+                &directory,
+                &input_takeout,
+                &input_icloud,
+                &cli.debug,
+                &cli.dry_run,
+            )?;
         }
     }
 

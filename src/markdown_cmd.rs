@@ -6,7 +6,7 @@ use std::fs;
 use std::path::Path;
 use tracing::debug;
 
-pub fn main(input: &String, _: &Option<String>, dry_run: &bool) -> anyhow::Result<()> {
+pub fn main(input: &String, _: &Option<String>, debug: &bool, dry_run: &bool) -> anyhow::Result<()> {
     println!("Inspecting: {}", input);
     let media_file_info = media_file_info_from_path(input);
     println!("Markdown:");

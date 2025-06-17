@@ -26,24 +26,26 @@ pub(crate) fn main(
     directory: &Option<String>,
     input_takeout: &Option<String>,
     input_icloud: &Option<String>,
+    debug: &bool,
     dry_run: &bool,
 ) -> anyhow::Result<()> {
     let (tx, rx) = mpsc::channel();
 
+    let debug2 = debug.clone();
     let terminal_output_thread = thread::spawn(move || {
         let term = Term::stdout();
         while let Ok(event) = rx.recv() {
-            handle(&term, event).unwrap();
+            handle(&term, event, debug2).unwrap();
         }
     });
 
-    send_events(tx, &input_takeout)?;
+    start(tx, &input_takeout)?;
     terminal_output_thread.join().unwrap();
 
     Ok(())
 }
 
-fn send_events(tx: Sender<ProgressEvent>, input_takeout: &Option<String>) -> anyhow::Result<()> {
+fn start(tx: Sender<ProgressEvent>, input_takeout: &Option<String>) -> anyhow::Result<()> {
     tx.send(ProgressEvent::Start())?;
     thread::sleep(Duration::from_millis(1000));
 
@@ -57,7 +59,7 @@ fn send_events(tx: Sender<ProgressEvent>, input_takeout: &Option<String>) -> any
     thread::sleep(Duration::from_millis(1000));
 
     for _ in 0..c {
-        tx.send(ProgressEvent::MediaFileDone())?;
+        tx.send(ProgressEvent::MediaFileDone("".to_string()))?;
         thread::sleep(Duration::from_millis(10));
     }
     tx.send(ProgressEvent::MediaDone())?;
@@ -78,44 +80,68 @@ fn send_events(tx: Sender<ProgressEvent>, input_takeout: &Option<String>) -> any
     Ok(())
 }
 
-fn handle(term: &Term, e: ProgressEvent) -> anyhow::Result<()> {
+fn handle(term: &Term, e: ProgressEvent, debug: bool) -> anyhow::Result<()> {
     match e {
         ProgressEvent::Start() => {
             term.write_line("Hello World!")
                 .expect("Failed to write to terminal");
-            UI.init_spinner.set_message("Validating...");
-            UI.init_spinner
-                .enable_steady_tick(Duration::from_millis(100));
+            if !debug {
+                UI.init_spinner.set_message("Validating...");
+                UI.init_spinner
+                    .enable_steady_tick(Duration::from_millis(100));
+            }
         }
         ProgressEvent::InputVerified(f) => {
-            UI.init_spinner.finish_and_clear();
+            if !debug {
+                UI.init_spinner.finish_and_clear();
+            }
             term.write_line(&format!("Validation done {}", f))?;
 
-            UI.indexing_spinner.set_message("Finding photos...");
-            UI.indexing_spinner
-                .enable_steady_tick(Duration::from_millis(100));
+            if debug {
+                term.write_line("Finding photos")?;
+            } else {
+                UI.indexing_spinner.set_message("Finding photos...");
+                UI.indexing_spinner
+                    .enable_steady_tick(Duration::from_millis(100));
+            }
         }
         ProgressEvent::MediaFilesCalculated(total_files) => {
-            UI.indexing_spinner.finish_and_clear();
+            if !debug {
+                UI.indexing_spinner.finish_and_clear();
+            }
 
             term.write_line(&format!("Total photos {}", total_files))?;
-            UI.media_progress.set_length(total_files as u64);
+            if !debug {
+                UI.media_progress.set_length(total_files as u64);
+            }
         }
-        ProgressEvent::MediaFileDone() => {
-            UI.media_progress.inc(1);
+        ProgressEvent::MediaFileDone(f) => {
+            if debug {
+                term.write_line(&format!("  {}", f))?;
+            } else {
+                UI.media_progress.inc(1);
+            }
         }
         ProgressEvent::MediaDone() => {
-            UI.media_progress.finish_and_clear();
+            if !debug {
+                UI.media_progress.finish_and_clear();
+            }
         }
         ProgressEvent::AlbumsCalculated(i) => {
             term.write_line(&format!("Total albums {}", i))?;
-            UI.albums_progress.set_length(i as u64);
+            if !debug {
+                UI.albums_progress.set_length(i as u64);
+            }
         }
         ProgressEvent::AlbumFileDone() => {
-            UI.albums_progress.inc(1);
+            if !debug {
+                UI.albums_progress.inc(1);
+            }
         }
         ProgressEvent::AlbumsDone() => {
-            UI.albums_progress.finish_and_clear();
+            if !debug {
+                UI.albums_progress.finish_and_clear();
+            }
         }
         ProgressEvent::AllDone() => {
             term.write_line("Done")?;
@@ -128,7 +154,7 @@ enum ProgressEvent {
     Start(),
     InputVerified(String),
     MediaFilesCalculated(u32),
-    MediaFileDone(),
+    MediaFileDone(String),
     MediaDone(),
     AlbumsCalculated(u32),
     AlbumFileDone(),
