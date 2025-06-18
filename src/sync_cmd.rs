@@ -39,13 +39,13 @@ pub(crate) fn main(
         }
     });
 
-    start(tx, &input_takeout)?;
+    start(tx, &input_takeout, dry_run)?;
     terminal_output_thread.join().unwrap();
 
     Ok(())
 }
 
-fn start(tx: Sender<ProgressEvent>, input_takeout: &Option<String>) -> anyhow::Result<()> {
+fn start(tx: Sender<ProgressEvent>, input_takeout: &Option<String>, dry_run: &bool) -> anyhow::Result<()> {
     tx.send(ProgressEvent::Start())?;
     thread::sleep(Duration::from_millis(1000));
 
@@ -54,10 +54,10 @@ fn start(tx: Sender<ProgressEvent>, input_takeout: &Option<String>) -> anyhow::R
 
     thread::sleep(Duration::from_millis(1000));
     let c = takeout_reader::count(&input_takeout.clone().unwrap())?;
-    let total_albums = 5;
     tx.send(ProgressEvent::MediaFilesCalculated(c))?;
     thread::sleep(Duration::from_millis(1000));
 
+    takeout_reader::scan(&input_takeout.clone().unwrap())?;
     for _ in 0..c {
         tx.send(ProgressEvent::MediaFileDone("".to_string()))?;
         thread::sleep(Duration::from_millis(10));
@@ -65,6 +65,7 @@ fn start(tx: Sender<ProgressEvent>, input_takeout: &Option<String>) -> anyhow::R
     tx.send(ProgressEvent::MediaDone())?;
     thread::sleep(Duration::from_millis(1000));
 
+    let total_albums = 5;
     tx.send(ProgressEvent::AlbumsCalculated(total_albums))?;
     thread::sleep(Duration::from_millis(1000));
 

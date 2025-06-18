@@ -1,61 +1,42 @@
-use std::{fs, io};
+use crate::media_file::guess_file_format;
+use std::fs::File;
+use std::path::Path;
 use tracing::info;
+use zip::ZipArchive;
 
-fn main(s: &str, dry_run: &bool) {
-    let fname = std::path::Path::new(s);
-    let file = fs::File::open(fname).unwrap();
+pub(crate) fn scan(s: &str) -> anyhow::Result<()> {
+    let zip_path = Path::new(s);
+    let zip_file = File::open(zip_path)?;
 
-    let mut archive = zip::ZipArchive::new(file).unwrap();
+    let mut zip_archive = ZipArchive::new(zip_file)?;
 
-    for i in 0..archive.len() {
-        let mut file = archive.by_index(i).unwrap();
-        let out_path = match file.enclosed_name() {
-            Some(path) => path,
-            None => continue,
-        };
-
-        if file.is_dir() {
-            println!("File {} extracted to \"{}\"", i, out_path.display());
-            if !dry_run {
-                fs::create_dir_all(&out_path).unwrap();
-            }
-        } else {
-            println!(
-                "File {} extracted to \"{}\" ({} bytes)",
-                i,
-                out_path.display(),
-                file.size()
-            );
-            if let Some(p) = out_path.parent() {
-                if !dry_run {
-                    if !p.exists() {
-                        fs::create_dir_all(p).unwrap();
-                    }
-                }
-            }
-            if !dry_run {
-                let mut outfile = fs::File::create(&out_path).unwrap();
-                io::copy(&mut file, &mut outfile).unwrap();
-            }
+    for i in 0..zip_archive.len() {
+        let file = zip_archive.by_index(i).unwrap();
+        if !file.is_dir() {
+            continue;
         }
+        let Some(enclosed_name) = file.enclosed_name() else {
+            continue;
+        };
+        let p = enclosed_name.as_path();
+        let file_name = p.to_str().unwrap();
+        let media_file_o = guess_file_format(file, file_name);
+        println!("File {:?} {}", media_file_o, file_name);
     }
+    Ok(())
 }
 
 pub(crate) fn count(s: &String) -> anyhow::Result<u32> {
-    let fname = std::path::Path::new(s);
-    let file = fs::File::open(fname)?;
+    let zip_path = Path::new(s);
+    let zip_file = File::open(zip_path)?;
 
-    let mut archive = zip::ZipArchive::new(file)?;
+    let mut archive = ZipArchive::new(zip_file)?;
     let mut count: u32 = 0;
     info!("Archive {} contains {} files", s, archive.len());
     for i in 0..archive.len() {
         let file = archive.by_index(i)?;
-        let outpath = match file.enclosed_name() {
-            Some(path) => {
-                // path;
-                count += 1;
-            }
-            None => continue,
+        if file.is_file() {
+            count += 1;
         };
     }
     Ok(count)

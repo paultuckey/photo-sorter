@@ -8,7 +8,11 @@ use tracing::debug;
 
 pub fn main(input: &String, _: &Option<String>, debug: &bool, dry_run: &bool) -> anyhow::Result<()> {
     println!("Inspecting: {}", input);
-    let media_file_info = media_file_info_from_path(input);
+    let media_file_info_o = media_file_info_from_path(input);
+    let Some(media_file_info) = media_file_info_o else {
+        println!("Not a valid media file: {}", input);
+        return Ok(());
+    };
     println!("Markdown:");
     println!();
     let mfm = mfm_from_media_file_info(&media_file_info);
