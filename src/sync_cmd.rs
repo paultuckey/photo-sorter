@@ -14,12 +14,12 @@ struct State {
 }
 
 static UI: Lazy<State> = Lazy::new(|| {
-    return State {
+    State {
         init_spinner: ProgressBar::new_spinner(),
         indexing_spinner: ProgressBar::new_spinner(),
         media_progress: ProgressBar::new(32),
         albums_progress: ProgressBar::new(32),
-    };
+    }
 });
 
 pub(crate) fn main(
@@ -39,7 +39,7 @@ pub(crate) fn main(
         }
     });
 
-    start(tx, &input_takeout, dry_run)?;
+    start(tx, input_takeout, dry_run)?;
     terminal_output_thread.join().unwrap();
 
     Ok(())

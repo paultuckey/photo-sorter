@@ -1,13 +1,12 @@
-use chrono::{DateTime, Datelike, NaiveDate, NaiveDateTime, NaiveTime, ParseResult, SecondsFormat, Timelike};
+use chrono::{DateTime, Datelike, NaiveDate, NaiveDateTime, NaiveTime, SecondsFormat, Timelike};
 use exif::{Exif, In, Reader, Tag, Value};
 use std::collections::HashMap;
 use std::ffi::OsStr;
 use std::fs::File;
-use std::io;
-use std::io::{BufReader, Cursor, Read};
+use std::io::{BufReader, Cursor};
 use std::path::Path;
 use tracing::{debug, warn};
-use crate::media_file::{MediaFileReadable, MediaFromFileSystem};
+use crate::media_file::{MediaFileReadable};
 
 #[derive(Debug, Clone)]
 pub(crate) struct ParsedExif {

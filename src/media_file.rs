@@ -1,7 +1,7 @@
 use crate::exif_util::{ParsedExif, best_guess_taken_dt, get_desired_path, parse_exif};
-use crate::util::{checksum_file, checksum_from_read, reader_from_path_string};
+use crate::util::{checksum_from_read};
 use std::fs::File;
-use std::io::{ErrorKind, Read, Seek};
+use std::io::{Read};
 use std::path::Path;
 use anyhow::{anyhow, Context};
 use tracing::debug;
@@ -148,5 +148,5 @@ pub(crate) fn guess_file_format(media_file_readable: &dyn MediaFileReadable) -> 
     if mt == "application/octet-stream" {
         warn!("Could not guess mime type for {:?}", media_file_readable.name());
     }
-    file_format_from_content_type(&mt)
+    file_format_from_content_type(mt)
 }

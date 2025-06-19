@@ -90,13 +90,13 @@ pub(crate) fn scan(s: &str) -> anyhow::Result<Vec<PsFileInZip>> {
             };
             let p = enclosed_name.as_path();
             let file_name = p.to_str().unwrap();
-            files.push(file_name.clone().to_string());
+            files.push(file_name.to_string());
         }
     }
 
     let mut ps_files: Vec<PsFileInZip> = vec![];
     for file_name  in files {
-        let file_res = MediaFromZip::new(s.clone().to_string(), file_name.clone());
+        let file_res = MediaFromZip::new(s.to_string(), file_name.clone());
         let media_file = guess_file_format(&file_res);
         if media_file == PsFileFormat::Unsupported {
             debug!("File unsupported: {:?}", file_name);

@@ -1,7 +1,6 @@
 use std::collections::{HashMap, HashSet};
 use std::ffi::OsStr;
 use std::path::Path;
-use anyhow::Context;
 use tracing::{debug, info, warn};
 use crate::exif_util::is_file_media;
 use crate::upload::FsFile;
@@ -161,7 +160,7 @@ pub(crate) fn build_md(album: &Album) -> String {
     md
 }
 
-pub(crate) async fn import_markdown(album: &Album, md: &String) -> anyhow::Result<()> {
+pub(crate) async fn import_markdown(_: &Album, _: &String) -> anyhow::Result<()> {
     // let body = serde_json::to_string(&ImportMarkdownRequest {
     //     file_path: album.path.to_owned(),
     //     markdown: md.to_string(),
