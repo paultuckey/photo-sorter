@@ -53,16 +53,24 @@ fn start(tx: Sender<ProgressEvent>, input_takeout: &Option<String>, dry_run: &bo
     thread::sleep(Duration::from_millis(1000));
 
     thread::sleep(Duration::from_millis(1000));
+    //
     let c = takeout_reader::count(&input_takeout.clone().unwrap())?;
     tx.send(ProgressEvent::MediaFilesCalculated(c))?;
     thread::sleep(Duration::from_millis(1000));
-
-    takeout_reader::scan(&input_takeout.clone().unwrap())?;
+    
+    //
+    let scanned_files = takeout_reader::scan(&input_takeout.clone().unwrap())?;
+    // todo: scan should give a list of files we are interested in as a tree
+    //   based on name only
     for _ in 0..c {
         tx.send(ProgressEvent::MediaFileDone("".to_string()))?;
         thread::sleep(Duration::from_millis(10));
     }
     tx.send(ProgressEvent::MediaDone())?;
+    
+    // todo: plan should output actions that will be performed
+    //  would include reading file type, exif etc
+    
     thread::sleep(Duration::from_millis(1000));
 
     let total_albums = 5;

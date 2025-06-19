@@ -1,4 +1,4 @@
-use crate::media_file::{MediaFileInfo, media_file_info_from_path};
+use crate::media_file::{MediaFileInfo, media_file_info_from_readable, MediaFromFileSystem};
 use crate::util::{checksum_file, checksum_string};
 use anyhow::Context;
 use serde::{Deserialize, Serialize};
@@ -8,8 +8,9 @@ use tracing::debug;
 
 pub fn main(input: &String, _: &Option<String>, debug: &bool, dry_run: &bool) -> anyhow::Result<()> {
     println!("Inspecting: {}", input);
-    let media_file_info_o = media_file_info_from_path(input);
-    let Some(media_file_info) = media_file_info_o else {
+    let media_file_readable = MediaFromFileSystem::new(input.clone());
+    let media_file_info_res = media_file_info_from_readable(&media_file_readable);
+    let Ok(media_file_info) = media_file_info_res else {
         println!("Not a valid media file: {}", input);
         return Ok(());
     };

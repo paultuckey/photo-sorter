@@ -4,8 +4,10 @@ use std::collections::HashMap;
 use std::ffi::OsStr;
 use std::fs::File;
 use std::io;
+use std::io::{BufReader, Cursor, Read};
 use std::path::Path;
 use tracing::{debug, warn};
+use crate::media_file::{MediaFileReadable, MediaFromFileSystem};
 
 #[derive(Debug, Clone)]
 pub(crate) struct ParsedExif {
@@ -15,17 +17,17 @@ pub(crate) struct ParsedExif {
     pub(crate) unique_id: Option<String>,
 }
 
-pub(crate) fn parse_exif(path: &Path) -> Option<ParsedExif> {
-    let file_r = File::open(path);
-    let Ok(file) = file_r else {
-        warn!("Could not open file: {:?}", path);
+pub(crate) fn parse_exif(media_file_reader: &dyn MediaFileReadable) -> Option<ParsedExif> {
+    let bytes_res = media_file_reader.to_bytes();
+    let Ok(file_reader) = bytes_res else {
+        warn!("Could not read file: {}", media_file_reader.name());
         return None;
     };
-    let mut buf_reader = io::BufReader::new(file);
+    let mut buffer = BufReader::new(Cursor::new(file_reader));
     let exif_reader = Reader::new();
-    let exif_r = exif_reader.read_from_container(&mut buf_reader);
+    let exif_r = exif_reader.read_from_container(&mut buffer);
     let Ok(exif) = exif_r else {
-        warn!("Could not read EXIF data from file: {:?}", path);
+        warn!("Could not read EXIF data from file: {}", media_file_reader.name());
         return None;
     };
     let unique_id = parse_tag(&exif, Tag::ImageUniqueID);
@@ -49,7 +51,7 @@ pub(crate) fn best_guess_taken_dt(pe: &Option<ParsedExif>) -> Option<String> {
 
 pub(crate) fn all_tags(path: &Path) -> Option<HashMap<String, String>> {
     let file = File::open(path).ok()?;
-    let mut buf_reader = io::BufReader::new(file);
+    let mut buf_reader = BufReader::new(file);
     let exif_reader = Reader::new();
     let exif = exif_reader.read_from_container(&mut buf_reader).ok()?;
     let fields = exif.fields();
@@ -212,11 +214,11 @@ async fn test_d1() {
 
 #[tokio::test()]
 async fn test_parse_exif_created() {
-    let p = Path::new("test/test1-smaller.jpg").to_path_buf();
-    let p = parse_exif(&p).unwrap();
+    let m = MediaFromFileSystem::new("test/Canon_40D.jpg".to_string());
+    let p = parse_exif(&m).unwrap();
     assert_eq!(
         p.datetime_original,
-        Some("2017-08-19T10:21:59Z".to_string())
+        Some("2008-05-30T15:56:01Z".to_string())
     );
 }
 
