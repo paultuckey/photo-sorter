@@ -135,24 +135,6 @@ fn get_relative_path(base: &PathBuf, file: &Path) -> Option<PathBuf> {
     file.strip_prefix(base).map(|p| p.to_path_buf()).ok()
 }
 
-async fn upload_files(files_to_upload: &[FsFile], albums: &HashMap<String, Vec<String>>) -> anyhow::Result<()> {
-    let num_threads = 4;
-    let fetches = futures::stream::iter(
-        files_to_upload.iter().map(|ff| {
-            let album_names = albums.get(&ff.rel_path).cloned();
-            async move {
-                match media_all(ff, album_names).await {
-                    Ok(_) => {}
-                    Err(e) => warn!("ERROR uploading {}: {:?}", ff.path, e),
-                }
-            }
-        })
-    ).buffer_unordered(num_threads).collect::<Vec<()>>();
-    info!("Waiting...");
-    fetches.await;
-    Ok(())
-}
-
 async fn media_all(ff: &FsFile, albums: Option<Vec<String>>) -> anyhow::Result<()> {
     info!("Starting {}", ff.path);
     let file_path = Path::new(&ff.path);
@@ -162,48 +144,6 @@ async fn media_all(ff: &FsFile, albums: Option<Vec<String>>) -> anyhow::Result<(
     // upload_blob(&upload_url, &ff.path).await?;
     // let d = upload_done(&upload_id, ff).await?;
     // info!("Done {}, media_id: {:?}, status: {:?}", ff.path, d.media_id, d.status);
-    Ok(())
-}
-
-
-pub(crate) struct MediaStartRequest {
-    pub(crate) checksum: String,
-    pub(crate) albums: Option<Vec<String>>,
-}
-
-pub(crate) struct MediaStartResponse {
-    pub(crate) upload_id: Option<String>,
-    pub(crate) upload_url: Option<String>,
-    pub(crate) media_id: Option<String>,
-}
-
-
-
-
-async fn upload_blob(_: &String, _: &String) -> anyhow::Result<()> {
-    // let byte_buf: Vec<u8> = fs::read(file_path)?;
-
-    Ok(())
-}
-
-pub(crate) struct MediaDoneRequest {
-    pub(crate) upload_id: String,
-    pub(crate) from: String,
-    pub(crate) extra_info: Option<String>,
-}
-
-pub(crate) struct MediaDoneResponse {
-    pub(crate) status: String,
-    pub(crate) media_id: Option<String>,
-}
-
-pub(crate) async fn upload_done(upload_id: &str, ff: &FsFile) -> anyhow::Result<()> {
-    let extra_info_s = detect_extra_info(ff).await?;
-    // let body = serde_json::to_string(&MediaDoneRequest {
-    //     upload_id: upload_id.to_owned(),
-    //     from: ff.rel_path.to_owned(),
-    //     extra_info: extra_info_s,
-    // }).with_context(|| "Unable to encode send media list")?;
     Ok(())
 }
 

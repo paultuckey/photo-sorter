@@ -7,6 +7,7 @@ mod takeout_reader;
 mod test_util;
 mod upload;
 mod util;
+mod extra_info;
 
 use clap::{Parser, Subcommand};
 use tracing::{error, info};
@@ -14,14 +15,6 @@ use tracing::{error, info};
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
 struct Cli {
-    /// Turn debugging information on
-    #[arg(short, long)]
-    debug: bool,
-
-    /// If set, don't do anything, just print what would be done.
-    #[arg(short = 'n', long)]
-    dry_run: bool,
-
     #[command(subcommand)]
     command: Commands,
 }
@@ -29,6 +22,14 @@ struct Cli {
 #[derive(Subcommand)]
 enum Commands {
     Markdown {
+        /// Turn debugging information on
+        #[arg(short, long)]
+        debug: bool,
+
+        /// If set, don't do anything, just print what would be done.
+        #[arg(short = 'n', long)]
+        dry_run: bool,
+
         #[arg(short, long, help = "Photo or video to generate markdown for")]
         input: String,
 
@@ -40,6 +41,14 @@ enum Commands {
         output: Option<String>,
     },
     Sync {
+        /// Turn debugging information on
+        #[arg(short, long)]
+        debug: bool,
+
+        /// If set, don't do anything, just print what would be done.
+        #[arg(short = 'n', long)]
+        dry_run: bool,
+
         #[arg(short, long, help = "Directory to sync photos into")]
         directory: Option<String>,
 
@@ -62,10 +71,9 @@ async fn main() {
     }
 }
 
-async fn go() -> anyhow::Result<()> {
-    let cli = Cli::parse();
+fn enable_debug(debug: &bool) {
     let mut tracing_level = tracing::Level::INFO;
-    if cli.debug {
+    if debug.clone() {
         tracing_level = tracing::Level::DEBUG;
     }
     tracing_subscriber::fmt()
@@ -73,26 +81,39 @@ async fn go() -> anyhow::Result<()> {
         // disable printing the name of the module in every log line.
         .with_target(false)
         .init();
-    if cli.debug {
+    if debug.clone() {
         info!("Debug mode is on");
     }
-    if cli.dry_run {
-        info!("Dry run mode is on");
-    }
+}
 
+fn enable_dry_run(dry_run: &bool) {
+    if dry_run.clone() {
+        info!("Dry run mode is on, no changes will be made to disk");
+    }
+}
+
+async fn go() -> anyhow::Result<()> {
+    let cli = Cli::parse();
     match cli.command {
-        Commands::Markdown { input, output } => markdown_cmd::main(&input, &output, &cli.debug, &cli.dry_run)?,
+        Commands::Markdown { debug, dry_run, input, output } => {
+            enable_debug(&debug);
+            enable_dry_run(&dry_run);
+            markdown_cmd::main(&input, &output, &debug, &dry_run)?
+        },
         Commands::Sync {
+            debug, dry_run,
             directory,
             input_takeout,
             input_icloud,
         } => {
+            enable_debug(&debug);
+            enable_dry_run(&dry_run);
             sync_cmd::main(
                 &directory,
                 &input_takeout,
                 &input_icloud,
-                &cli.debug,
-                &cli.dry_run,
+                &debug,
+                &dry_run,
             ).await?;
         }
     }

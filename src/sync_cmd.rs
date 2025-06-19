@@ -56,6 +56,13 @@ async fn start(tx: Sender<ProgressEvent>, input_takeout: &Option<String>, dry_ru
     tx.send(ProgressEvent::MediaFilesCalculated(files.len() as u32))?;
     tokio::time::sleep(Duration::from_millis(500)).await;
 
+    // scan zip and collect list of files with right extensions and file size
+    // then find any extra files for meta info
+    // find albums (based on paths)
+    // and then analyze each file
+    
+    
+    
     let num_threads = 10; // should be related to number of cored on underlying machine
     let fetches = futures::stream::iter(
         files.iter().map(|file| {
