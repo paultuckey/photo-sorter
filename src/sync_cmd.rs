@@ -5,6 +5,8 @@ use once_cell::sync::Lazy;
 use std::sync::mpsc;
 use std::sync::mpsc::Sender;
 use std::{thread, time::Duration};
+use futures::StreamExt;
+use crate::takeout_reader::PsFileInZip;
 
 struct State {
     init_spinner: ProgressBar,
@@ -22,7 +24,7 @@ static UI: Lazy<State> = Lazy::new(|| {
     }
 });
 
-pub(crate) fn main(
+pub(crate) async fn main(
     directory: &Option<String>,
     input_takeout: &Option<String>,
     input_icloud: &Option<String>,
@@ -39,59 +41,58 @@ pub(crate) fn main(
         }
     });
 
-    start(tx, input_takeout, dry_run)?;
+    start(tx, input_takeout, dry_run).await?;
     terminal_output_thread.join().unwrap();
 
     Ok(())
 }
 
-fn start(tx: Sender<ProgressEvent>, input_takeout: &Option<String>, dry_run: &bool) -> anyhow::Result<()> {
-    tx.send(ProgressEvent::Start())?;
-    thread::sleep(Duration::from_millis(1000));
+async fn start(tx: Sender<ProgressEvent>, input_takeout: &Option<String>, dry_run: &bool) -> anyhow::Result<()> {
+    let s = input_takeout.clone().unwrap();
+    tx.send(ProgressEvent::Start(s.clone()))?;
+    tokio::time::sleep(Duration::from_millis(500)).await;
 
-    tx.send(ProgressEvent::InputVerified(input_takeout.clone().unwrap()))?;
-    thread::sleep(Duration::from_millis(1000));
+    let files = takeout_reader::scan(&s)?;
+    tx.send(ProgressEvent::MediaFilesCalculated(files.len() as u32))?;
+    tokio::time::sleep(Duration::from_millis(500)).await;
 
-    thread::sleep(Duration::from_millis(1000));
-    //
-    let c = takeout_reader::count(&input_takeout.clone().unwrap())?;
-    tx.send(ProgressEvent::MediaFilesCalculated(c))?;
-    thread::sleep(Duration::from_millis(1000));
+    let num_threads = 10; // should be related to number of cored on underlying machine
+    let fetches = futures::stream::iter(
+        files.iter().map(|file| {
+            let s2 = s.clone();
+            let tx2 = tx.clone();
+            async move {
+                let scanned_file = takeout_reader::analyze(&file, &s2, &dry_run);
+                tx2.send(ProgressEvent::MediaFileDone(file.clone())).expect("send media file");
+                scanned_file
+            }
+        })
+    ).buffer_unordered(num_threads).collect::<Vec<anyhow::Result<PsFileInZip>>>();
+    fetches.await;    
     
-    //
-    let scanned_files = takeout_reader::scan(&input_takeout.clone().unwrap())?;
-    // todo: scan should give a list of files we are interested in as a tree
-    //   based on name only
-    for _ in 0..c {
-        tx.send(ProgressEvent::MediaFileDone("".to_string()))?;
-        thread::sleep(Duration::from_millis(10));
-    }
     tx.send(ProgressEvent::MediaDone())?;
-    
-    // todo: plan should output actions that will be performed
-    //  would include reading file type, exif etc
-    
-    thread::sleep(Duration::from_millis(1000));
+
+    tokio::time::sleep(Duration::from_millis(1000)).await;
 
     let total_albums = 5;
     tx.send(ProgressEvent::AlbumsCalculated(total_albums))?;
-    thread::sleep(Duration::from_millis(1000));
+    tokio::time::sleep(Duration::from_millis(1000)).await;
 
     for _ in 0..total_albums {
         tx.send(ProgressEvent::AlbumFileDone())?;
-        thread::sleep(Duration::from_millis(1));
+        tokio::time::sleep(Duration::from_millis(1)).await;
     }
     tx.send(ProgressEvent::AlbumsDone())?;
-    thread::sleep(Duration::from_millis(1000));
+    tokio::time::sleep(Duration::from_millis(1000)).await;
 
     tx.send(ProgressEvent::AllDone())?;
-    thread::sleep(Duration::from_millis(1000));
+    tokio::time::sleep(Duration::from_millis(1000)).await;
     Ok(())
 }
 
 fn handle(term: &Term, e: ProgressEvent, debug: bool) -> anyhow::Result<()> {
     match e {
-        ProgressEvent::Start() => {
+        ProgressEvent::Start(s) => {
             term.write_line("Hello World!")
                 .expect("Failed to write to terminal");
             if !debug {
@@ -99,12 +100,10 @@ fn handle(term: &Term, e: ProgressEvent, debug: bool) -> anyhow::Result<()> {
                 UI.init_spinner
                     .enable_steady_tick(Duration::from_millis(100));
             }
-        }
-        ProgressEvent::InputVerified(f) => {
             if !debug {
                 UI.init_spinner.finish_and_clear();
             }
-            term.write_line(&format!("Validation done {}", f))?;
+            term.write_line(&format!("Validation done {}", s))?;
 
             if debug {
                 term.write_line("Finding photos")?;
@@ -160,8 +159,7 @@ fn handle(term: &Term, e: ProgressEvent, debug: bool) -> anyhow::Result<()> {
 }
 
 enum ProgressEvent {
-    Start(),
-    InputVerified(String),
+    Start(String),
     MediaFilesCalculated(u32),
     MediaFileDone(String),
     MediaDone(),

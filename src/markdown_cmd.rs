@@ -1,5 +1,5 @@
-use crate::media_file::{MediaFileInfo, media_file_info_from_readable, MediaFromFileSystem};
-use crate::util::{checksum_file, checksum_string};
+use crate::media_file::{MediaFileInfo, media_file_info_from_readable};
+use crate::util::{checksum_file, checksum_string, MediaFromFileSystem};
 use anyhow::Context;
 use serde::{Deserialize, Serialize};
 use std::fs;

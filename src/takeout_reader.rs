@@ -1,9 +1,10 @@
-use crate::media_file::{MediaFileReadable, PsFileFormat, guess_file_format};
+use crate::media_file::{PsFileFormat, guess_file_format, media_file_info_from_readable};
+use crate::util::{MediaFileReadable, MediaFromFileSystem};
 use anyhow::{Context, anyhow};
 use std::fs::File;
 use std::io::Read;
 use std::path::Path;
-use tracing::{debug};
+use tracing::debug;
 use zip::ZipArchive;
 
 #[derive(Debug, Clone)]
@@ -58,8 +59,8 @@ impl MediaFileReadable for MediaFromZip {
             return Err(anyhow!("File is a dir {:?}", file_in_zip_name));
         }
         let mut buffer = Vec::new();
-        let mut handle = file.take(limit);
-        handle.read(&mut buffer)?;
+        let mut limited_reader = file.take(limit);
+        limited_reader.read_to_end(&mut buffer)?;
         Ok(buffer)
     }
 
@@ -68,54 +69,11 @@ impl MediaFileReadable for MediaFromZip {
     }
 }
 
-pub(crate) fn scan(s: &str) -> anyhow::Result<Vec<PsFileInZip>> {
-    let zip_path = Path::new(s);
-    let mut files: Vec<String> = vec![];
-    {
-        let zip_file = File::open(zip_path) //
-            .with_context(|| format!("Unable to open file {:?}", zip_path))?;
-        let mut zip_archive =
-            ZipArchive::new(zip_file) //
-                .with_context(|| format!("Unable to open zip file {:?}", zip_path))?;
-        for i in 0..zip_archive.len() {
-            let file_res = zip_archive.by_index(i);
-            let Some(file) = file_res.ok() else {
-                continue;
-            };
-            if file.is_dir() {
-                continue;
-            }
-            let Some(enclosed_name) = file.enclosed_name() else {
-                continue;
-            };
-            let p = enclosed_name.as_path();
-            let file_name = p.to_str().unwrap();
-            files.push(file_name.to_string());
-        }
-    }
-
-    let mut ps_files: Vec<PsFileInZip> = vec![];
-    for file_name  in files {
-        let file_res = MediaFromZip::new(s.to_string(), file_name.clone());
-        let media_file = guess_file_format(&file_res);
-        if media_file == PsFileFormat::Unsupported {
-            debug!("File unsupported: {:?}", file_name);
-            continue;
-        }
-        debug!("File {:?} {}", media_file, file_name);
-        ps_files.push(PsFileInZip {
-            path: file_name.to_string().clone(),
-            file_format: media_file.clone(),
-        });
-    }
-    Ok(ps_files)
-}
-
-pub(crate) fn count(s: &String) -> anyhow::Result<u32> {
+pub(crate) fn scan(s: &String) -> anyhow::Result<Vec<String>> {
     let zip_path = Path::new(s);
     let zip_file = File::open(zip_path) //
         .with_context(|| format!("Unable to open file {:?}", zip_path))?;
-
+    let mut files = vec![];
     let mut zip_archive =
         ZipArchive::new(zip_file) //
             .with_context(|| format!("Unable to open zip file {:?}", zip_path))?;
@@ -125,9 +83,31 @@ pub(crate) fn count(s: &String) -> anyhow::Result<u32> {
         let Some(file) = file_res.ok() else {
             continue;
         };
-        if file.is_file() {
-            count += 1;
+        if file.is_dir() {
+            continue;
+        }
+        let Some(enclosed_name) = file.enclosed_name() else {
+            continue;
         };
+        let p = enclosed_name.as_path();
+        let file_name = p.to_str().unwrap();
+        files.push(file_name.to_string());
     }
-    Ok(count)
+    debug!("Counted {} files in zip {:?}", count, s);
+    Ok(files)
+}
+
+pub(crate) fn analyze(file: &String, zip_file: &str, dry_run: &bool) -> anyhow::Result<PsFileInZip> {
+    debug!("Analyzing {:?}", file);
+    let media_from_zip = MediaFromZip::new(zip_file.to_string(), file.clone());
+    let media_file_info_res = media_file_info_from_readable(&media_from_zip);
+    let Ok(media_file) = media_file_info_res else {
+        debug!("File unsupported: {:?}", file);
+        return Err(anyhow!("Unsupported file format: {:?}", file));
+    };
+    debug!("file format detected {:?}", media_file.file_format);
+    Ok(PsFileInZip {
+        path: file.to_string().clone(),
+        file_format: media_file.file_format.clone(),
+    })
 }

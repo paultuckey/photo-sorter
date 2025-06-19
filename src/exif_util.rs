@@ -6,7 +6,8 @@ use std::fs::File;
 use std::io::{BufReader, Cursor};
 use std::path::Path;
 use tracing::{debug, warn};
-use crate::media_file::{MediaFileReadable};
+use crate::media_file::PsFileFormat;
+use crate::util::{MediaFileReadable};
 
 #[derive(Debug, Clone)]
 pub(crate) struct ParsedExif {
@@ -16,7 +17,17 @@ pub(crate) struct ParsedExif {
     pub(crate) unique_id: Option<String>,
 }
 
-pub(crate) fn parse_exif(media_file_reader: &dyn MediaFileReadable) -> Option<ParsedExif> {
+pub(crate) fn does_file_format_have_exif(file_format: &PsFileFormat) -> bool {
+    match file_format {
+        PsFileFormat::Jpg | PsFileFormat::Png | PsFileFormat::Heic => true,
+        _ => false,
+    }
+}
+
+pub(crate) fn parse_exif(media_file_reader: &dyn MediaFileReadable, file_format: &PsFileFormat) -> Option<ParsedExif> {
+    if !does_file_format_have_exif(file_format) {
+        return None;
+    }
     let bytes_res = media_file_reader.to_bytes();
     let Ok(file_reader) = bytes_res else {
         warn!("Could not read file: {}", media_file_reader.name());
@@ -213,8 +224,9 @@ async fn test_d1() {
 
 #[tokio::test()]
 async fn test_parse_exif_created() {
+    use crate::util::{MediaFromFileSystem};
     let m = MediaFromFileSystem::new("test/Canon_40D.jpg".to_string());
-    let p = parse_exif(&m).unwrap();
+    let p = parse_exif(&m, &PsFileFormat::Jpg).unwrap();
     assert_eq!(
         p.datetime_original,
         Some("2008-05-30T15:56:01Z".to_string())

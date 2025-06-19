@@ -93,7 +93,7 @@ async fn go() -> anyhow::Result<()> {
                 &input_icloud,
                 &cli.debug,
                 &cli.dry_run,
-            )?;
+            ).await?;
         }
     }
 
