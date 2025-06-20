@@ -1,5 +1,5 @@
-use crate::media_file::{PsFileFormat, guess_file_format, media_file_info_from_readable};
-use crate::util::{MediaFileReadable, MediaFromFileSystem};
+use crate::media::media_file_info_from_readable;
+use crate::util::PsReadableFile;
 use anyhow::{Context, anyhow};
 use std::fs::File;
 use std::io::Read;
@@ -7,22 +7,20 @@ use std::path::Path;
 use tracing::debug;
 use zip::ZipArchive;
 
-#[derive(Debug, Clone)]
-pub(crate) struct PsFileInZip {
-    pub(crate) path: String,
-    pub(crate) file_format: PsFileFormat,
-}
-
-pub struct MediaFromZip {
+pub struct PsReadableFromZip {
     zip_file: String,
     file: String,
 }
-impl MediaFromZip {
+impl PsReadableFromZip {
     pub fn new(zip_file: String, file: String) -> Self {
-        MediaFromZip { zip_file, file }
+        PsReadableFromZip { zip_file, file }
     }
 }
-impl MediaFileReadable for MediaFromZip {
+impl PsReadableFile for PsReadableFromZip {
+    fn another(&self, path: &String) -> Box<dyn PsReadableFile> {
+        Box::new(PsReadableFromZip::new(self.zip_file.clone(), path.clone()))
+    }
+
     fn to_bytes(&self) -> anyhow::Result<Vec<u8>> {
         let zip_path = Path::new(&self.zip_file);
         let zip_file = File::open(zip_path) //
@@ -77,7 +75,6 @@ pub(crate) fn scan(s: &String) -> anyhow::Result<Vec<String>> {
     let mut zip_archive =
         ZipArchive::new(zip_file) //
             .with_context(|| format!("Unable to open zip file {:?}", zip_path))?;
-    let mut count = 0;
     for i in 0..zip_archive.len() {
         let file_res = zip_archive.by_index(i);
         let Some(file) = file_res.ok() else {
@@ -93,21 +90,6 @@ pub(crate) fn scan(s: &String) -> anyhow::Result<Vec<String>> {
         let file_name = p.to_str().unwrap();
         files.push(file_name.to_string());
     }
-    debug!("Counted {} files in zip {:?}", count, s);
+    debug!("Counted {} files in zip {:?}", files.len(), s);
     Ok(files)
-}
-
-pub(crate) fn analyze(file: &String, zip_file: &str, dry_run: &bool) -> anyhow::Result<PsFileInZip> {
-    debug!("Analyzing {:?}", file);
-    let media_from_zip = MediaFromZip::new(zip_file.to_string(), file.clone());
-    let media_file_info_res = media_file_info_from_readable(&media_from_zip);
-    let Ok(media_file) = media_file_info_res else {
-        debug!("File unsupported: {:?}", file);
-        return Err(anyhow!("Unsupported file format: {:?}", file));
-    };
-    debug!("file format detected {:?}", media_file.file_format);
-    Ok(PsFileInZip {
-        path: file.to_string().clone(),
-        file_format: media_file.file_format.clone(),
-    })
 }

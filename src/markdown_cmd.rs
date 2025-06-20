@@ -1,21 +1,20 @@
-use crate::media_file::{MediaFileInfo, media_file_info_from_readable};
-use crate::util::{checksum_file, checksum_string, MediaFromFileSystem};
+use crate::media::{MediaFileInfo, media_file_info_from_readable};
+use crate::util::{PsReadableFromFileSystem, checksum_file, checksum_string};
 use anyhow::Context;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
 use tracing::debug;
 
-pub fn main(input: &String, _: &Option<String>, debug: &bool, dry_run: &bool) -> anyhow::Result<()> {
-    println!("Inspecting: {}", input);
-    let media_file_readable = MediaFromFileSystem::new(input.clone());
-    let media_file_info_res = media_file_info_from_readable(&media_file_readable);
+pub fn main(input: &String) -> anyhow::Result<()> {
+    debug!("Inspecting: {}", input);
+    let media_file_readable = PsReadableFromFileSystem::new(input.clone());
+    let media_file_info_res = media_file_info_from_readable(&media_file_readable, &None);
     let Ok(media_file_info) = media_file_info_res else {
-        println!("Not a valid media file: {}", input);
+        debug!("Not a valid media file: {}", input);
         return Ok(());
     };
-    println!("Markdown:");
-    println!();
+    debug!("Markdown:");
     let mfm = mfm_from_media_file_info(&media_file_info);
     let s = assemble_markdown(&mfm, &"".to_string())?;
     println!("{}", s);

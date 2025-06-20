@@ -1,7 +1,7 @@
+use anyhow::Context;
 use std::fs::File;
 use std::io::Read;
 use std::path::Path;
-use anyhow::Context;
 use tracing::debug;
 
 pub(crate) fn checksum_file(path: &Path) -> anyhow::Result<String> {
@@ -9,8 +9,8 @@ pub(crate) fn checksum_file(path: &Path) -> anyhow::Result<String> {
     checksum_bytes(&bytes)
 }
 
-pub(crate) fn checksum_from_read(media_file_reader: &dyn MediaFileReadable) -> anyhow::Result<String> {
-    let bytes= media_file_reader.to_bytes()?;
+pub(crate) fn checksum_from_read(media_file_reader: &dyn PsReadableFile) -> anyhow::Result<String> {
+    let bytes = media_file_reader.to_bytes()?;
     checksum_bytes(&bytes)
 }
 
@@ -31,22 +31,29 @@ pub(crate) fn reader_from_path_string(input: &String) -> anyhow::Result<File> {
     Ok(file)
 }
 
-pub trait MediaFileReadable {
+pub trait PsReadableFile {
+    fn another(&self, path: &String) -> Box<dyn PsReadableFile>;
     fn to_bytes(&self) -> anyhow::Result<Vec<u8>>;
     /// grab the first `limit` bytes from the file, return empty vec if file is empty
     fn take(&self, limit: u64) -> anyhow::Result<Vec<u8>>;
     fn name(&self) -> String;
 }
 
-pub struct MediaFromFileSystem {
+pub struct PsReadableFromFileSystem {
     file: String,
 }
-impl MediaFromFileSystem {
+
+impl PsReadableFromFileSystem {
     pub fn new(file: String) -> Self {
-        MediaFromFileSystem { file }
+        PsReadableFromFileSystem { file }
     }
 }
-impl MediaFileReadable for MediaFromFileSystem {
+
+impl PsReadableFile for PsReadableFromFileSystem {
+    fn another(&self, path: &String) -> Box<dyn PsReadableFile> {
+        Box::new(PsReadableFromFileSystem::new(path.clone()))
+    }
+
     fn to_bytes(&self) -> anyhow::Result<Vec<u8>> {
         let path = Path::new(&self.file);
         let mut file = File::open(path) //

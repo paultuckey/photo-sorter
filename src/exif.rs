@@ -1,13 +1,12 @@
-use chrono::{DateTime, Datelike, NaiveDate, NaiveDateTime, NaiveTime, SecondsFormat, Timelike};
+use crate::file_type::AccurateFileType;
+use crate::util::PsReadableFile;
+use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, SecondsFormat};
 use exif::{Exif, In, Reader, Tag, Value};
 use std::collections::HashMap;
-use std::ffi::OsStr;
 use std::fs::File;
 use std::io::{BufReader, Cursor};
 use std::path::Path;
 use tracing::{debug, warn};
-use crate::media_file::PsFileFormat;
-use crate::util::{MediaFileReadable};
 
 #[derive(Debug, Clone)]
 pub(crate) struct ParsedExif {
@@ -17,27 +16,33 @@ pub(crate) struct ParsedExif {
     pub(crate) unique_id: Option<String>,
 }
 
-pub(crate) fn does_file_format_have_exif(file_format: &PsFileFormat) -> bool {
+pub(crate) fn does_file_format_have_exif(file_format: &AccurateFileType) -> bool {
     match file_format {
-        PsFileFormat::Jpg | PsFileFormat::Png | PsFileFormat::Heic => true,
+        AccurateFileType::Jpg | AccurateFileType::Png | AccurateFileType::Heic => true,
         _ => false,
     }
 }
 
-pub(crate) fn parse_exif(media_file_reader: &dyn MediaFileReadable, file_format: &PsFileFormat) -> Option<ParsedExif> {
+pub(crate) fn parse_exif(
+    media_file_reader: &dyn PsReadableFile,
+    file_format: &AccurateFileType,
+) -> Option<ParsedExif> {
     if !does_file_format_have_exif(file_format) {
         return None;
     }
     let bytes_res = media_file_reader.to_bytes();
     let Ok(file_reader) = bytes_res else {
-        warn!("Could not read file: {}", media_file_reader.name());
+        warn!("Could not read file for exif: {}", media_file_reader.name());
         return None;
     };
     let mut buffer = BufReader::new(Cursor::new(file_reader));
     let exif_reader = Reader::new();
     let exif_r = exif_reader.read_from_container(&mut buffer);
     let Ok(exif) = exif_r else {
-        warn!("Could not read EXIF data from file: {}", media_file_reader.name());
+        warn!(
+            "Could not read EXIF data from file: {}",
+            media_file_reader.name()
+        );
         return None;
     };
     let unique_id = parse_tag(&exif, Tag::ImageUniqueID);
@@ -54,7 +59,8 @@ pub(crate) fn parse_exif(media_file_reader: &dyn MediaFileReadable, file_format:
 
 pub(crate) fn best_guess_taken_dt(pe: &Option<ParsedExif>) -> Option<String> {
     let Some(pe) = pe else { return None };
-    pe.datetime_original.clone()
+    pe.datetime_original
+        .clone()
         .or(pe.datetime.clone())
         .or(pe.gps_date.clone())
 }
@@ -107,7 +113,8 @@ fn parse_exif_datetime(d: &Option<String>) -> Option<String> {
         }
     };
     let s2_r = s.get(1);
-    let Some(s2) = s2_r else { // no time
+    let Some(s2) = s2_r else {
+        // no time
         let ndt = NaiveDateTime::new(nd, NaiveTime::default());
         let utc_dt = ndt.and_utc();
         return Some(utc_dt.to_rfc3339_opts(SecondsFormat::Secs, true));
@@ -143,60 +150,12 @@ fn parse_exif_date(d: &Option<String>) -> Option<String> {
             return None;
         }
     };
-    Some(format!("{:0>2}-{:0>2}-{:0>2}", nd.year(), nd.month(), nd.day()))
-}
-
-pub(crate) fn is_file_media(path: &String) -> bool {
-    let p = Path::new(path);
-    let ext = p.extension()
-        .and_then(OsStr::to_str);
-    let Some(ext) = ext else {
-        debug!("No extension");
-        return false;
-    };
-    // todo: not supported gif
-    let file_extensions_with_efix = ["jpg", "jpeg", "heic", "png", "tiff", "tif", "webp"];
-    file_extensions_with_efix.contains(&ext.to_string().to_ascii_lowercase().as_str())
-}
-
-/// `yyyy/mm/dd-hh-mm-ss[-i].ext`
-/// OR `undated/checksum.ext`
-pub(crate) fn get_desired_path(
-    checksum: &String,
-    exif_datetime: &Option<String>,
-    ext: &String,
-    de_dupe_int: u16,
-) -> String {
-    let date_dir;
-    let name;
-    if let Some(dt_s) = exif_datetime {
-        let dt = DateTime::parse_from_rfc3339(dt_s);
-        match dt {
-            Ok(dt) => {
-                date_dir = format!("{}/{:0>2}", dt.year(), dt.month());
-                name = format!(
-                    "{:0>2}-{:0>2}{:0>2}{:0>2}",
-                    dt.day(),
-                    dt.hour(),
-                    dt.minute(),
-                    dt.second()
-                );
-            }
-            Err(e) => {
-                warn!("Could not parse EXIF datetime: {:?}", e);
-                date_dir = "undated".to_string();
-                name = checksum.to_owned();
-            }
-        }
-    } else {
-        date_dir = "undated".to_string();
-        name = checksum.to_owned();
-    }
-    let mut de_dupe_str = "".to_string();
-    if de_dupe_int > 0 {
-        de_dupe_str = format!("-{}", de_dupe_int);
-    }
-    format!("{date_dir}/{}{}.{}", name, de_dupe_str, ext)
+    Some(format!(
+        "{:0>2}-{:0>2}-{:0>2}",
+        nd.year(),
+        nd.month(),
+        nd.day()
+    ))
 }
 
 #[tokio::test()]
@@ -224,9 +183,9 @@ async fn test_d1() {
 
 #[tokio::test()]
 async fn test_parse_exif_created() {
-    use crate::util::{MediaFromFileSystem};
-    let m = MediaFromFileSystem::new("test/Canon_40D.jpg".to_string());
-    let p = parse_exif(&m, &PsFileFormat::Jpg).unwrap();
+    use crate::util::PsReadableFromFileSystem;
+    let m = PsReadableFromFileSystem::new("test/Canon_40D.jpg".to_string());
+    let p = parse_exif(&m, &AccurateFileType::Jpg).unwrap();
     assert_eq!(
         p.datetime_original,
         Some("2008-05-30T15:56:01Z".to_string())

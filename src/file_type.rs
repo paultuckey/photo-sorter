@@ -1,0 +1,158 @@
+use crate::extra_info::detect_extra_info;
+use crate::util::PsReadableFile;
+use crate::zip_reader::PsReadableFromZip;
+use tracing::debug;
+use tracing::log::warn;
+
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) enum QuickFileType {
+    Media,
+    Album,
+    Unknown,
+}
+
+pub(crate) fn find_quick_file_type(file_name: &str) -> QuickFileType {
+    let ext_s = file_name.rsplit('.').next().unwrap_or("").to_lowercase();
+    let ext = ext_s.as_str();
+    match ext {
+        "jpg" | "jpeg" | "png" | "gif" | "heic" | "mp4" => QuickFileType::Media,
+        "csv" => QuickFileType::Album,
+        _ => QuickFileType::Unknown,
+    }
+}
+
+pub(crate) struct QuickScannedFile {
+    pub(crate) name: String,
+    pub(crate) quick_file_type: QuickFileType,
+    pub(crate) supplemental_json_file: Option<String>,
+}
+
+pub(crate) fn quick_file_scan(files: Vec<String>) -> Vec<QuickScannedFile> {
+    let mut scanned_files = vec![];
+    for file in &files {
+        let qft = find_quick_file_type(file);
+        match qft {
+            QuickFileType::Media => {
+                let scanned_file = QuickScannedFile {
+                    name: file.clone(),
+                    quick_file_type: qft,
+                    supplemental_json_file: detect_extra_info(&file, &files),
+                };
+                scanned_files.push(scanned_file);
+            }
+            QuickFileType::Album => {
+                let scanned_file = QuickScannedFile {
+                    name: file.clone(),
+                    quick_file_type: qft,
+                    supplemental_json_file: None,
+                };
+                scanned_files.push(scanned_file);
+            }
+            QuickFileType::Unknown => {
+                continue;
+            }
+        }
+    }
+    scanned_files
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) enum AccurateFileType {
+    Jpg,
+    Png,
+    Heic,
+    Gif,
+    Mp4,
+    Json,
+    Csv,
+    Unsupported,
+}
+
+pub(crate) fn file_ext_from_file_type(ff: &AccurateFileType) -> String {
+    match ff {
+        AccurateFileType::Jpg => "jpg".to_string(),
+        AccurateFileType::Gif => "gif".to_string(),
+        AccurateFileType::Png => "png".to_string(),
+        AccurateFileType::Heic => "heic".to_string(),
+        AccurateFileType::Mp4 => "mp4".to_string(),
+        AccurateFileType::Unsupported => "bin".to_string(),
+        AccurateFileType::Json => "json".to_string(),
+        AccurateFileType::Csv => "csv".to_string(),
+    }
+}
+
+pub(crate) fn file_type_from_content_type(ct: &str) -> AccurateFileType {
+    match ct {
+        "image/jpeg" => AccurateFileType::Jpg,
+        "image/gif" => AccurateFileType::Gif,
+        "image/png" => AccurateFileType::Png,
+        "image/heic" => AccurateFileType::Heic,
+        "video/mp4" => AccurateFileType::Mp4,
+        "application/octet-stream" => AccurateFileType::Unsupported,
+        "application/json" => AccurateFileType::Unsupported,
+        "text/csv" => AccurateFileType::Csv,
+        _ => AccurateFileType::Unsupported,
+    }
+}
+
+pub(crate) fn determine_file_type(media_file_readable: &dyn PsReadableFile) -> AccurateFileType {
+    // take json files at face value
+    if media_file_readable.name().to_lowercase().ends_with(".json") {
+        let mt = AccurateFileType::Json;
+        debug!("mime type:{:?} file:{:?} ", media_file_readable.name(), mt);
+        return mt;
+    }
+    // Limit buffer size same as that inside `file_format` crate
+    let buffer_res = media_file_readable.take(36_870);
+    let Ok(buffer) = buffer_res else {
+        warn!("cannot read file  file:{:?}", media_file_readable.name());
+        return AccurateFileType::Unsupported;
+    };
+    if buffer.is_empty() {
+        warn!("file is empty file:{:?}", media_file_readable.name());
+        return AccurateFileType::Unsupported;
+    };
+    let fmt = file_format::FileFormat::from_bytes(buffer);
+    let mt = fmt.media_type();
+    if mt == "application/octet-stream" {
+        debug!(
+            "can not guess mime type file:{:?}",
+            media_file_readable.name()
+        );
+        return AccurateFileType::Unsupported;
+    }
+    if mt == "application/x-empty" {
+        debug!(
+            "file appears to be empty file:{:?}",
+            media_file_readable.name()
+        );
+        return AccurateFileType::Unsupported;
+    }
+    debug!("mime type:{:?} file:{:?} ", media_file_readable.name(), mt);
+    file_type_from_content_type(mt)
+}
+
+#[tokio::test()]
+async fn test_quick_file_type() {
+    crate::test_util::setup_log().await;
+    assert_eq!(find_quick_file_type("test/test1.jpg"), QuickFileType::Media);
+    assert_eq!(find_quick_file_type("test/test1.mp4"), QuickFileType::Media);
+    assert_eq!(
+        find_quick_file_type("test/test1.abc"),
+        QuickFileType::Unknown
+    );
+    assert_eq!(find_quick_file_type("test/test1.csv"), QuickFileType::Album);
+    assert_eq!(find_quick_file_type("test/tes"), QuickFileType::Unknown);
+    assert_eq!(find_quick_file_type("test/te.s.jpg"), QuickFileType::Media);
+}
+
+#[tokio::test()]
+async fn test_accurate_file_type() {
+    crate::test_util::setup_log().await;
+    use crate::util::PsReadableFromFileSystem;
+    let m = PsReadableFromFileSystem::new("test/Canon_40D.jpg".to_string());
+    assert_eq!(determine_file_type(&m), AccurateFileType::Jpg);
+
+    let bad = PsReadableFromFileSystem::new("test/missing".to_string());
+    assert_eq!(determine_file_type(&bad), AccurateFileType::Unsupported);
+}
