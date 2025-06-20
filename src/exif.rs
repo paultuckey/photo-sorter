@@ -6,6 +6,7 @@ use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufReader, Cursor};
 use std::path::Path;
+use anyhow::Context;
 use tracing::{debug, warn};
 
 #[derive(Debug, Clone)]
@@ -161,24 +162,24 @@ fn parse_exif_date(d: &Option<String>) -> Option<String> {
 #[tokio::test()]
 async fn test_dt() {
     crate::test_util::setup_log().await;
-    let dt = parse_exif_datetime(&Some("2017:08:19 10:21:59".to_string())).unwrap();
-    assert_eq!(dt, "2017-08-19T10:21:59Z");
-    let dt = parse_exif_datetime(&Some("2017:08:19".to_string())).unwrap();
-    assert_eq!(dt, "2017-08-19T00:00:00Z");
+    let dt = parse_exif_datetime(&Some("2017:08:19 10:21:59".to_string()));
+    assert_eq!(dt, Some("2017-08-19T10:21:59Z".to_string()));
+    let dt = parse_exif_datetime(&Some("2017:08:19".to_string()));
+    assert_eq!(dt, Some("2017-08-19T00:00:00Z".to_string()));
 }
 
 #[tokio::test()]
 async fn test_dt2() {
     crate::test_util::setup_log().await;
-    let dt = parse_exif_datetime(&Some("2019:04:04 18:04:98".to_string())).unwrap();
-    assert_eq!(dt, "2019-04-04T18:05:38Z");
+    let dt = parse_exif_datetime(&Some("2019:04:04 18:04:98".to_string()));
+    assert_eq!(dt, Some("2019-04-04T18:05:38Z".to_string()));
 }
 
 #[tokio::test()]
 async fn test_d1() {
     crate::test_util::setup_log().await;
-    let d = parse_exif_date(&Some("2019:04:04".to_string())).unwrap();
-    assert_eq!(d, "2019-04-04");
+    let d = parse_exif_date(&Some("2019:04:04".to_string()));
+    assert_eq!(d, Some("2019-04-04".to_string()));
 }
 
 #[tokio::test()]
@@ -195,7 +196,8 @@ async fn test_parse_exif_created() {
 #[tokio::test()]
 async fn test_parse_exif_all_tags() {
     crate::test_util::setup_log().await;
-    let p = Path::new("test/test1.jpg").to_path_buf();
+    let p = Path::new("test/Canon_40D.jpg").to_path_buf();
     let t = all_tags(&p).unwrap();
-    assert_eq!(t.get("GPS date"), Some(&"2017:08:18".to_string()));
+    assert_eq!(t.len(), 10);
+    assert_eq!(t.get("Interoperability identification"), Some(&"R98".to_string()));
 }

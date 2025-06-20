@@ -12,6 +12,7 @@ based on their EXIF metadata and any supplemental info.
   - Sync photos/videos from input into existing directories 
     - without clobbering if same checksum ignore
     - only updating frontmatter in existing markdown files
+    - additive only nothing will be deleted or overwritten
 
 yyyy/mm/dd/hhmm-ss[-i].ext
 yyyy/mm/dd/hhmm-ss[-i].md
@@ -70,7 +71,7 @@ cargo run -- \
 ## Development
 
 - Don't use lifetimes
-- Don't use `unsafe` or `unwrap()`
+- Don't use `unsafe`, `expect()` or `unwrap()`
 - Use `.clone()` to avoid hard things in Rust.
 
 ```shell

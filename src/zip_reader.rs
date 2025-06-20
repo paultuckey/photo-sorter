@@ -1,4 +1,3 @@
-use crate::media::media_file_info_from_readable;
 use crate::util::{PsContainer, PsReadable};
 use anyhow::{Context, anyhow};
 use std::fs::File;
@@ -9,26 +8,25 @@ use zip::ZipArchive;
 
 pub struct PsZipContainer {
     zip_file: String,
+    index: Vec<String>,
 }
 
 impl PsZipContainer {
     pub(crate) fn new(zip_file: String) -> Self {
-        PsZipContainer { zip_file }
+        let mut c = PsZipContainer { zip_file, index: vec![] };
+        c.index();
+        c
     }
-}
-
-impl PsContainer for PsZipContainer {
-    fn scan(&self) -> Vec<Box<dyn PsReadable>> {
-        let mut files = vec![];
+    fn index(&mut self) {
         let zip_path = Path::new(&self.zip_file);
         let Ok(zip_file) = File::open(zip_path) else {
             error!("Unable to open file {:?}", zip_path);
-            return files;
+            return;
         };
         let zip_archive = ZipArchive::new(zip_file);
         let Ok(mut zip_archive) = zip_archive else {
             error!("Unable to open zip file {:?}", zip_path);
-            return files;
+            return;
         };
         for i in 0..zip_archive.len() {
             let file_res = zip_archive.by_index(i);
@@ -42,18 +40,25 @@ impl PsContainer for PsZipContainer {
                 continue;
             };
             let p = enclosed_name.as_path();
-            let file_name = p.to_str().unwrap();
-            files.push(Box::new(PsZipReadable::new(
-                self.zip_file.clone(),
-                file_name.to_string(),
-            )));
+            let file_name_o = p.to_str();
+            let Some(file_name) = file_name_o else {
+                continue;
+            };
+            self.index.push(file_name.to_string());
         }
-        debug!("Counted {} files in zip {:?}", files.len(), self.zip_file);
-        files
+        debug!("Counted {} files in zip {:?}", self.index.len(), self.zip_file);
     }
+}
 
+impl PsContainer for PsZipContainer {
+    fn scan(&self) -> Vec<String> {
+        self.index.clone()
+    }
     fn readable(&self, path: &String) -> Box<dyn PsReadable> {
         Box::new(PsZipReadable::new(self.zip_file.clone(), path.clone()))
+    }
+    fn exists(&self, path: &String) -> bool {
+        self.index.contains(path)
     }
 }
 
@@ -68,23 +73,6 @@ impl PsZipReadable {
     }
 }
 impl PsReadable for PsZipReadable {
-    fn exists(&self) -> bool {
-        let zip_path = Path::new(&self.zip_file);
-        let Ok(zip_file) = File::open(zip_path) else {
-            warn!("Unable to open zip file {:?}", zip_path);
-            return false;
-        };
-        let Ok(mut zip_archive) = ZipArchive::new(zip_file) else {
-            warn!("Unable to open zip file {:?}", zip_path);
-            return false;
-        };
-        let file_res = zip_archive.by_name(&self.file.clone());
-        let Some(file) = file_res.ok() else {
-            return false;
-        };
-        file.is_file()
-    }
-
     fn to_bytes(&self) -> anyhow::Result<Vec<u8>> {
         let zip_path = Path::new(&self.zip_file);
         let zip_file = File::open(zip_path) //

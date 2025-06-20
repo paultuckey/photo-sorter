@@ -10,7 +10,7 @@ pub(crate) fn detect_extra_info(path: &String, container: &Box<dyn PsContainer>)
     ];
     for supp_json_ext in google_supp_json_exts {
         let supp_info_path = format!("{}{}", &path, supp_json_ext);
-        if container.readable(&supp_info_path).exists() {
+        if container.exists(&supp_info_path) {
             return Some(supp_info_path);
         }
     }

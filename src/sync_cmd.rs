@@ -12,6 +12,7 @@ use std::sync::mpsc;
 use std::sync::mpsc::Sender;
 use std::{fs, thread, time::Duration};
 use tracing::debug;
+use crate::album::{detect_album};
 use crate::markdown_cmd::{assemble_markdown, mfm_from_media_file_info};
 
 struct State {
@@ -74,20 +75,15 @@ async fn start(
 
     let quick_scanned_files = quick_file_scan(&container, files);
 
-    let media_len = quick_scanned_files
+    let quick_media_files = quick_scanned_files
         .iter()
         .filter(|m| m.quick_file_type == QuickFileType::Media)
-        .count() as u32;
-    tx.send(ProgressEvent::MediaFilesCalculated(media_len))?;
+        .collect::<Vec<&QuickScannedFile>>();
+    tx.send(ProgressEvent::MediaFilesCalculated(quick_media_files.len() as u32))?;
 
-    // scan zip and collect list of files with right extensions and file size
-    // then find any extra files for meta info
-    // find albums (based on paths)
-    // and then analyze each file
-
-    let num_threads = 10; // should be related to number of cored on underlying machine
+    let num_threads = 50; // should be related to number of cores on underlying machine
     let fetches = futures::stream::iter(
-        quick_scanned_files //
+        quick_media_files //
             .iter()
             .map(|quick_scanned_file| {
                 let tx2 = tx.clone();
@@ -112,16 +108,21 @@ async fn start(
     fetches.await;
 
     tx.send(ProgressEvent::MediaDone())?;
-
     tokio::time::sleep(Duration::from_millis(1000)).await;
 
-    let total_albums = 5;
-    tx.send(ProgressEvent::AlbumsCalculated(total_albums))?;
+    let quick_album_files = quick_scanned_files
+        .iter()
+        .filter(|m| m.quick_file_type == QuickFileType::Album)
+        .collect::<Vec<&QuickScannedFile>>();
+    tx.send(ProgressEvent::AlbumsCalculated(quick_album_files.len() as u32))?;
     tokio::time::sleep(Duration::from_millis(1000)).await;
 
-    for _ in 0..total_albums {
-        tx.send(ProgressEvent::AlbumFileDone())?;
-        tokio::time::sleep(Duration::from_millis(1)).await;
+    for quick_album in quick_album_files {
+        let album_o = detect_album(&container, quick_album);
+        let Some(album) = album_o else {
+            continue;
+        };
+        tx.send(ProgressEvent::AlbumFileDone(album.name))?;
     }
     tx.send(ProgressEvent::AlbumsDone())?;
     tokio::time::sleep(Duration::from_millis(1000)).await;
@@ -130,6 +131,7 @@ async fn start(
     tokio::time::sleep(Duration::from_millis(1000)).await;
     Ok(())
 }
+
 
 pub(crate) fn analyze(
     container: &Box<dyn PsContainer>,
@@ -190,47 +192,47 @@ pub(crate) fn analyze(
 fn handle(term: &Term, e: ProgressEvent, debug: bool) -> anyhow::Result<()> {
     match e {
         ProgressEvent::Start(s) => {
-            term.write_line("Hello World!")
+            term.write_line(&format!("Input {}", s))
                 .expect("Failed to write to terminal");
-            if !debug {
+            //if !debug {
                 UI.init_spinner.set_message("Validating...");
                 UI.init_spinner
                     .enable_steady_tick(Duration::from_millis(100));
-            }
-            if !debug {
+            //}
+            //if !debug {
                 UI.init_spinner.finish_and_clear();
-            }
+            //}
             term.write_line(&format!("Validation done {}", s))?;
 
             if debug {
                 term.write_line("Finding photos")?;
-            } else {
+            } //else {
                 UI.indexing_spinner.set_message("Finding photos...");
                 UI.indexing_spinner
                     .enable_steady_tick(Duration::from_millis(100));
-            }
+            //}
         }
         ProgressEvent::MediaFilesCalculated(total_files) => {
-            if !debug {
+            //if !debug {
                 UI.indexing_spinner.finish_and_clear();
-            }
+            //}
 
             term.write_line(&format!("Total photos {}", total_files))?;
-            if !debug {
+            //if !debug {
                 UI.media_progress.set_length(total_files as u64);
-            }
+            //}
         }
         ProgressEvent::MediaFileDone(f) => {
             if debug {
                 term.write_line(&format!("  {}", f))?;
-            } else {
+            }// else {
                 UI.media_progress.inc(1);
-            }
+            //}
         }
         ProgressEvent::MediaDone() => {
-            if !debug {
+            //if !debug {
                 UI.media_progress.finish_and_clear();
-            }
+            //}
         }
         ProgressEvent::AlbumsCalculated(i) => {
             term.write_line(&format!("Total albums {}", i))?;
@@ -238,7 +240,7 @@ fn handle(term: &Term, e: ProgressEvent, debug: bool) -> anyhow::Result<()> {
                 UI.albums_progress.set_length(i as u64);
             }
         }
-        ProgressEvent::AlbumFileDone() => {
+        ProgressEvent::AlbumFileDone(s) => {
             if !debug {
                 UI.albums_progress.inc(1);
             }
@@ -261,7 +263,7 @@ enum ProgressEvent {
     MediaFileDone(String),
     MediaDone(),
     AlbumsCalculated(u32),
-    AlbumFileDone(),
+    AlbumFileDone(String),
     AlbumsDone(),
     AllDone(),
 }

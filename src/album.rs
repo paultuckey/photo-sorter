@@ -1,22 +1,21 @@
-use crate::upload::FsFile;
+use crate::file_type::QuickScannedFile;
+use crate::util::{PsContainer, PsReadable};
 use std::collections::{HashMap, HashSet};
-use std::ffi::OsStr;
-use std::path::Path;
+use std::io;
 use tracing::{debug, info, warn};
 
+///
 /// Albums do not relate to a file they are in effect a back reference against the md file.
 /// We also need to store the order.
-/// This is done via a markdown file.   
-pub(crate) async fn detect_albums(maybe_album_files: Vec<FsFile>) -> anyhow::Result<Vec<Album>> {
-    let mut albums: Vec<Album> = vec![];
-    for ff in maybe_album_files {
-        let a = parse_csv(&ff);
-        let Some(album) = a else {
-            continue;
-        };
-        albums.push(album);
-    }
-    Ok(albums)
+/// This is done via a markdown file.
+///
+pub(crate) fn detect_album(container: &Box<dyn PsContainer>, qsf: &QuickScannedFile) -> Option<Album> {
+    let reader = container.readable(&qsf.name);
+    let a = parse_csv(&reader);
+    let Some(album) = a else {
+        return None;
+    };
+    Some(album)
 }
 
 pub(crate) fn de_duplicate_albums(albums: &Vec<Album>) -> Vec<Album> {
@@ -51,16 +50,21 @@ pub(crate) fn de_duplicate_albums(albums: &Vec<Album>) -> Vec<Album> {
 
 pub(crate) struct Album {
     path: String,
-    name: String,
+    pub(crate) name: String,
     files: Vec<String>,
 }
 
-fn parse_csv(ff: &FsFile) -> Option<Album> {
-    let p = Path::new(&ff.path);
-    let rdr = csv::Reader::from_path(p);
-    let Ok(mut rdr) = rdr else {
+fn parse_csv(album_file_readable: &Box<dyn PsReadable>) -> Option<Album> {
+    let bytes_o = &album_file_readable.to_bytes();
+    let Ok(bytes) = bytes_o else {
+        debug!(
+            "Unable to read album file: {:?}",
+            &album_file_readable.name()
+        );
         return None;
     };
+    let cursor = io::Cursor::new(bytes);
+    let mut rdr = csv::Reader::from_reader(cursor);
     let Ok(s) = rdr.headers() else {
         debug!("No headers");
         return None;
@@ -98,23 +102,35 @@ fn parse_csv(ff: &FsFile) -> Option<Album> {
         files.push(col0.to_string());
     }
     if files.is_empty() {
-        debug!("Not an album: {:?}", &ff.path);
+        debug!("Not an album: {:?}", &album_file_readable.name());
         return None;
     }
-    let name = p
-        .file_stem()
-        .and_then(OsStr::to_str)
-        .map(|name| name.to_string())
-        .unwrap_or(ff.path.clone());
+    let name = album_file_readable.name().clone();
+    // find index of last dot and get all chars before that
+    let name_without_ext;
+    let dot_idx = name.rfind('.').map_or(0, |idx| idx);
+    if dot_idx > 0 {
+        name_without_ext = name[..dot_idx].to_string();
+        if name_without_ext.is_empty() {
+            debug!("Album file has no name: {:?}", &album_file_readable.name());
+            return None;
+        }
+    } else {
+        name_without_ext = name.clone();
+        if name_without_ext.is_empty() {
+            debug!("Album file has no name: {:?}", &album_file_readable.name());
+            return None;
+        }
+    }
     info!(
         "Found album: {:?} with {:?} entries at {:?}",
-        name,
+        name_without_ext,
         files.len(),
-        &ff.path
+        &album_file_readable.name()
     );
     Some(Album {
-        name,
-        path: ff.path.clone(),
+        name: name_without_ext.clone(),
+        path: album_file_readable.name().clone(),
         files,
     })
 }
