@@ -1,4 +1,3 @@
-use crate::media::is_file_media;
 use crate::upload::FsFile;
 use std::collections::{HashMap, HashSet};
 use std::ffi::OsStr;
@@ -92,10 +91,10 @@ fn parse_csv(ff: &FsFile) -> Option<Album> {
         let Some(col0) = record.get(0) else {
             continue;
         };
-        if !is_file_media(&col0.to_string()) {
-            debug!("Non media file: {:?}", col0);
-            continue;
-        }
+        //if !is_file_media(&col0.to_string()) {
+        //    debug!("Non media file: {:?}", col0);
+        //    continue;
+        //}
         files.push(col0.to_string());
     }
     if files.is_empty() {

@@ -1,8 +1,7 @@
 use crate::file_type::{QuickFileType, QuickScannedFile, quick_file_scan};
 use crate::media::{MediaFileInfo, media_file_info_from_readable};
-use crate::util::PsReadableFile;
-use crate::zip_reader;
-use crate::zip_reader::PsReadableFromZip;
+use crate::util::{PsContainer, PsDirectoryContainer};
+use crate::zip_reader::{PsZipContainer};
 use anyhow::anyhow;
 use console::Term;
 use futures::StreamExt;
@@ -13,6 +12,7 @@ use std::sync::mpsc;
 use std::sync::mpsc::Sender;
 use std::{fs, thread, time::Duration};
 use tracing::debug;
+use crate::markdown_cmd::{assemble_markdown, mfm_from_media_file_info};
 
 struct State {
     init_spinner: ProgressBar,
@@ -31,7 +31,7 @@ static UI: Lazy<State> = Lazy::new(|| State {
 pub(crate) async fn main(
     debug: bool,
     dry_run: bool,
-    input: &Option<String>,
+    input: &String,
     output_directory: &Option<String>,
     skip_markdown: bool,
 ) -> anyhow::Result<()> {
@@ -53,18 +53,26 @@ pub(crate) async fn main(
 async fn start(
     tx: Sender<ProgressEvent>,
     dry_run: bool,
-    input: &Option<String>,
+    input: &String,
     output_directory: &Option<String>,
     skip_markdown: bool,
 ) -> anyhow::Result<()> {
-    let input_str = input.clone().unwrap();
-    tx.send(ProgressEvent::Start(input_str.clone()))?;
+    tx.send(ProgressEvent::Start(input.clone()))?;
+    let path = Path::new(input);
+    if !path.exists() {
+        return Err(anyhow!("Input path does not exist: {}", input));
+    }
+    let container : Box<dyn PsContainer>;
+    if path.is_dir() {
+        container = Box::new(PsDirectoryContainer::new(input.clone()));
+    } else {
+        container = Box::new(PsZipContainer::new(input.clone()));
+    }
+
+    let files = container.scan();
     tokio::time::sleep(Duration::from_millis(500)).await;
 
-    let files = zip_reader::scan(&input_str)?;
-    tokio::time::sleep(Duration::from_millis(500)).await;
-
-    let quick_scanned_files = quick_file_scan(files);
+    let quick_scanned_files = quick_file_scan(&container, files);
 
     let media_len = quick_scanned_files
         .iter()
@@ -82,12 +90,11 @@ async fn start(
         quick_scanned_files //
             .iter()
             .map(|quick_scanned_file| {
-                let input_str2 = input_str.clone();
                 let tx2 = tx.clone();
+                let container2 = &container;
                 async move {
-                    let root = PsReadableFromZip::new(input_str2, "".to_string());
                     let scanned_file = analyze(
-                        &root,
+                        container2,
                         quick_scanned_file,
                         dry_run,
                         output_directory,
@@ -125,7 +132,7 @@ async fn start(
 }
 
 pub(crate) fn analyze(
-    root_readable: &dyn PsReadableFile,
+    container: &Box<dyn PsContainer>,
     qsf: &QuickScannedFile,
     dry_run: bool,
     output_directory: &Option<String>,
@@ -134,10 +141,10 @@ pub(crate) fn analyze(
     let file = &qsf.name;
     debug!("Analyzing {:?}", file);
     let extra_info_path = qsf.supplemental_json_file.clone();
-    let f_box = root_readable.another(&file.clone());
+    let f_box = container.readable(&file.clone());
     let f = f_box.as_ref();
 
-    let media_file_info_res = media_file_info_from_readable(f, &extra_info_path);
+    let media_file_info_res = media_file_info_from_readable(container, f, &extra_info_path);
     let Ok(media_file) = media_file_info_res else {
         debug!("File type unsupported: {:?}", file);
         return Err(anyhow!("Unsupported file type: {:?}", file));
@@ -146,23 +153,32 @@ pub(crate) fn analyze(
     if let Some(output_dir) = output_directory {
         if let Some(d) = media_file.desired_media_path.clone() {
             let output_path = Path::new(output_dir).join(&d);
-            // todo: check if output_path exists, if so, use checksum
+            if output_path.exists() {
+                debug!("Output path exists, need to check checksum {:?}", output_path);
+                // todo: check if output_path exists, if so, use checksum
+            }
             if dry_run {
                 debug!("Would create media file at {:?}", output_path);
             } else {
                 // todo fs::create_dir_all(output_path.parent().unwrap())?;
-                // fs::write(&output_path, f.to_bytes()?)?;
+                fs::write(&output_path, f.to_bytes()?)?;
                 debug!("Created file at {:?}", output_path);
             }
         }
         if !skip_markdown {
             if let Some(m) = media_file.desired_markdown_path.clone() {
                 let output_path = Path::new(output_dir).join(&m);
+                if output_path.exists() {
+                    debug!("Markdown file already exists at {:?}", output_path);
+                    // todo: grab existing content and discard frontmatter
+                }
+                let mfm = mfm_from_media_file_info(&media_file);
+                let s = assemble_markdown(&mfm, &"".to_string())?;
                 if dry_run {
                     debug!("Would create markdown file at {:?}", output_path);
                 } else {
-                    // todo fs::create_dir_all(output_path.parent().unwrap())?;
-                    // fs::write(&output_path, mfm_to_string(&media_file))?;
+                    fs::create_dir_all(output_path.parent().unwrap())?;
+                    fs::write(&output_path, s)?;
                     debug!("Created markdown file at {:?}", output_path);
                 }
             }

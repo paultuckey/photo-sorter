@@ -1,6 +1,6 @@
 use crate::exif::{ParsedExif, best_guess_taken_dt, parse_exif};
 use crate::file_type::{AccurateFileType, determine_file_type, file_ext_from_file_type};
-use crate::util::{PsReadableFile, checksum_from_read};
+use crate::util::{PsReadable, checksum_from_read, PsContainer};
 use anyhow::anyhow;
 use chrono::{DateTime, Datelike, Timelike};
 use std::ffi::OsStr;
@@ -19,7 +19,8 @@ pub(crate) struct MediaFileInfo {
 }
 
 pub(crate) fn media_file_info_from_readable(
-    reader: &dyn PsReadableFile,
+    container: &Box<dyn PsContainer>,
+    reader: &dyn PsReadable,
     extra_info_path: &Option<String>,
 ) -> anyhow::Result<MediaFileInfo> {
     let input = reader.name();
@@ -52,7 +53,7 @@ pub(crate) fn media_file_info_from_readable(
     }
     let mut extra_info = None;
     if let Some(extra_info_path) = extra_info_path {
-        let c = reader.another(extra_info_path);
+        let c = container.readable(extra_info_path);
         let bytes_res = c.to_bytes();
         if let Ok(bytes) = bytes_res {
             debug!(
@@ -79,18 +80,6 @@ pub(crate) fn media_file_info_from_readable(
         extra_info,
     };
     Ok(media_file_info)
-}
-
-pub(crate) fn is_file_media(path: &String) -> bool {
-    let p = Path::new(path);
-    let ext = p.extension().and_then(OsStr::to_str);
-    let Some(ext) = ext else {
-        debug!("No extension");
-        return false;
-    };
-    // todo: not supported gif
-    let file_extensions_with_efix = ["jpg", "jpeg", "heic", "png", "tiff", "tif", "webp"];
-    file_extensions_with_efix.contains(&ext.to_string().to_ascii_lowercase().as_str())
 }
 
 pub(crate) fn get_desired_markdown_path(desired_media_path: Option<String>) -> Option<String> {

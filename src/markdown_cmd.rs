@@ -1,5 +1,7 @@
 use crate::media::{MediaFileInfo, media_file_info_from_readable};
-use crate::util::{PsReadableFromFileSystem, checksum_file, checksum_string};
+use crate::util::{
+    PsContainer, PsDirectoryContainer, PsDirectoryReadable, checksum_file, checksum_string,
+};
 use anyhow::Context;
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -8,8 +10,10 @@ use tracing::debug;
 
 pub fn main(input: &String) -> anyhow::Result<()> {
     debug!("Inspecting: {}", input);
-    let media_file_readable = PsReadableFromFileSystem::new(input.clone());
-    let media_file_info_res = media_file_info_from_readable(&media_file_readable, &None);
+    let container: Box<dyn PsContainer> = Box::new(PsDirectoryContainer::new("".to_string()));
+    let media_file_readable = PsDirectoryReadable::new(input.clone());
+    let media_file_info_res =
+        media_file_info_from_readable(&container, &media_file_readable, &None);
     let Ok(media_file_info) = media_file_info_res else {
         debug!("Not a valid media file: {}", input);
         return Ok(());
@@ -21,7 +25,7 @@ pub fn main(input: &String) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn mfm_from_media_file_info(media_file_info: &MediaFileInfo) -> MediaFrontMatter {
+pub(crate) fn mfm_from_media_file_info(media_file_info: &MediaFileInfo) -> MediaFrontMatter {
     let mut mfm = MediaFrontMatter {
         path: Some(media_file_info.original_path.clone()),
         datetime_original: None,
@@ -78,7 +82,7 @@ async fn save_markdown(
 
 #[derive(Serialize, Deserialize, PartialEq, Debug)]
 #[serde(rename_all(deserialize = "kebab-case", serialize = "kebab-case"))]
-struct MediaFrontMatter {
+pub(crate) struct MediaFrontMatter {
     pub(crate) path: Option<String>,
     pub(crate) datetime_original: Option<String>,
     pub(crate) datetime: Option<String>,
@@ -153,7 +157,10 @@ fn split_frontmatter(file_contents: &str) -> anyhow::Result<(String, String)> {
     Ok((frontmatter, content))
 }
 
-fn assemble_markdown(mfm: &MediaFrontMatter, markdown_content: &String) -> anyhow::Result<String> {
+pub(crate) fn assemble_markdown(
+    mfm: &MediaFrontMatter,
+    markdown_content: &String,
+) -> anyhow::Result<String> {
     let mut s = String::new();
     s.push_str("---\n");
     s.push_str(&generate_yaml(mfm)?);

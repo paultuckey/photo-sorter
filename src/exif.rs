@@ -1,5 +1,5 @@
 use crate::file_type::AccurateFileType;
-use crate::util::PsReadableFile;
+use crate::util::PsReadable;
 use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, SecondsFormat};
 use exif::{Exif, In, Reader, Tag, Value};
 use std::collections::HashMap;
@@ -24,7 +24,7 @@ pub(crate) fn does_file_format_have_exif(file_format: &AccurateFileType) -> bool
 }
 
 pub(crate) fn parse_exif(
-    media_file_reader: &dyn PsReadableFile,
+    media_file_reader: &dyn PsReadable,
     file_format: &AccurateFileType,
 ) -> Option<ParsedExif> {
     if !does_file_format_have_exif(file_format) {
@@ -183,8 +183,8 @@ async fn test_d1() {
 
 #[tokio::test()]
 async fn test_parse_exif_created() {
-    use crate::util::PsReadableFromFileSystem;
-    let m = PsReadableFromFileSystem::new("test/Canon_40D.jpg".to_string());
+    use crate::util::PsDirectoryReadable;
+    let m = PsDirectoryReadable::new("test/Canon_40D.jpg".to_string());
     let p = parse_exif(&m, &AccurateFileType::Jpg).unwrap();
     assert_eq!(
         p.datetime_original,

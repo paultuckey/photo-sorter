@@ -1,8 +1,8 @@
 use serde_json::Value;
 use tracing::{debug, info, warn};
-use crate::util::PsReadableFile;
+use crate::util::{PsContainer, PsReadable};
 
-pub(crate) fn detect_extra_info(path: &String, files: &Vec<String>) -> Option<String> {
+pub(crate) fn detect_extra_info(path: &String, container: &Box<dyn PsContainer>) -> Option<String> {
     let google_supp_json_exts = vec![
         ".supplemental-metadata.json",
         ".supplemental-metad.json",
@@ -10,14 +10,14 @@ pub(crate) fn detect_extra_info(path: &String, files: &Vec<String>) -> Option<St
     ];
     for supp_json_ext in google_supp_json_exts {
         let supp_info_path = format!("{}{}", &path, supp_json_ext);
-        if files.contains(&supp_info_path) {
+        if container.readable(&supp_info_path).exists() {
             return Some(supp_info_path);
         }
     }
     None
 }
 
-fn read_extra_info(readable: &dyn PsReadableFile) -> Option<String> {
+fn read_extra_info(readable: &dyn PsReadable) -> Option<String> {
     let bytes = readable.to_bytes();
     let Ok(bytes) = bytes else {
         warn!("Unable to read bytes from {}", readable.name());

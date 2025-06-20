@@ -1,5 +1,6 @@
-use anyhow::Context;
-use std::fs::File;
+use std::fs;
+use anyhow::{Context, anyhow};
+use std::fs::{File, ReadDir};
 use std::io::Read;
 use std::path::Path;
 use tracing::debug;
@@ -9,7 +10,7 @@ pub(crate) fn checksum_file(path: &Path) -> anyhow::Result<String> {
     checksum_bytes(&bytes)
 }
 
-pub(crate) fn checksum_from_read(media_file_reader: &dyn PsReadableFile) -> anyhow::Result<String> {
+pub(crate) fn checksum_from_read(media_file_reader: &dyn PsReadable) -> anyhow::Result<String> {
     let bytes = media_file_reader.to_bytes()?;
     checksum_bytes(&bytes)
 }
@@ -31,27 +32,91 @@ pub(crate) fn reader_from_path_string(input: &String) -> anyhow::Result<File> {
     Ok(file)
 }
 
-pub trait PsReadableFile {
-    fn another(&self, path: &String) -> Box<dyn PsReadableFile>;
+pub trait PsContainer {
+    fn scan(&self) -> Vec<Box<dyn PsReadable>>;
+    fn readable(&self, path: &String) -> Box<dyn PsReadable>;
+}
+
+pub struct PsDirectoryContainer {
+    root: String,
+}
+
+impl PsDirectoryContainer {
+    pub fn new(root: String) -> Self {
+        PsDirectoryContainer { root }
+    }
+}
+
+/// Recursively scans the directory and its subdirectories,
+fn scan_dir_recursively(files: &mut Vec<Box<dyn PsReadable>>, dir_path: &Path) {
+    if !dir_path.exists() || !dir_path.is_dir() {
+        return;
+    }
+    let Ok(dir_reader) = fs::read_dir(dir_path) else {
+        debug!("Unable to read directory: {:?}", dir_path);
+        return;
+    };
+    for dir_entry in dir_reader {
+        let Ok(dir_entry) = dir_entry else {
+            debug!("Unable to read directory entry");
+            continue;
+        };
+        let path = dir_entry.path();
+        if !path.exists() {
+            continue;
+        }
+        if path.is_file() {
+            files.push(Box::new(PsDirectoryReadable::new(
+                path.to_string_lossy().to_string(),
+            )));
+        } else if path.is_dir() {
+            scan_dir_recursively(files, &path);
+        }
+    }
+}
+
+impl PsContainer for PsDirectoryContainer {
+    fn scan(&self) -> Vec<Box<dyn PsReadable>> {
+        let mut files = Vec::new();
+        let root_path = Path::new(&self.root);
+        if !root_path.exists() {
+            debug!("Root path does not exist: {:?}", root_path);
+            return files;
+        }
+        if !root_path.is_dir() {
+            debug!("Root path is not a directory: {:?}", root_path);
+            return files;
+        }
+        scan_dir_recursively(&mut files, &root_path);
+        files
+    }
+    fn readable(&self, path: &String) -> Box<dyn PsReadable> {
+        Box::new(PsDirectoryReadable::new(path.clone()))
+    }
+}
+
+pub trait PsReadable {
+    fn exists(&self) -> bool;
     fn to_bytes(&self) -> anyhow::Result<Vec<u8>>;
     /// grab the first `limit` bytes from the file, return empty vec if file is empty
     fn take(&self, limit: u64) -> anyhow::Result<Vec<u8>>;
     fn name(&self) -> String;
 }
 
-pub struct PsReadableFromFileSystem {
+pub struct PsDirectoryReadable {
     file: String,
 }
 
-impl PsReadableFromFileSystem {
+impl PsDirectoryReadable {
     pub fn new(file: String) -> Self {
-        PsReadableFromFileSystem { file }
+        PsDirectoryReadable { file }
     }
 }
 
-impl PsReadableFile for PsReadableFromFileSystem {
-    fn another(&self, path: &String) -> Box<dyn PsReadableFile> {
-        Box::new(PsReadableFromFileSystem::new(path.clone()))
+impl PsReadable for PsDirectoryReadable {
+    fn exists(&self) -> bool {
+        let path = Path::new(&self.file);
+        path.exists()
     }
 
     fn to_bytes(&self) -> anyhow::Result<Vec<u8>> {

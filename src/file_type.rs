@@ -1,6 +1,8 @@
+use std::ffi::OsStr;
+use std::path::Path;
 use crate::extra_info::detect_extra_info;
-use crate::util::PsReadableFile;
-use crate::zip_reader::PsReadableFromZip;
+use crate::util::{PsContainer, PsReadable};
+use crate::zip_reader::PsZipReadable;
 use tracing::debug;
 use tracing::log::warn;
 
@@ -14,6 +16,7 @@ pub(crate) enum QuickFileType {
 pub(crate) fn find_quick_file_type(file_name: &str) -> QuickFileType {
     let ext_s = file_name.rsplit('.').next().unwrap_or("").to_lowercase();
     let ext = ext_s.as_str();
+    // todo: not supported gif
     match ext {
         "jpg" | "jpeg" | "png" | "gif" | "heic" | "mp4" => QuickFileType::Media,
         "csv" => QuickFileType::Album,
@@ -27,22 +30,22 @@ pub(crate) struct QuickScannedFile {
     pub(crate) supplemental_json_file: Option<String>,
 }
 
-pub(crate) fn quick_file_scan(files: Vec<String>) -> Vec<QuickScannedFile> {
+pub(crate) fn quick_file_scan(container: &Box<dyn PsContainer>, files: Vec<Box<dyn PsReadable>>) -> Vec<QuickScannedFile> {
     let mut scanned_files = vec![];
     for file in &files {
-        let qft = find_quick_file_type(file);
+        let qft = find_quick_file_type(&file.name());
         match qft {
             QuickFileType::Media => {
                 let scanned_file = QuickScannedFile {
-                    name: file.clone(),
+                    name: file.name().clone(),
                     quick_file_type: qft,
-                    supplemental_json_file: detect_extra_info(&file, &files),
+                    supplemental_json_file: detect_extra_info(&file.name().clone(), &container),
                 };
                 scanned_files.push(scanned_file);
             }
             QuickFileType::Album => {
                 let scanned_file = QuickScannedFile {
-                    name: file.clone(),
+                    name: file.name().clone(),
                     quick_file_type: qft,
                     supplemental_json_file: None,
                 };
@@ -95,7 +98,7 @@ pub(crate) fn file_type_from_content_type(ct: &str) -> AccurateFileType {
     }
 }
 
-pub(crate) fn determine_file_type(media_file_readable: &dyn PsReadableFile) -> AccurateFileType {
+pub(crate) fn determine_file_type(media_file_readable: &dyn PsReadable) -> AccurateFileType {
     // take json files at face value
     if media_file_readable.name().to_lowercase().ends_with(".json") {
         let mt = AccurateFileType::Json;
@@ -149,10 +152,10 @@ async fn test_quick_file_type() {
 #[tokio::test()]
 async fn test_accurate_file_type() {
     crate::test_util::setup_log().await;
-    use crate::util::PsReadableFromFileSystem;
-    let m = PsReadableFromFileSystem::new("test/Canon_40D.jpg".to_string());
+    use crate::util::PsDirectoryReadable;
+    let m = PsDirectoryReadable::new("test/Canon_40D.jpg".to_string());
     assert_eq!(determine_file_type(&m), AccurateFileType::Jpg);
 
-    let bad = PsReadableFromFileSystem::new("test/missing".to_string());
+    let bad = PsDirectoryReadable::new("test/missing".to_string());
     assert_eq!(determine_file_type(&bad), AccurateFileType::Unsupported);
 }

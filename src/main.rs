@@ -40,14 +40,14 @@ enum Commands {
         )]
         dry_run: bool,
 
-        #[arg(short, long, help = "Skip generating markdown files")]
-        skip_markdown: bool,
+        #[arg(long, help = "Google Takeout or iCloud input directory or zip file")]
+        input: String,
 
         #[arg(short, long, help = "Directory to sync photos and videos into")]
         output: Option<String>,
 
-        #[arg(long, help = "Google Takeout or iCloud input directory or zip file")]
-        input: Option<String>,
+        #[arg(short, long, help = "Skip generating markdown files")]
+        skip_markdown: bool,
     },
 }
 
