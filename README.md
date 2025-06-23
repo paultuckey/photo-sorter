@@ -55,11 +55,8 @@ cargo run -- --help
 ```
 
 ```shell
-cargo run -- \
-  markdown --debug \
-    --input "test/Canon_40D.jpg"
+cargo run -- markdown --debug --input "test/Canon_40D.jpg"
 ```
-
 
 ```shell
 cargo run -- \

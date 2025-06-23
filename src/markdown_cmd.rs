@@ -13,9 +13,13 @@ pub fn main(input: &String) -> anyhow::Result<()> {
         .parent() //
         .with_context(|| "Unable to get parent directory")?;
     let parent_dir_string = parent_dir.to_string_lossy().to_string();
+    let file_name = p
+        .file_name()
+        .with_context(|| "Unable to get file name")?
+        .to_string_lossy();
     let mut root = PsDirectoryContainer::new(parent_dir_string);
     let bytes = root
-        .file_bytes(&input.clone()) //
+        .file_bytes(&file_name.to_string()) //
         .with_context(|| "Error reading media file")?;
     let media_file_info_res = media_file_info_from_readable(&bytes, input, &None);
     let Ok(media_file_info) = media_file_info_res else {

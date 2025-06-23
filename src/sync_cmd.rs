@@ -103,7 +103,7 @@ async fn start(
         json_hashmap.insert(path, bytes);
     }
 
-    let num_threads = 1; // should be related to number of cores on underlying machine
+    let num_threads = 10; // should be related to number of cores on underlying machine
     let fetches = stream::iter(
         quick_media_files //
             .iter()
