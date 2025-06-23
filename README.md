@@ -85,3 +85,7 @@ cargo run
 ```shell
 cargo test
 ```
+
+```shell
+cargo build
+```

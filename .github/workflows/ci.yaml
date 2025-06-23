@@ -32,13 +32,10 @@ jobs:
 
       # don't lint until > 1 developer
       #      - name: Lint
-      #        working-directory: ./
       #        run: cargo fmt --all --check
 
       - name: Test
-        run: |
-          cargo test
+        run: cargo test
 
       - name: Build
-        working-directory: cli
         run: cargo build
