@@ -1,5 +1,5 @@
 use crate::extra_info::detect_extra_info;
-use crate::util::{PsContainer};
+use crate::util::PsContainer;
 use tracing::debug;
 use tracing::log::warn;
 
@@ -34,13 +34,13 @@ pub(crate) fn quick_file_scan(
     debug!("Scanning {} files for quick file type", files.len());
     let mut scanned_files = vec![];
     for file in &files {
-        let qft = find_quick_file_type(&file);
+        let qft = find_quick_file_type(file);
         match qft {
             QuickFileType::Media => {
                 let scanned_file = QuickScannedFile {
                     name: file.clone(),
                     quick_file_type: qft,
-                    supplemental_json_file: detect_extra_info(&file.clone(), &container),
+                    supplemental_json_file: detect_extra_info(&file.clone(), container),
                 };
                 scanned_files.push(scanned_file);
             }
@@ -144,10 +144,14 @@ async fn test_quick_file_type() {
 async fn test_accurate_file_type() {
     crate::test_util::setup_log().await;
     use crate::util::PsDirectoryContainer;
+    let name = "Canon_40D.jpg".to_string();
     let mut root = PsDirectoryContainer::new("test".to_string());
-    let bytes = root.file_bytes(&"test/Canon_40D.jpg".to_string()).unwrap();
-    assert_eq!(determine_file_type(&bytes, &"test.jpg".to_string()), AccurateFileType::Jpg);
+    let bytes = root.file_bytes(&name).unwrap();
+    assert_eq!(determine_file_type(&bytes, &name), AccurateFileType::Jpg);
 
-    let bad : Vec<u8> = vec![];
-    assert_eq!(determine_file_type(&bad, &"bad.bad".to_string()), AccurateFileType::Unsupported);
+    let bad: Vec<u8> = vec![];
+    assert_eq!(
+        determine_file_type(&bad, &"bad.bad".to_string()),
+        AccurateFileType::Unsupported
+    );
 }

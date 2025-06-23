@@ -76,7 +76,7 @@ impl PsContainer for PsDirectoryContainer {
             debug!("Root path is not a directory: {:?}", root_path);
             return files;
         }
-        scan_dir_recursively(&mut files, &root_path);
+        scan_dir_recursively(&mut files, root_path);
         files
     }
     fn file_bytes(&mut self, path: &String) -> anyhow::Result<Vec<u8>> {
@@ -152,7 +152,7 @@ impl PsContainer for PsZipContainer {
         self.index.clone()
     }
     fn file_bytes(&mut self, path: &String) -> anyhow::Result<Vec<u8>> {
-        let file_res = self.zip.by_name(&path);
+        let file_res = self.zip.by_name(path);
         let Some(mut file) = file_res.ok() else {
             return Err(anyhow!("Unable to find file {:?}", path));
         };

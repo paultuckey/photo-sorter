@@ -6,7 +6,7 @@ use crate::util::{PsContainer, PsZipContainer, PsDirectoryContainer};
 use anyhow::anyhow;
 use console::Term;
 use futures::{StreamExt, stream};
-use indicatif::{ProgressBar, ProgressIterator};
+use indicatif::{ProgressBar};
 use once_cell::sync::Lazy;
 use std::collections::HashMap;
 use std::path::Path;

@@ -16,10 +16,7 @@ pub(crate) struct ParsedExif {
 }
 
 pub(crate) fn does_file_format_have_exif(file_format: &AccurateFileType) -> bool {
-    match file_format {
-        AccurateFileType::Jpg | AccurateFileType::Png | AccurateFileType::Heic => true,
-        _ => false,
-    }
+    matches!(file_format, AccurateFileType::Jpg | AccurateFileType::Png | AccurateFileType::Heic)
 }
 
 pub(crate) fn parse_exif(

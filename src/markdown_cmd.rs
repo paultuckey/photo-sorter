@@ -163,7 +163,7 @@ fn split_frontmatter(file_contents: &str) -> anyhow::Result<(String, String)> {
 
 pub(crate) fn assemble_markdown(
     mfm: &MediaFrontMatter,
-    markdown_content: &String,
+    markdown_content: &str,
 ) -> anyhow::Result<String> {
     let mut s = String::new();
     s.push_str("---\n");

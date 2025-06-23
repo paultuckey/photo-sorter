@@ -18,7 +18,7 @@ pub(crate) fn detect_extra_info(path: &String, container: &Box<dyn PsContainer>)
 }
 
 fn read_extra_info(bytes: &Vec<u8>, name: &String) -> Option<String> {
-    let j: Result<Value, _> = serde_json::from_slice(&bytes);
+    let j: Result<Value, _> = serde_json::from_slice(bytes);
     if let Ok(j) = j {
         let c = serde_json::to_string(&j);
         if let Ok(c) = c {

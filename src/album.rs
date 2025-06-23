@@ -18,11 +18,7 @@ pub(crate) fn detect_album(
         debug!("No bytes for album: {:?}", &qsf.name);
         return None;
     };
-    let a = parse_csv(&bytes, &qsf.name);
-    let Some(album) = a else {
-        return None;
-    };
-    Some(album)
+    parse_csv(&bytes, &qsf.name)
 }
 
 pub(crate) fn de_duplicate_albums(albums: &Vec<Album>) -> Vec<Album> {

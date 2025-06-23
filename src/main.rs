@@ -75,8 +75,8 @@ fn enable_debug(debug: bool) {
     }
 }
 
-fn enable_dry_run(dry_run: &bool) {
-    if dry_run.clone() {
+fn enable_dry_run(dry_run: bool) {
+    if dry_run {
         info!("Dry run mode is on, no changes will be made to disk");
     }
 }
@@ -96,7 +96,7 @@ async fn go() -> anyhow::Result<()> {
             output,
         } => {
             enable_debug(debug);
-            enable_dry_run(&dry_run);
+            enable_dry_run(dry_run);
             sync_cmd::main(debug, dry_run, &input, &output, skip_markdown).await?;
         }
     }

@@ -1,6 +1,6 @@
 use crate::exif::{ParsedExif, best_guess_taken_dt, parse_exif};
 use crate::file_type::{AccurateFileType, determine_file_type, file_ext_from_file_type};
-use crate::util::{checksum_bytes};
+use crate::util::checksum_bytes;
 use anyhow::anyhow;
 use chrono::{DateTime, Datelike, Timelike};
 use tracing::{debug, warn};
@@ -26,8 +26,8 @@ pub(crate) fn media_file_info_from_readable(
         debug!("File {:?} is not a valid media file", name);
         return Err(anyhow!("File is not a valid media file"));
     }
-    let exif_o = parse_exif(&bytes, name, &guessed_ff);
-    let checksum_o = checksum_bytes(&bytes).ok();
+    let exif_o = parse_exif(bytes, name, &guessed_ff);
+    let checksum_o = checksum_bytes(bytes).ok();
 
     let ext = file_ext_from_file_type(&guessed_ff);
 
@@ -51,7 +51,7 @@ pub(crate) fn media_file_info_from_readable(
     let mut extra_info = None;
     if let Some(extra_info_bytes) = extra_info_bytes {
         debug!("Extra info file has {} bytes", extra_info_bytes.len());
-        let string = String::from_utf8_lossy(&extra_info_bytes);
+        let string = String::from_utf8_lossy(extra_info_bytes);
         extra_info = Some(string.trim().to_string());
     }
     let media_file_info = MediaFileInfo {
@@ -71,7 +71,7 @@ pub(crate) fn get_desired_markdown_path(desired_media_path: Option<String>) -> O
         None => None,
         Some(dmp) => dmp
             .rsplit_once('.')
-            .map_or(None, |(name, _)| Some(name.to_string() + ".md")),
+            .map(|(name, _)| name.to_string() + ".md"),
     }
 }
 
