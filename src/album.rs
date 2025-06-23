@@ -1,5 +1,5 @@
 use crate::file_type::QuickScannedFile;
-use crate::util::{PsContainer, PsReadable};
+use crate::util::{PsContainer};
 use std::collections::{HashMap, HashSet};
 use std::io;
 use tracing::{debug, info, warn};
@@ -9,9 +9,16 @@ use tracing::{debug, info, warn};
 /// We also need to store the order.
 /// This is done via a markdown file.
 ///
-pub(crate) fn detect_album(container: &Box<dyn PsContainer>, qsf: &QuickScannedFile) -> Option<Album> {
-    let reader = container.readable(&qsf.name);
-    let a = parse_csv(&reader);
+pub(crate) fn detect_album(
+    container: &mut Box<dyn PsContainer>,
+    qsf: &QuickScannedFile,
+) -> Option<Album> {
+    let bytes_r = container.file_bytes(&qsf.name);
+    let Ok(bytes) = bytes_r else {
+        debug!("No bytes for album: {:?}", &qsf.name);
+        return None;
+    };
+    let a = parse_csv(&bytes, &qsf.name);
     let Some(album) = a else {
         return None;
     };
@@ -54,15 +61,7 @@ pub(crate) struct Album {
     files: Vec<String>,
 }
 
-fn parse_csv(album_file_readable: &Box<dyn PsReadable>) -> Option<Album> {
-    let bytes_o = &album_file_readable.to_bytes();
-    let Ok(bytes) = bytes_o else {
-        debug!(
-            "Unable to read album file: {:?}",
-            &album_file_readable.name()
-        );
-        return None;
-    };
+fn parse_csv(bytes: &Vec<u8>, name: &String) -> Option<Album> {
     let cursor = io::Cursor::new(bytes);
     let mut rdr = csv::Reader::from_reader(cursor);
     let Ok(s) = rdr.headers() else {
@@ -102,23 +101,22 @@ fn parse_csv(album_file_readable: &Box<dyn PsReadable>) -> Option<Album> {
         files.push(col0.to_string());
     }
     if files.is_empty() {
-        debug!("Not an album: {:?}", &album_file_readable.name());
+        debug!("Not an album: {:?}", name);
         return None;
     }
-    let name = album_file_readable.name().clone();
     // find index of last dot and get all chars before that
     let name_without_ext;
     let dot_idx = name.rfind('.').map_or(0, |idx| idx);
     if dot_idx > 0 {
         name_without_ext = name[..dot_idx].to_string();
         if name_without_ext.is_empty() {
-            debug!("Album file has no name: {:?}", &album_file_readable.name());
+            debug!("Album file has no name: {:?}", name);
             return None;
         }
     } else {
         name_without_ext = name.clone();
         if name_without_ext.is_empty() {
-            debug!("Album file has no name: {:?}", &album_file_readable.name());
+            debug!("Album file has no name: {:?}", name);
             return None;
         }
     }
@@ -126,11 +124,11 @@ fn parse_csv(album_file_readable: &Box<dyn PsReadable>) -> Option<Album> {
         "Found album: {:?} with {:?} entries at {:?}",
         name_without_ext,
         files.len(),
-        &album_file_readable.name()
+        name
     );
     Some(Album {
         name: name_without_ext.clone(),
-        path: album_file_readable.name().clone(),
+        path: name.clone(),
         files,
     })
 }

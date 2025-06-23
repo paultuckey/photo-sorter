@@ -1,17 +1,14 @@
-use anyhow::{Context};
+use anyhow::Context;
+use anyhow::anyhow;
 use std::fs;
-use std::fs::{File};
+use std::fs::File;
 use std::io::Read;
 use std::path::Path;
 use tracing::debug;
+use zip::ZipArchive;
 
 pub(crate) fn checksum_file(path: &Path) -> anyhow::Result<String> {
     let bytes = std::fs::read(path)?;
-    checksum_bytes(&bytes)
-}
-
-pub(crate) fn checksum_from_read(media_file_reader: &dyn PsReadable) -> anyhow::Result<String> {
-    let bytes = media_file_reader.to_bytes()?;
     checksum_bytes(&bytes)
 }
 
@@ -25,16 +22,9 @@ pub(crate) fn checksum_bytes(bytes: &Vec<u8>) -> anyhow::Result<String> {
     Ok(base64_url::encode(hash.as_bytes()))
 }
 
-pub(crate) fn reader_from_path_string(input: &String) -> anyhow::Result<File> {
-    let path = Path::new(input);
-    let file = File::open(path) //
-        .with_context(|| format!("Unable to open file {:?}", path))?;
-    Ok(file)
-}
-
 pub trait PsContainer {
     fn scan(&self) -> Vec<String>;
-    fn readable(&self, path: &String) -> Box<dyn PsReadable>;
+    fn file_bytes(&mut self, path: &String) -> anyhow::Result<Vec<u8>>;
     fn exists(&self, path: &String) -> bool;
 }
 
@@ -89,53 +79,91 @@ impl PsContainer for PsDirectoryContainer {
         scan_dir_recursively(&mut files, &root_path);
         files
     }
-    fn readable(&self, path: &String) -> Box<dyn PsReadable> {
-        Box::new(PsDirectoryReadable::new(path.clone()))
+    fn file_bytes(&mut self, path: &String) -> anyhow::Result<Vec<u8>> {
+        let file_path = Path::new(&self.root).join(path);
+        let mut file =
+            File::open(&file_path) //
+                .with_context(|| format!("Unable to open file {:?}", file_path))?;
+        let mut buffer = Vec::new();
+        file.read_to_end(&mut buffer).unwrap_or(0);
+        Ok(buffer)
     }
     fn exists(&self, file: &String) -> bool {
         Path::new(&self.root).join(file).exists()
     }
 }
 
-pub trait PsReadable {
-    fn to_bytes(&self) -> anyhow::Result<Vec<u8>>;
-    /// grab the first `limit` bytes from the file, return empty vec if file is empty
-    fn take(&self, limit: u64) -> anyhow::Result<Vec<u8>>;
-    fn name(&self) -> String;
+pub struct PsZipContainer {
+    zip_file: String,
+    index: Vec<String>,
+    zip: ZipArchive<File>,
 }
 
-pub struct PsDirectoryReadable {
-    file: String,
-}
-
-impl PsDirectoryReadable {
-    pub fn new(file: String) -> Self {
-        PsDirectoryReadable { file }
+impl PsZipContainer {
+    pub(crate) fn new(zip_file: String) -> Self {
+        let z = ZipArchive::new(File::open(zip_file.clone()).unwrap());
+        let mut c = PsZipContainer {
+            zip_file,
+            index: vec![],
+            zip: z.unwrap(),
+        };
+        c.index();
+        c
+    }
+    fn index(&mut self) {
+        // let zip_path = Path::new(&self.zip_file);
+        // let Ok(zip_file) = File::open(zip_path) else {
+        //     error!("Unable to open file {:?}", zip_path);
+        //     return;
+        // };
+        let zip_archive = &mut self.zip; //::new(zip_file);
+        // let Ok(mut zip_archive) = zip_archive else {
+        //     error!("Unable to open zip file {:?}", zip_path);
+        //     return;
+        // };
+        for i in 0..zip_archive.len() {
+            let file_res = zip_archive.by_index(i);
+            let Some(file) = file_res.ok() else {
+                continue;
+            };
+            if file.is_dir() {
+                continue;
+            }
+            let Some(enclosed_name) = file.enclosed_name() else {
+                continue;
+            };
+            let p = enclosed_name.as_path();
+            let file_name_o = p.to_str();
+            let Some(file_name) = file_name_o else {
+                continue;
+            };
+            self.index.push(file_name.to_string());
+        }
+        debug!(
+            "Counted {} files in zip {:?}",
+            self.index.len(),
+            self.zip_file
+        );
     }
 }
 
-impl PsReadable for PsDirectoryReadable {
-    fn to_bytes(&self) -> anyhow::Result<Vec<u8>> {
-        let path = Path::new(&self.file);
-        let mut file = File::open(path) //
-            .with_context(|| format!("Unable to open file {:?}", path))?;
+impl PsContainer for PsZipContainer {
+    fn scan(&self) -> Vec<String> {
+        self.index.clone()
+    }
+    fn file_bytes(&mut self, path: &String) -> anyhow::Result<Vec<u8>> {
+        let file_res = self.zip.by_name(&path);
+        let Some(mut file) = file_res.ok() else {
+            return Err(anyhow!("Unable to find file {:?}", path));
+        };
+        if file.is_dir() {
+            return Err(anyhow!("File is a dir {:?}", path));
+        }
         let mut buffer = Vec::new();
         file.read_to_end(&mut buffer).unwrap_or(0);
         Ok(buffer)
     }
-
-    fn take(&self, limit: u64) -> anyhow::Result<Vec<u8>> {
-        let path = Path::new(&self.file);
-        let file = File::open(path) //
-            .with_context(|| format!("Unable to open file {:?}", path))?;
-        let mut buffer = Vec::new();
-        let mut limited_reader = file.take(limit); // Limit to 1000 bytes
-        limited_reader.read_to_end(&mut buffer)?;
-        debug!("Read {} bytes from file {:?}", buffer.len(), self.file);
-        Ok(buffer)
-    }
-
-    fn name(&self) -> String {
-        self.file.clone()
+    fn exists(&self, path: &String) -> bool {
+        self.index.contains(path)
     }
 }

@@ -1,5 +1,5 @@
 use crate::extra_info::detect_extra_info;
-use crate::util::{PsContainer, PsReadable};
+use crate::util::{PsContainer};
 use tracing::debug;
 use tracing::log::warn;
 
@@ -27,7 +27,10 @@ pub(crate) struct QuickScannedFile {
     pub(crate) supplemental_json_file: Option<String>,
 }
 
-pub(crate) fn quick_file_scan(container: &Box<dyn PsContainer>, files: Vec<String>) -> Vec<QuickScannedFile> {
+pub(crate) fn quick_file_scan(
+    container: &Box<dyn PsContainer>,
+    files: Vec<String>,
+) -> Vec<QuickScannedFile> {
     debug!("Scanning {} files for quick file type", files.len());
     let mut scanned_files = vec![];
     for file in &files {
@@ -96,40 +99,30 @@ pub(crate) fn file_type_from_content_type(ct: &str) -> AccurateFileType {
     }
 }
 
-pub(crate) fn determine_file_type(media_file_readable: &dyn PsReadable) -> AccurateFileType {
+pub(crate) fn determine_file_type(bytes: &Vec<u8>, name: &String) -> AccurateFileType {
     // take json files at face value
-    if media_file_readable.name().to_lowercase().ends_with(".json") {
+    if name.to_lowercase().ends_with(".json") {
         let mt = AccurateFileType::Json;
-        debug!("mime type:{:?} file:{:?} ", media_file_readable.name(), mt);
+        debug!("mime type:{:?} file:{:?} ", name, mt);
         return mt;
     }
     // Limit buffer size same as that inside `file_format` crate
-    let buffer_res = media_file_readable.take(36_870);
-    let Ok(buffer) = buffer_res else {
-        warn!("cannot read file  file:{:?}", media_file_readable.name());
+    // let buffer_res = media_file_readable.take(36_870);
+    if bytes.is_empty() {
+        warn!("file is empty file:{:?}", name);
         return AccurateFileType::Unsupported;
     };
-    if buffer.is_empty() {
-        warn!("file is empty file:{:?}", media_file_readable.name());
-        return AccurateFileType::Unsupported;
-    };
-    let fmt = file_format::FileFormat::from_bytes(buffer);
+    let fmt = file_format::FileFormat::from_bytes(bytes);
     let mt = fmt.media_type();
     if mt == "application/octet-stream" {
-        debug!(
-            "can not guess mime type file:{:?}",
-            media_file_readable.name()
-        );
+        debug!("can not guess mime type file:{:?}", name);
         return AccurateFileType::Unsupported;
     }
     if mt == "application/x-empty" {
-        debug!(
-            "file appears to be empty file:{:?}",
-            media_file_readable.name()
-        );
+        debug!("file appears to be empty file:{:?}", name);
         return AccurateFileType::Unsupported;
     }
-    debug!("mime type:{:?} file:{:?} ", media_file_readable.name(), mt);
+    debug!("mime type:{:?} file:{:?} ", name, mt);
     file_type_from_content_type(mt)
 }
 
@@ -150,10 +143,11 @@ async fn test_quick_file_type() {
 #[tokio::test()]
 async fn test_accurate_file_type() {
     crate::test_util::setup_log().await;
-    use crate::util::PsDirectoryReadable;
-    let m = PsDirectoryReadable::new("test/Canon_40D.jpg".to_string());
-    assert_eq!(determine_file_type(&m), AccurateFileType::Jpg);
+    use crate::util::PsDirectoryContainer;
+    let mut root = PsDirectoryContainer::new("test".to_string());
+    let bytes = root.file_bytes(&"test/Canon_40D.jpg".to_string()).unwrap();
+    assert_eq!(determine_file_type(&bytes, &"test.jpg".to_string()), AccurateFileType::Jpg);
 
-    let bad = PsDirectoryReadable::new("test/missing".to_string());
-    assert_eq!(determine_file_type(&bad), AccurateFileType::Unsupported);
+    let bad : Vec<u8> = vec![];
+    assert_eq!(determine_file_type(&bad, &"bad.bad".to_string()), AccurateFileType::Unsupported);
 }

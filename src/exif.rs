@@ -1,13 +1,11 @@
 use crate::file_type::AccurateFileType;
-use crate::util::PsReadable;
 use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, SecondsFormat};
 use exif::{Exif, In, Reader, Tag, Value};
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufReader, Cursor};
 use std::path::Path;
-use anyhow::Context;
-use tracing::{debug, warn};
+use tracing::warn;
 
 #[derive(Debug, Clone)]
 pub(crate) struct ParsedExif {
@@ -25,25 +23,18 @@ pub(crate) fn does_file_format_have_exif(file_format: &AccurateFileType) -> bool
 }
 
 pub(crate) fn parse_exif(
-    media_file_reader: &dyn PsReadable,
+    bytes: &Vec<u8>,
+    name: &String,
     file_format: &AccurateFileType,
 ) -> Option<ParsedExif> {
     if !does_file_format_have_exif(file_format) {
         return None;
     }
-    let bytes_res = media_file_reader.to_bytes();
-    let Ok(file_reader) = bytes_res else {
-        warn!("Could not read file for exif: {}", media_file_reader.name());
-        return None;
-    };
-    let mut buffer = BufReader::new(Cursor::new(file_reader));
+    let mut buffer = BufReader::new(Cursor::new(bytes));
     let exif_reader = Reader::new();
     let exif_r = exif_reader.read_from_container(&mut buffer);
     let Ok(exif) = exif_r else {
-        warn!(
-            "Could not read EXIF data from file: {}",
-            media_file_reader.name()
-        );
+        warn!("Could not read EXIF data from file: {}", name);
         return None;
     };
     let unique_id = parse_tag(&exif, Tag::ImageUniqueID);
@@ -184,9 +175,11 @@ async fn test_d1() {
 
 #[tokio::test()]
 async fn test_parse_exif_created() {
-    use crate::util::PsDirectoryReadable;
-    let m = PsDirectoryReadable::new("test/Canon_40D.jpg".to_string());
-    let p = parse_exif(&m, &AccurateFileType::Jpg).unwrap();
+    use crate::util::PsContainer;
+    use crate::util::PsDirectoryContainer;
+    let mut c = PsDirectoryContainer::new("test".to_string());
+    let bytes = c.file_bytes(&"Canon_40D.jpg".to_string()).unwrap();
+    let p = parse_exif(&bytes, &"test".to_string(), &AccurateFileType::Jpg).unwrap();
     assert_eq!(
         p.datetime_original,
         Some("2008-05-30T15:56:01Z".to_string())
@@ -199,5 +192,8 @@ async fn test_parse_exif_all_tags() {
     let p = Path::new("test/Canon_40D.jpg").to_path_buf();
     let t = all_tags(&p).unwrap();
     assert_eq!(t.len(), 10);
-    assert_eq!(t.get("Interoperability identification"), Some(&"R98".to_string()));
+    assert_eq!(
+        t.get("Interoperability identification"),
+        Some(&"R98".to_string())
+    );
 }

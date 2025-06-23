@@ -1,7 +1,5 @@
 use crate::media::{MediaFileInfo, media_file_info_from_readable};
-use crate::util::{
-    PsContainer, PsDirectoryContainer, PsDirectoryReadable, checksum_file, checksum_string,
-};
+use crate::util::{PsContainer, PsDirectoryContainer, checksum_file, checksum_string};
 use anyhow::Context;
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -10,10 +8,16 @@ use tracing::debug;
 
 pub fn main(input: &String) -> anyhow::Result<()> {
     debug!("Inspecting: {}", input);
-    let container: Box<dyn PsContainer> = Box::new(PsDirectoryContainer::new("".to_string()));
-    let media_file_readable = PsDirectoryReadable::new(input.clone());
-    let media_file_info_res =
-        media_file_info_from_readable(&container, &media_file_readable, &None);
+    let p = Path::new(input);
+    let parent_dir = p
+        .parent() //
+        .with_context(|| "Unable to get parent directory")?;
+    let parent_dir_string = parent_dir.to_string_lossy().to_string();
+    let mut root = PsDirectoryContainer::new(parent_dir_string);
+    let bytes = root
+        .file_bytes(&input.clone()) //
+        .with_context(|| "Error reading media file")?;
+    let media_file_info_res = media_file_info_from_readable(&bytes, input, &None);
     let Ok(media_file_info) = media_file_info_res else {
         debug!("Not a valid media file: {}", input);
         return Ok(());

@@ -1,10 +1,8 @@
 use crate::exif::{ParsedExif, best_guess_taken_dt, parse_exif};
 use crate::file_type::{AccurateFileType, determine_file_type, file_ext_from_file_type};
-use crate::util::{PsReadable, checksum_from_read, PsContainer};
+use crate::util::{checksum_bytes};
 use anyhow::anyhow;
 use chrono::{DateTime, Datelike, Timelike};
-use std::ffi::OsStr;
-use std::path::Path;
 use tracing::{debug, warn};
 
 #[derive(Debug, Clone)]
@@ -19,18 +17,17 @@ pub(crate) struct MediaFileInfo {
 }
 
 pub(crate) fn media_file_info_from_readable(
-    container: &Box<dyn PsContainer>,
-    reader: &dyn PsReadable,
-    extra_info_path: &Option<String>,
+    bytes: &Vec<u8>,
+    name: &String,
+    extra_info_bytes: &Option<Vec<u8>>,
 ) -> anyhow::Result<MediaFileInfo> {
-    let input = reader.name();
-    let guessed_ff = determine_file_type(reader);
+    let guessed_ff = determine_file_type(bytes, name);
     if guessed_ff == AccurateFileType::Unsupported {
-        debug!("File {:?} is not a valid media file", input);
+        debug!("File {:?} is not a valid media file", name);
         return Err(anyhow!("File is not a valid media file"));
     }
-    let exif_o = parse_exif(reader, &guessed_ff);
-    let checksum_o = checksum_from_read(reader).ok();
+    let exif_o = parse_exif(&bytes, name, &guessed_ff);
+    let checksum_o = checksum_bytes(&bytes).ok();
 
     let ext = file_ext_from_file_type(&guessed_ff);
 
@@ -52,26 +49,13 @@ pub(crate) fn media_file_info_from_readable(
         }
     }
     let mut extra_info = None;
-    if let Some(extra_info_path) = extra_info_path {
-        let c = container.readable(extra_info_path);
-        let bytes_res = c.to_bytes();
-        if let Ok(bytes) = bytes_res {
-            debug!(
-                "Extra info file {:?} has {} bytes",
-                extra_info_path,
-                bytes.len()
-            );
-            let string = String::from_utf8_lossy(&bytes);
-            extra_info = Some(string.trim().to_string());
-        } else {
-            debug!(
-                "Could not read extra info file {:?} relating to {:?}",
-                extra_info_path, input
-            );
-        }
+    if let Some(extra_info_bytes) = extra_info_bytes {
+        debug!("Extra info file has {} bytes", extra_info_bytes.len());
+        let string = String::from_utf8_lossy(&extra_info_bytes);
+        extra_info = Some(string.trim().to_string());
     }
     let media_file_info = MediaFileInfo {
-        original_path: input.clone(),
+        original_path: name.clone(),
         file_format: guessed_ff.clone(),
         parsed_exif: exif_o.clone(),
         checksum: checksum_o.clone(),

@@ -6,9 +6,7 @@ mod markdown_cmd;
 mod media;
 mod sync_cmd;
 mod test_util;
-mod upload;
 mod util;
-mod zip_reader;
 
 use clap::{Parser, Subcommand};
 use tracing::{error, info};
