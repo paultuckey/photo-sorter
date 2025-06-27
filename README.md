@@ -60,9 +60,13 @@ cargo run -- markdown --debug --input "test/Canon_40D.jpg"
 
 ```shell
 cargo run -- \
-  sync --debug --dry-run \
+  sync --debug --dry-run --skip-media \
     --input "/Users/paul/Downloads/takeout-20250614T030613Z-1-001.zip" \
-    --output "out/archive"
+    --output "output/archive"
+```
+
+```shell
+cargo run -- sync --debug --input "input/Takeout-small" --output "output/archive-small"
 ```
 
 ## Development

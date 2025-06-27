@@ -1,3 +1,4 @@
+use std::path::Path;
 use crate::extra_info::detect_extra_info;
 use crate::util::PsContainer;
 use tracing::debug;
@@ -6,17 +7,28 @@ use tracing::log::warn;
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) enum QuickFileType {
     Media,
-    Album,
+    AlbumCsv,
+    AlbumJson,
     Unknown,
 }
 
-pub(crate) fn find_quick_file_type(file_name: &str) -> QuickFileType {
-    let ext_s = file_name.rsplit('.').next().unwrap_or("").to_lowercase();
-    let ext = ext_s.as_str();
+pub(crate) fn find_quick_file_type(file_path: &str) -> QuickFileType {
+    let p = Path::new(file_path);
+    let lowercase_file_name_str = p.file_name()
+        .and_then(|n| n.to_str())
+        .map(|s| s.to_lowercase())
+        .unwrap_or_default();
+    if lowercase_file_name_str.eq("metadata.json") {
+        return QuickFileType::AlbumJson;
+    }
+    let lowercase_file_ext = p.extension()
+        .and_then(|ext| ext.to_str())
+        .map(|s| s.to_lowercase())
+        .unwrap_or_default();
     // todo: not supported gif
-    match ext {
+    match lowercase_file_ext.as_str() {
         "jpg" | "jpeg" | "png" | "gif" | "heic" | "mp4" => QuickFileType::Media,
-        "csv" => QuickFileType::Album,
+        "csv" => QuickFileType::AlbumCsv,
         _ => QuickFileType::Unknown,
     }
 }
@@ -44,7 +56,7 @@ pub(crate) fn quick_file_scan(
                 };
                 scanned_files.push(scanned_file);
             }
-            QuickFileType::Album => {
+            QuickFileType::AlbumCsv | QuickFileType::AlbumJson => {
                 let scanned_file = QuickScannedFile {
                     name: file.clone(),
                     quick_file_type: qft,
@@ -135,7 +147,10 @@ async fn test_quick_file_type() {
         find_quick_file_type("test/test1.abc"),
         QuickFileType::Unknown
     );
-    assert_eq!(find_quick_file_type("test/test1.csv"), QuickFileType::Album);
+    assert_eq!(find_quick_file_type("test/test1.csv"), QuickFileType::AlbumCsv);
+    assert_eq!(find_quick_file_type("test/test1.CsV"), QuickFileType::AlbumCsv);
+    assert_eq!(find_quick_file_type("test/metadata.json"), QuickFileType::AlbumJson);
+    assert_eq!(find_quick_file_type("test/MeTaDaTa.JsOn"), QuickFileType::AlbumJson);
     assert_eq!(find_quick_file_type("test/tes"), QuickFileType::Unknown);
     assert_eq!(find_quick_file_type("test/te.s.jpg"), QuickFileType::Media);
 }

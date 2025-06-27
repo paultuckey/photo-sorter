@@ -39,7 +39,7 @@ impl PsDirectoryContainer {
 }
 
 /// Recursively scans the directory and its subdirectories,
-fn scan_dir_recursively(files: &mut Vec<String>, dir_path: &Path) {
+fn scan_dir_recursively(files: &mut Vec<String>, dir_path: &Path, root_path: &Path) {
     if !dir_path.exists() || !dir_path.is_dir() {
         return;
     }
@@ -57,9 +57,11 @@ fn scan_dir_recursively(files: &mut Vec<String>, dir_path: &Path) {
             continue;
         }
         if path.is_file() {
-            files.push(path.to_string_lossy().to_string());
+            // trim root path from the file path
+            let relative_path = path.strip_prefix(root_path).unwrap_or(&path);
+            files.push(relative_path.to_string_lossy().to_string());
         } else if path.is_dir() {
-            scan_dir_recursively(files, &path);
+            scan_dir_recursively(files, &path, root_path);
         }
     }
 }
@@ -76,7 +78,7 @@ impl PsContainer for PsDirectoryContainer {
             debug!("Root path is not a directory: {:?}", root_path);
             return files;
         }
-        scan_dir_recursively(&mut files, root_path);
+        scan_dir_recursively(&mut files, root_path, root_path);
         files
     }
     fn file_bytes(&mut self, path: &String) -> anyhow::Result<Vec<u8>> {

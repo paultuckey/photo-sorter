@@ -1,7 +1,9 @@
-use crate::file_type::QuickScannedFile;
+use crate::file_type::{QuickFileType, QuickScannedFile};
 use crate::util::{PsContainer};
 use std::collections::{HashMap, HashSet};
 use std::io;
+use std::path::Path;
+use serde_json::Value;
 use tracing::{debug, info, warn};
 
 ///
@@ -9,7 +11,7 @@ use tracing::{debug, info, warn};
 /// We also need to store the order.
 /// This is done via a markdown file.
 ///
-pub(crate) fn detect_album(
+pub(crate) fn parse_csv_album(
     container: &mut Box<dyn PsContainer>,
     qsf: &QuickScannedFile,
 ) -> Option<Album> {
@@ -21,18 +23,61 @@ pub(crate) fn detect_album(
     parse_csv(&bytes, &qsf.name)
 }
 
+
+pub(crate) fn parse_json_album(container: &mut Box<dyn PsContainer>, qsf: &QuickScannedFile, all_files: &Vec<QuickScannedFile>) -> Option<Album> {
+    let bytes_r = container.file_bytes(&qsf.name);
+    let Ok(bytes) = bytes_r else {
+        debug!("No bytes for album: {:?}", &qsf.name);
+        return None;
+    };
+    let j: Result<Value, _> = serde_json::from_slice(&bytes);
+    let title   ;
+    if let Ok(j) = j {
+        let title_res = j.get("title");
+        if let Some(title_value) = title_res {
+            debug!("Found album title: {:?}", title_value);
+            title = Some(title_value.as_str().unwrap_or("").to_string());
+        } else {
+            debug!("");
+            return None
+        }
+    } else {
+        warn!("Unable to decode album JSON: {:?}", &qsf.name);
+        return None
+    }
+    // all files in this directory are in the album
+    let file_path = Path::new(&qsf.name);
+    let directory_path = file_path.parent().unwrap();
+    let directory_path_str = directory_path.to_str().unwrap_or("@@broken");
+    // todo need to be translated to final output path for media
+    let files = all_files.iter().filter(|f| {
+        f.name.starts_with(&directory_path_str) && f.quick_file_type == QuickFileType::Media
+    }).map(|f| f.name.clone()).collect::<Vec<String>>();
+    let directory_path_name_str =  directory_path.file_name() 
+        .and_then(|n| n.to_str())
+        .unwrap_or("@@broken")
+        .to_string();
+    let desired_album_md_path = format!("albums/{}.md", directory_path_name_str);
+    Some(Album {
+        desired_album_md_path,
+        title: title.unwrap_or_else(|| directory_path_name_str),
+        files,
+    })
+}
+
+
 pub(crate) fn de_duplicate_albums(albums: &Vec<Album>) -> Vec<Album> {
     let mut clean_albums: Vec<Album> = vec![];
     let mut used_names = HashSet::new();
     for album in albums {
-        let mut name = album.name.clone();
+        let mut name = album.title.clone();
         let mut attempt = 0;
         loop {
             attempt += 1;
             if !used_names.contains(&name) {
                 clean_albums.push(Album {
-                    name: name.clone(),
-                    path: album.path.clone(),
+                    title: name.clone(),
+                    desired_album_md_path: album.desired_album_md_path.clone(),
                     files: album.files.clone(),
                 });
                 used_names.insert(name);
@@ -42,7 +87,7 @@ pub(crate) fn de_duplicate_albums(albums: &Vec<Album>) -> Vec<Album> {
             if attempt > 100 {
                 warn!(
                     "Too many attempts to find unique name for album: {:?}",
-                    &album.name
+                    &album.title
                 );
                 break;
             }
@@ -52,8 +97,8 @@ pub(crate) fn de_duplicate_albums(albums: &Vec<Album>) -> Vec<Album> {
 }
 
 pub(crate) struct Album {
-    path: String,
-    pub(crate) name: String,
+    pub(crate) desired_album_md_path: String,
+    pub(crate) title: String,
     files: Vec<String>,
 }
 
@@ -123,8 +168,8 @@ fn parse_csv(bytes: &Vec<u8>, name: &String) -> Option<Album> {
         name
     );
     Some(Album {
-        name: name_without_ext.clone(),
-        path: name.clone(),
+        title: name_without_ext.clone(),
+        desired_album_md_path: name.clone(),
         files,
     })
 }
@@ -136,10 +181,10 @@ pub(crate) fn albums_to_files_map(albums: &[Album]) -> HashMap<String, Vec<Strin
         for f in album.files.clone() {
             match m.get_mut(&f) {
                 Some(v) => {
-                    v.push(album.name.clone());
+                    v.push(album.title.clone());
                 }
                 None => {
-                    m.insert(f.clone(), vec![album.name.clone()]);
+                    m.insert(f.clone(), vec![album.title.clone()]);
                 }
             }
         }
@@ -149,7 +194,7 @@ pub(crate) fn albums_to_files_map(albums: &[Album]) -> HashMap<String, Vec<Strin
 
 pub(crate) fn build_album_md(album: &Album) -> String {
     let mut md = String::new();
-    md.push_str(&format!("# {}", &album.name));
+    md.push_str(&format!("# {}", &album.title));
     md.push_str("");
     for f in album.files.clone() {
         md.push_str(&format!("\n- [{}]({})", f, f));
