@@ -28,7 +28,7 @@ pub fn main(input: &String) -> anyhow::Result<()> {
     };
     debug!("Markdown:");
     let mfm = mfm_from_media_file_info(&media_file_info);
-    let s = assemble_markdown(&mfm, &"".to_string())?;
+    let s = assemble_markdown(&mfm, "")?;
     println!("{}", s);
     Ok(())
 }

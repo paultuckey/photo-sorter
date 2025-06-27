@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufReader, Cursor};
 use std::path::Path;
-use tracing::warn;
+use tracing::{debug, warn};
 
 #[derive(Debug, Clone)]
 pub(crate) struct ParsedExif {
@@ -27,23 +27,29 @@ pub(crate) fn parse_exif(
     if !does_file_format_have_exif(file_format) {
         return None;
     }
-    let mut buffer = BufReader::new(Cursor::new(bytes));
+    
     let exif_reader = Reader::new();
-    let exif_r = exif_reader.read_from_container(&mut buffer);
-    let Ok(exif) = exif_r else {
-        warn!("Could not read EXIF data from file: {}", name);
-        return None;
-    };
-    let unique_id = parse_tag(&exif, Tag::ImageUniqueID);
-    let datetime_original = parse_exif_datetime(&parse_tag(&exif, Tag::DateTimeOriginal));
-    let datetime = parse_exif_datetime(&parse_tag(&exif, Tag::DateTime));
-    let gps_date = parse_exif_date(&parse_tag(&exif, Tag::GPSDateStamp));
-    Some(ParsedExif {
-        datetime_original,
-        datetime,
-        gps_date,
-        unique_id,
-    })
+    let mut cursor = Cursor::new(bytes);
+    let mut bufread_seek = BufReader::new(&mut cursor);
+    let exif_r = exif_reader.read_from_container(&mut bufread_seek);
+    match exif_r {
+        Ok(exif) => {
+            let unique_id = parse_tag(&exif, Tag::ImageUniqueID);
+            let datetime_original = parse_exif_datetime(&parse_tag(&exif, Tag::DateTimeOriginal));
+            let datetime = parse_exif_datetime(&parse_tag(&exif, Tag::DateTime));
+            let gps_date = parse_exif_date(&parse_tag(&exif, Tag::GPSDateStamp));
+            Some(ParsedExif {
+                datetime_original,
+                datetime,
+                gps_date,
+                unique_id,
+            })
+        }
+        Err(e) => {
+            debug!("Could not read EXIF data from file: {} bytes len {} err {}", name, bytes.len(), e);
+            None
+        }
+    }
 }
 
 pub(crate) fn best_guess_taken_dt(pe: &Option<ParsedExif>) -> Option<String> {

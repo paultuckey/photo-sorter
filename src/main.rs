@@ -44,8 +44,14 @@ enum Commands {
         #[arg(short, long, help = "Directory to sync photos and videos into")]
         output: Option<String>,
 
-        #[arg(short, long, help = "Skip generating markdown files")]
+        #[arg(long, help = "Skip generating markdown files")]
         skip_markdown: bool,
+
+        #[arg(long, help = "Skip inspecting and copying photo and video files")]
+        skip_media: bool,
+
+        #[arg(long, help = "Skip inspecting and copying albums")]
+        skip_albums: bool,
     },
 }
 
@@ -67,8 +73,9 @@ fn enable_debug(debug: bool) {
     }
     tracing_subscriber::fmt()
         .with_max_level(tracing_level)
-        // disable printing the name of the module in every log line.
         .with_target(false)
+        .without_time()
+        .with_level(false)
         .init();
     if debug {
         info!("Debug mode is on");
@@ -94,10 +101,12 @@ async fn go() -> anyhow::Result<()> {
             skip_markdown,
             input,
             output,
+            skip_media,
+            skip_albums,
         } => {
             enable_debug(debug);
             enable_dry_run(dry_run);
-            sync_cmd::main(debug, dry_run, &input, &output, skip_markdown).await?;
+            sync_cmd::main(dry_run, &input, &output, skip_markdown, skip_media, skip_albums).await?;
         }
     }
 

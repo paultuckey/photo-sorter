@@ -29,11 +29,11 @@ pub(crate) struct QuickScannedFile {
 
 pub(crate) fn quick_file_scan(
     container: &Box<dyn PsContainer>,
-    files: Vec<String>,
+    files: &Vec<String>,
 ) -> Vec<QuickScannedFile> {
     debug!("Scanning {} files for quick file type", files.len());
     let mut scanned_files = vec![];
-    for file in &files {
+    for file in files {
         let qft = find_quick_file_type(file);
         match qft {
             QuickFileType::Media => {
