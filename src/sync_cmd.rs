@@ -1,15 +1,16 @@
 use crate::album::detect_album;
-use crate::file_type::{QuickFileType, QuickScannedFile, quick_file_scan};
+use crate::file_type::{quick_file_scan, QuickFileType, QuickScannedFile};
 use crate::markdown_cmd::{assemble_markdown, mfm_from_media_file_info};
-use crate::media::{MediaFileInfo, media_file_info_from_readable};
+use crate::media::{media_file_info_from_readable, MediaFileInfo};
 use crate::util::{PsContainer, PsDirectoryContainer, PsZipContainer};
 use anyhow::anyhow;
 use indicatif::ProgressBar;
-use once_cell::sync::Lazy;
 use std::collections::HashMap;
 use std::path::Path;
+use std::sync::OnceLock;
 use std::{fs, time::Duration};
 use tracing::{debug, info};
+
 
 struct State {
     indexing_spinner: ProgressBar,
@@ -18,12 +19,16 @@ struct State {
     albums_progress: ProgressBar,
 }
 
-static UI: Lazy<State> = Lazy::new(|| State {
-    indexing_spinner: ProgressBar::new_spinner(),
-    supplemental_progress: ProgressBar::new(1),
-    media_progress: ProgressBar::new(1),
-    albums_progress: ProgressBar::new(1),
-});
+static UI_STATE: OnceLock<State> = OnceLock::new();
+
+fn ui() -> &'static State {
+    UI_STATE.get_or_init(|| State {
+        indexing_spinner: ProgressBar::new_spinner(),
+        supplemental_progress: ProgressBar::new(1),
+        media_progress: ProgressBar::new(1),
+        albums_progress: ProgressBar::new(1),
+    })
+}
 
 pub(crate) async fn main(
     dry_run: bool,
@@ -45,11 +50,11 @@ pub(crate) async fn main(
     }
     info!("Input zip: {}", input);
     
-    UI.indexing_spinner.enable_steady_tick(Duration::from_millis(100));
-    UI.indexing_spinner.set_message("Indexing...");
+    ui().indexing_spinner.enable_steady_tick(Duration::from_millis(100));
+    ui().indexing_spinner.set_message("Indexing...");
     let files = container.scan();
     let quick_scanned_files = quick_file_scan(&container, &files);
-    UI.indexing_spinner.finish_and_clear();
+    ui().indexing_spinner.finish_and_clear();
     info!("Indexed {} files in zip", files.len());
     
     if !skip_media {
@@ -57,7 +62,7 @@ pub(crate) async fn main(
             .iter()
             .filter(|m| m.supplemental_json_file.is_some())
             .collect::<Vec<&QuickScannedFile>>();
-        UI.supplemental_progress.set_length(supplemental_paths.len() as u64);
+        ui().supplemental_progress.set_length(supplemental_paths.len() as u64);
         let mut json_hashmap: HashMap<String, Vec<u8>> = HashMap::new();
         for qsf in supplemental_paths {
             let Some(path) = qsf.supplemental_json_file.clone() else {
@@ -70,16 +75,16 @@ pub(crate) async fn main(
             };
             debug!("Read supplemental json file: {}", path);
             json_hashmap.insert(path, bytes);
-            UI.supplemental_progress.inc(1);
+            ui().supplemental_progress.inc(1);
         }
-        UI.supplemental_progress.finish_and_clear();
+        ui().supplemental_progress.finish_and_clear();
         info!("Read {} supplemental files", json_hashmap.len());
 
         let quick_media_files = quick_scanned_files
             .iter()
             .filter(|m| m.quick_file_type == QuickFileType::Media)
             .collect::<Vec<&QuickScannedFile>>();
-        UI.media_progress.set_length(quick_media_files.len() as u64);
+        ui().media_progress.set_length(quick_media_files.len() as u64);
         info!("Inspecting {} photo and video files", quick_media_files.len());
         for quick_scanned_file in quick_media_files {
             let bytes = container.file_bytes(&quick_scanned_file.name.clone());
@@ -95,9 +100,9 @@ pub(crate) async fn main(
                 skip_markdown,
                 &json_hashmap,
             );
-            UI.media_progress.inc(1);
+            ui().media_progress.inc(1);
         }
-        UI.media_progress.finish_and_clear();
+        ui().media_progress.finish_and_clear();
     }
 
     if !skip_albums {
@@ -106,16 +111,16 @@ pub(crate) async fn main(
             .iter()
             .filter(|m| m.quick_file_type == QuickFileType::Album)
             .collect::<Vec<&QuickScannedFile>>();
-        UI.albums_progress.set_length(quick_album_files.len() as u64);
+        ui().albums_progress.set_length(quick_album_files.len() as u64);
         info!("Inspecting {} albums", quick_album_files.len());
         for quick_album in quick_album_files {
             let album_o = detect_album(&mut container, quick_album);
             let Some(_) = album_o else {
                 continue;
             };
-            UI.albums_progress.inc(1);
+            ui().albums_progress.inc(1);
         }
-        UI.indexing_spinner.finish_and_clear();
+        ui().indexing_spinner.finish_and_clear();
         info!("Done albums");
     }
 
