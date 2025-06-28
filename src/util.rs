@@ -4,11 +4,11 @@ use std::fs;
 use std::fs::File;
 use std::io::Read;
 use std::path::Path;
-use tracing::debug;
+use tracing::{debug, error};
 use zip::ZipArchive;
 
 pub(crate) fn checksum_file(path: &Path) -> anyhow::Result<String> {
-    let bytes = std::fs::read(path)?;
+    let bytes = fs::read(path)?;
     checksum_bytes(&bytes)
 }
 
@@ -35,6 +35,22 @@ pub struct PsDirectoryContainer {
 impl PsDirectoryContainer {
     pub fn new(root: String) -> Self {
         PsDirectoryContainer { root }
+    }
+    pub(crate) fn write(&self, dry_run: bool, path: &String, bytes: &Vec<u8>) {
+        let p = Path::new(&self.root).join(path);
+        if dry_run {
+            debug!("Dry run: would write file {:?} with {} bytes", p, bytes.len());
+            return;
+        }
+        if let Err(e) = fs::create_dir_all(p.parent().unwrap()) {
+            error!("Unable to create directory {:?}: {}", p.parent(), e);
+            return;
+        }
+        if let Err(e) = fs::write(&p, bytes) {
+            error!("Unable to write file {:?}: {}", p, e);
+            return;
+        }
+        debug!("Wrote file {:?}", p);
     }
 }
 
