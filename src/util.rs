@@ -7,19 +7,21 @@ use std::path::Path;
 use tracing::{debug, error};
 use zip::ZipArchive;
 
-pub(crate) fn checksum_file(path: &Path) -> anyhow::Result<String> {
+pub(crate) fn checksum_file(path: &Path) -> anyhow::Result<(String, String)> {
     let bytes = fs::read(path)?;
     checksum_bytes(&bytes)
 }
 
-pub(crate) fn checksum_string(s: &String) -> anyhow::Result<String> {
+pub(crate) fn checksum_string(s: &String) -> anyhow::Result<(String,String)> {
     let bytes = &s.as_bytes().to_vec();
     checksum_bytes(bytes)
 }
 
-pub(crate) fn checksum_bytes(bytes: &Vec<u8>) -> anyhow::Result<String> {
+/// Similar to github generate a short and long hash from the bytes
+pub(crate) fn checksum_bytes(bytes: &Vec<u8>) -> anyhow::Result<(String, String)> {
     let hash = sha256::digest(bytes);
-    Ok(base64_url::encode(hash.as_bytes()))
+    let chars = hash.chars();
+    Ok((chars.clone().take(7).collect(), chars.take(64).collect()))
 }
 
 pub trait PsContainer {
@@ -184,4 +186,28 @@ impl PsContainer for PsZipContainer {
     fn exists(&self, path: &String) -> bool {
         self.index.contains(path)
     }
+}
+
+pub(crate) fn is_existing_file_same(
+    output_container: &mut PsDirectoryContainer,
+    long_checksum: &String,
+    output_path: &String,
+) -> Option<bool> {
+    debug!("Output path exists, check checksum {:?}", output_path);
+    let Ok(bytes) = output_container.file_bytes(output_path) else {
+        debug!("Could not read file for checksum: {:?}", output_path);
+        return None;
+    };
+    let existing_file_checksum_r = checksum_bytes(&bytes);
+    let Ok((_, existing_long_checksum)) = existing_file_checksum_r else {
+        debug!("Could not read file for checksum: {:?}", output_path);
+        return None;
+    };
+    if !existing_long_checksum.eq(long_checksum) {
+        debug!("File exists but checksum does not match: {:?}, {}, {}", output_path,
+               existing_long_checksum, long_checksum);
+        return Some(false);
+    }
+    debug!("File exists with matching checksum at {:?}", output_path);
+    Some(true)
 }

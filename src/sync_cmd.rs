@@ -1,8 +1,8 @@
 use crate::album::{build_album_md, parse_csv_album, parse_json_album};
 use crate::file_type::{QuickFileType, QuickScannedFile, quick_file_scan};
-use crate::markdown_cmd::{assemble_markdown, mfm_from_media_file_info};
-use crate::media::media_file_info_from_readable;
-use crate::util::{PsContainer, PsDirectoryContainer, PsZipContainer, checksum_bytes};
+use crate::markdown_cmd::{assemble_markdown, mfm_from_media_file_info, parse_frontmatter, split_frontmatter, sync_markdown};
+use crate::media::{get_desired_media_path, media_file_info_from_readable, MediaFileInfo};
+use crate::util::{PsContainer, PsDirectoryContainer, PsZipContainer, checksum_bytes, is_existing_file_same};
 use anyhow::anyhow;
 use indicatif::ProgressBar;
 use std::cmp::PartialEq;
@@ -10,7 +10,7 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::sync::OnceLock;
 use std::time::Duration;
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
 struct State {
     indexing_spinner: ProgressBar,
@@ -62,6 +62,7 @@ pub(crate) async fn main(
     if let Some(output) = output_directory {
         output_container = Some(PsDirectoryContainer::new(output.clone()));
     }
+    let mut media_path_map = HashMap::<String, String>::new();
 
     if !skip_media {
         let supplemental_paths = quick_scanned_files
@@ -108,6 +109,7 @@ pub(crate) async fn main(
                 quick_scanned_file,
                 dry_run,
                 &mut output_container,
+                &mut media_path_map,
                 skip_markdown,
                 &json_hashmap,
             );
@@ -128,32 +130,34 @@ pub(crate) async fn main(
         let total_album_files = csv_album_files.len() + json_album_files.len();
         ui().albums_progress.set_length(total_album_files as u64);
         info!("Inspecting {} albums", total_album_files);
+        let mut albums = vec![];
         for csv_album in csv_album_files {
             let album_o = parse_csv_album(&mut container, csv_album);
-            let Some(_) = album_o else {
+            ui().albums_progress.inc(1);
+            let Some(album) = album_o else {
                 continue;
             };
-            ui().albums_progress.inc(1);
+            albums.push(album);
         }
         for json_album in json_album_files {
-            let album_o = parse_json_album(&mut container, json_album, &quick_scanned_files);
-            if let Some(a) = album_o {
-                let a_s = build_album_md(&a);
-                if let Some(output_c) = &output_container {
-                    let output_path = &a.desired_album_md_path;
-                    if output_c.exists(&a.desired_album_md_path) {
-                        debug!("Album markdown file already exists at {:?}", output_path);
-                    } else {
-                        if dry_run {
-                            debug!("Would create album markdown file at {:?}", output_path);
-                        } else {
-                            let bytes = &a_s.as_bytes().to_vec();
-                            output_c.write(dry_run, output_path, bytes);
-                        }
-                    }
-                }
-            };
+            let album_o = parse_json_album(&mut container, json_album, &quick_scanned_files, &media_path_map);
             ui().albums_progress.inc(1);
+            let Some(album) = album_o else {
+                continue;
+            };
+            albums.push(album);
+        }
+        info!("Generating {} albums", albums.len());
+        for a in albums {
+            let a_s = build_album_md(&a);
+            if let Some(output_c) = &output_container {
+                let output_path = &a.desired_album_md_path;
+                if output_c.exists(&a.desired_album_md_path) {
+                    debug!("Album markdown file already exists, clobbering, at {:?}", output_path);
+                }
+                let bytes = &a_s.as_bytes().to_vec();
+                output_c.write(dry_run, output_path, bytes);
+            }
         }
         ui().indexing_spinner.finish_and_clear();
         info!("Done albums");
@@ -167,6 +171,7 @@ pub(crate) fn process(
     qsf: &QuickScannedFile,
     dry_run: bool,
     output_container: &mut Option<PsDirectoryContainer>,
+    media_path_map: &mut HashMap<String, String>,
     skip_markdown: bool,
     extra_files: &HashMap<String, Vec<u8>>,
 ) -> anyhow::Result<()> {
@@ -190,68 +195,29 @@ pub(crate) fn process(
 
     if let Some(output_c) = output_container {
         if let Some(desired_output_path) = media_file.desired_media_path.clone() {
-            let mut verified_output_path = None;
+            let mut verified_output_path_o = None;
             if output_c.exists(&desired_output_path) {
-                let eso =
-                    is_existing_file_same(output_c, &media_file.checksum, &desired_output_path);
-                if let Some(existing_same) = eso {
-                    if existing_same {
-                        // todo: check if output_path exists, if so, use checksum
-                        verified_output_path = Some(desired_output_path.clone());
-                    } else {
-                        // todo: find another name
-                        // todo: this will affect markdown path
-                        debug!("Find another name {:?}", desired_output_path);
+                let es_o =
+                    is_existing_file_same(output_c, &media_file.long_checksum, &desired_output_path);
+                if let Some(existing_same) = es_o {
+                    if !existing_same {
+                        warn!("File with different checksum is at {:?}", desired_output_path);
+                        return Err(anyhow!("File clash: {:?}", file));
                     }
+                    debug!("No need to write, file already exists with same checksum at {:?}", desired_output_path);
+                    verified_output_path_o = Some(desired_output_path.clone());
                 }
             } else {
-                verified_output_path = Some(desired_output_path.clone());
+                verified_output_path_o = Some(desired_output_path.clone());
+                output_c.write(dry_run, &desired_output_path.clone(), &bytes);
             }
-            if let Some(verified_path) = verified_output_path {
-                output_c.write(dry_run, &verified_path, &bytes);
+            if let Some(verified_output_path) = verified_output_path_o {
+                media_path_map.insert(media_file.original_path.clone(), verified_output_path);
             }
         }
         if !skip_markdown {
-            if let Some(m) = media_file.desired_markdown_path.clone() {
-                let output_path = m;
-                let mfm = mfm_from_media_file_info(&media_file);
-                let s = assemble_markdown(&mfm, "")?;
-                let md_bytes = s.as_bytes().to_vec();
-                if output_c.exists(&output_path) {
-                    debug!("Markdown file already exists at {:?}", output_path);
-                    // todo: grab existing content and discard frontmatter
-                } else {
-                    output_c.write(dry_run, &output_path, &md_bytes);
-                }
-            }
+            let _ = sync_markdown(dry_run, &media_file, output_c);
         }
     }
     Ok(())
-}
-
-fn is_existing_file_same(
-    output_container: &mut PsDirectoryContainer,
-    input_checksum: &Option<String>,
-    output_path: &String,
-) -> Option<bool> {
-    debug!("Output path exists, check checksum {:?}", output_path);
-    let Some(media_file_checksum) = input_checksum.clone() else {
-        debug!("Media file does not have a checksum, cannot verify existing file");
-        return None;
-    };
-    let Ok(bytes) = output_container.file_bytes(output_path) else {
-        debug!("Could not read file for checksum: {:?}", output_path);
-        return None;
-    };
-    let existing_file_checksum_r = checksum_bytes(&bytes);
-    let Ok(existing_file_checksum) = existing_file_checksum_r else {
-        debug!("Could not read file for checksum: {:?}", output_path);
-        return None;
-    };
-    if !existing_file_checksum.eq(&media_file_checksum) {
-        debug!("File exists but checksum does not match: {:?}", output_path);
-        return Some(false);
-    }
-    debug!("File exists with matching checksum at {:?}", output_path);
-    Some(true)
 }

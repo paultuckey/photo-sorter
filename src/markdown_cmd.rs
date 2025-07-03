@@ -1,10 +1,10 @@
-use crate::media::{MediaFileInfo, media_file_info_from_readable};
-use crate::util::{PsContainer, PsDirectoryContainer, checksum_file, checksum_string};
-use anyhow::Context;
+use crate::media::{MediaFileInfo, media_file_info_from_readable, get_desired_media_path};
+use crate::util::{PsContainer, PsDirectoryContainer, checksum_file, checksum_string, checksum_bytes};
+use anyhow::{anyhow, Context};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
-use tracing::debug;
+use tracing::{debug, warn};
 
 pub fn main(input: &String) -> anyhow::Result<()> {
     debug!("Inspecting: {}", input);
@@ -33,8 +33,8 @@ pub fn main(input: &String) -> anyhow::Result<()> {
     Ok(())
 }
 
-pub(crate) fn mfm_from_media_file_info(media_file_info: &MediaFileInfo) -> MediaFrontMatter {
-    let mut mfm = MediaFrontMatter {
+pub(crate) fn mfm_from_media_file_info(media_file_info: &MediaFileInfo) -> PhotoSorterFrontMatter {
+    let mut mfm = PhotoSorterFrontMatter {
         path: Some(media_file_info.original_path.clone()),
         datetime_original: None,
         datetime: None,
@@ -59,7 +59,7 @@ pub(crate) fn mfm_from_media_file_info(media_file_info: &MediaFileInfo) -> Media
 }
 
 async fn save_markdown(
-    mfm: &MediaFrontMatter,
+    mfm: &PhotoSorterFrontMatter,
     markdown: &String,
     base_dir: &String,
 ) -> anyhow::Result<()> {
@@ -90,7 +90,7 @@ async fn save_markdown(
 
 #[derive(Serialize, Deserialize, PartialEq, Debug)]
 #[serde(rename_all(deserialize = "kebab-case", serialize = "kebab-case"))]
-pub(crate) struct MediaFrontMatter {
+pub(crate) struct PhotoSorterFrontMatter {
     pub(crate) path: Option<String>,
     pub(crate) datetime_original: Option<String>,
     pub(crate) datetime: Option<String>,
@@ -98,26 +98,79 @@ pub(crate) struct MediaFrontMatter {
     pub(crate) unique_id: Option<String>,
 }
 
-fn parse_frontmatter(file_contents: &str) -> anyhow::Result<MediaFrontMatter> {
-    let (fm, _) = split_frontmatter(file_contents)?;
+#[derive(Serialize, Deserialize, PartialEq, Debug)]
+#[serde(rename_all(deserialize = "kebab-case", serialize = "kebab-case"))]
+pub(crate) struct MediaFrontMatter {
+    pub(crate) photo_sorter: Option<PhotoSorterFrontMatter>,
+}
+
+
+pub(crate) fn sync_markdown(dry_run: bool, media_file: &MediaFileInfo, output_c: &mut PsDirectoryContainer) -> anyhow::Result<()> {
+    let Some(output_path) = media_file.desired_markdown_path.clone() else {
+        debug!("No desired markdown path for media file: {:?}", media_file.original_path);
+        return Ok(());
+    };
+    let mut existing_mfm_md = None;
+    if output_c.exists(&output_path) {
+        debug!("Markdown file already exists at {:?}", output_path);
+        let existing_md_bytes = output_c.file_bytes(&output_path);
+        let Ok(existing_md_bytes) = existing_md_bytes else {
+            debug!("Could not read existing markdown file at {:?}", output_path);
+            return Err(anyhow!("Could not read existing markdown file at {:?}", output_path));
+        };
+        let existing_md = String::from_utf8_lossy(&existing_md_bytes);
+        let r = parse_frontmatter(&existing_md);
+        let Ok((e_mfm, e_md)) = r else {
+            warn!("Could not parse existing markdown file frontmatter at {:?}", output_path);
+            return Err(anyhow!("Could not parse existing markdown file frontmatter at {:?}", output_path));
+        };
+        existing_mfm_md = Some((e_mfm, e_md));
+    }
+
+    let mfm = mfm_from_media_file_info(&media_file);
+    let mut md = "".to_string();
+    if let Some((e_mfm, e_md)) = existing_mfm_md {
+        let y = generate_yaml(&mfm)?;
+        let e_y = generate_yaml(&e_mfm)?;
+        if y == e_y {
+            debug!("Markdown file already exists with same frontmatter at {:?}", output_path);
+            return Ok(());
+        } else {
+            // todo: seems to differ on path???
+            debug!("Markdown file exists but frontmatter differs, copying markdown, clobbering frontmatter at {:?} {:?} {:?}", output_path, y, e_y);
+            md = e_md;
+        }
+    }
+    let s = assemble_markdown(&mfm, &md)?;
+    let md_bytes = s.as_bytes().to_vec();
+    output_c.write(dry_run, &output_path, &md_bytes);
+
+    Ok(())
+}
+
+pub(crate) fn parse_frontmatter(file_contents: &str) -> anyhow::Result<(PhotoSorterFrontMatter, String)> {
+    let (fm, md) = split_frontmatter(file_contents)?;
     let mfm = parse_yaml(&fm)?;
-    Ok(mfm)
+    Ok((mfm, md))
 }
 
 /// We write yaml manually so we have _exact_ control over output.
 /// We want to write plain style yaml, not the more complex
 /// https://yaml.org/spec/1.2-old/spec.html#id2788859
-fn generate_yaml(mfm: &MediaFrontMatter) -> anyhow::Result<String> {
+fn generate_yaml(mfm: &PhotoSorterFrontMatter) -> anyhow::Result<String> {
     let mut yaml = String::new();
     yaml.push_str("photo-sorter:\n");
     if let Some(s) = mfm.path.clone() {
         yaml.push_str(&format!("  path: {}\n", s));
     }
-    if let Some(s) = mfm.datetime_original.clone() {
-        yaml.push_str(&format!("  original-datetime: {}\n", s));
-    }
     if let Some(s) = mfm.datetime.clone() {
         yaml.push_str(&format!("  datetime: {}\n", s));
+    }
+    if let Some(s) = mfm.datetime_original.clone() {
+        // If datetime and original datetime are the same, skip writing original datetime
+        if s != mfm.datetime.clone().unwrap_or_default() {
+            yaml.push_str(&format!("  original-datetime: {}\n", s));
+        }
     }
     if let Some(s) = mfm.gps_date.clone() {
         yaml.push_str(&format!("  gps-date: {}\n", s));
@@ -125,12 +178,25 @@ fn generate_yaml(mfm: &MediaFrontMatter) -> anyhow::Result<String> {
     Ok(yaml)
 }
 
-fn parse_yaml(s: &str) -> anyhow::Result<MediaFrontMatter> {
+fn parse_yaml(s: &str) -> anyhow::Result<PhotoSorterFrontMatter> {
     let mfm: MediaFrontMatter = serde_yml::from_str(s)?;
-    Ok(mfm)
+    match mfm.photo_sorter {
+        None => {
+            Ok(PhotoSorterFrontMatter {
+                path: None,
+                datetime_original: None,
+                datetime: None,
+                gps_date: None,
+                unique_id: None,
+            })
+        }
+        Some(psfm) => {
+            Ok(psfm)
+        }
+    }
 }
 
-fn split_frontmatter(file_contents: &str) -> anyhow::Result<(String, String)> {
+pub(crate) fn split_frontmatter(file_contents: &str) -> anyhow::Result<(String, String)> {
     let mut lines = file_contents.lines();
     let mut frontmatter = String::new();
     let mut content = String::new();
@@ -166,7 +232,7 @@ fn split_frontmatter(file_contents: &str) -> anyhow::Result<(String, String)> {
 }
 
 pub(crate) fn assemble_markdown(
-    mfm: &MediaFrontMatter,
+    mfm: &PhotoSorterFrontMatter,
     markdown_content: &str,
 ) -> anyhow::Result<String> {
     let mut s = String::new();
@@ -178,8 +244,8 @@ pub(crate) fn assemble_markdown(
 }
 
 async fn file_exists(
-    mfm: &MediaFrontMatter,
-    checksum: &String,
+    mfm: &PhotoSorterFrontMatter,
+    long_checksum: &String,
     _: &String,
     base_dir: &String,
 ) -> anyhow::Result<()> {
@@ -187,11 +253,36 @@ async fn file_exists(
     let file_path = Path::new(&base_dir).join(&path);
     let file_path = file_path.as_path();
     if file_path.exists() {
-        let checksum_of_file = checksum_file(file_path)?;
-        if checksum_of_file.eq(checksum) {
+        let (_, checksum_of_file) = checksum_file(file_path)?;
+        if checksum_of_file.eq(long_checksum) {
             debug!("File exists and checksums match");
             return Ok(());
         }
     }
     Ok(())
 }
+
+
+#[tokio::test()]
+async fn test_yaml() -> anyhow::Result<()> {
+    crate::test_util::setup_log().await;
+    let s = "---
+photo-sorter:
+  path: Google Photos/Photos from 2025/IMG_5071.HEIC
+  datetime: 2025-02-09T18:17:01Z
+  gps-date: 2025-02-09
+---
+
+Hello world";
+    let r = parse_frontmatter(&s)?;
+    assert_eq!(r.0, PhotoSorterFrontMatter {
+                   path: Some("Google Photos/Photos from 2025/IMG_5071.HEIC".to_string()),
+                   datetime_original: None,
+                   datetime: Some("2025-02-09T18:17:01Z".to_string()),
+                   gps_date: Some("2025-02-09".to_string()),
+                   unique_id: None,
+               });
+    assert_eq!(r.1, "\nHello world\n".to_string());
+    Ok(())
+}
+

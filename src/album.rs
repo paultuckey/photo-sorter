@@ -24,14 +24,14 @@ pub(crate) fn parse_csv_album(
 }
 
 
-pub(crate) fn parse_json_album(container: &mut Box<dyn PsContainer>, qsf: &QuickScannedFile, all_files: &Vec<QuickScannedFile>) -> Option<Album> {
+pub(crate) fn parse_json_album(container: &mut Box<dyn PsContainer>, qsf: &QuickScannedFile, all_files: &Vec<QuickScannedFile>, media_path_map: &HashMap<String, String>) -> Option<Album> {
     let bytes_r = container.file_bytes(&qsf.name);
     let Ok(bytes) = bytes_r else {
         debug!("No bytes for album: {:?}", &qsf.name);
         return None;
     };
     let j: Result<Value, _> = serde_json::from_slice(&bytes);
-    let title   ;
+    let title;
     if let Ok(j) = j {
         let title_res = j.get("title");
         if let Some(title_value) = title_res {
@@ -39,21 +39,26 @@ pub(crate) fn parse_json_album(container: &mut Box<dyn PsContainer>, qsf: &Quick
             title = Some(title_value.as_str().unwrap_or("").to_string());
         } else {
             debug!("");
-            return None
+            return None;
         }
     } else {
         warn!("Unable to decode album JSON: {:?}", &qsf.name);
-        return None
+        return None;
     }
     // all files in this directory are in the album
     let file_path = Path::new(&qsf.name);
     let directory_path = file_path.parent().unwrap();
     let directory_path_str = directory_path.to_str().unwrap_or("@@broken");
-    // todo need to be translated to final output path for media
-    let files = all_files.iter().filter(|f| {
-        f.name.starts_with(&directory_path_str) && f.quick_file_type == QuickFileType::Media
-    }).map(|f| f.name.clone()).collect::<Vec<String>>();
-    let directory_path_name_str =  directory_path.file_name() 
+    let files = all_files.iter() //
+        .filter(|f| {
+            f.name.starts_with(&directory_path_str) && f.quick_file_type == QuickFileType::Media
+        })
+        // look up the media path in the media_path_map
+        .map(|f| media_path_map.get(&f.name.clone())) //
+        // remove None values
+        .filter_map(|f| f.cloned()) //
+        .collect::<Vec<String>>();
+    let directory_path_name_str = directory_path.file_name()
         .and_then(|n| n.to_str())
         .unwrap_or("@@broken")
         .to_string();
@@ -194,11 +199,17 @@ pub(crate) fn albums_to_files_map(albums: &[Album]) -> HashMap<String, Vec<Strin
 
 pub(crate) fn build_album_md(album: &Album) -> String {
     let mut md = String::new();
+    let generated_warning = "---\nphoto-lister:\n  album: This file is a GENERATED album, do NOT edit it directly.\n---\n\n";
+    let media_relative_path = "../";
+
+    md.push_str(generated_warning);
     md.push_str(&format!("# {}", &album.title));
-    md.push_str("");
+    md.push_str("\n\n");
     for f in album.files.clone() {
-        md.push_str(&format!("\n- [{}]({})", f, f));
+        let alt_text = "Photo";
+        let path = format!("{}{}", media_relative_path, f);
+        md.push_str(&format!("\n![{}]({})", alt_text, path));
     }
-    md.push_str("");
+    md.push_str("\n\n");
     md
 }
