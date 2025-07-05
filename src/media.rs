@@ -1,49 +1,46 @@
 use crate::exif::{ParsedExif, best_guess_taken_dt, parse_exif};
-use crate::file_type::{AccurateFileType, determine_file_type, file_ext_from_file_type};
-use crate::util::{checksum_bytes, checksum_file, PsContainer, PsDirectoryContainer};
+use crate::file_type::{AccurateFileType, determine_file_type, file_ext_from_file_type, QuickFileType, QuickScannedFile};
 use anyhow::anyhow;
 use chrono::{DateTime, Datelike, Timelike};
 use tracing::{debug, warn};
 
 #[derive(Debug, Clone)]
 pub(crate) struct MediaFileInfo {
-    pub(crate) original_path: String,
-    pub(crate) file_format: AccurateFileType,
-    pub(crate) parsed_exif: Option<ParsedExif>,
-    pub(crate) short_checksum: String,
-    pub(crate) long_checksum: String,
+    pub(crate) original_path: Vec<String>,
     pub(crate) desired_media_path: Option<String>,
     pub(crate) desired_markdown_path: Option<String>,
+    pub(crate) quick_file_type: QuickFileType,
+    pub(crate) parsed_exif: Option<ParsedExif>,
+    pub(crate) accurate_file_type: AccurateFileType,
+    pub(crate) short_checksum: String,
+    pub(crate) long_checksum: String,
     pub(crate) extra_info: Option<String>,
 }
 
 pub(crate) fn media_file_info_from_readable(
+    qsf: &QuickScannedFile,
     bytes: &Vec<u8>,
-    name: &String,
     extra_info_bytes: &Option<Vec<u8>>,
+    short_checksum: &String,
+    long_checksum: &String,
 ) -> anyhow::Result<MediaFileInfo> {
+    let name = &qsf.name;
     let guessed_ff = determine_file_type(bytes, name);
     if guessed_ff == AccurateFileType::Unsupported {
         debug!("File {:?} is not a valid media file", name);
         return Err(anyhow!("File is not a valid media file"));
     }
     let exif_o = parse_exif(bytes, name, &guessed_ff);
-    let checksum_o = checksum_bytes(bytes).ok();
 
     let ext = file_ext_from_file_type(&guessed_ff);
 
     let guessed_datetime = best_guess_taken_dt(&exif_o);
-    let mut desired_media_path_o = None;
-    let Some((short_checksum, long_checksum)) = checksum_o else {
-        debug!("Could not calculate short checksum for file: {:?}", name);
-        return Err(anyhow!("File is not a valid media file, could not calculate checksum"));
-    };
-    desired_media_path_o = Some(get_desired_media_path(
+    let desired_media_path_o = Some(get_desired_media_path(
         &short_checksum.clone(),
         &guessed_datetime,
         &ext,
     ));
-    let mut desired_markdown_path_o = get_desired_markdown_path(desired_media_path_o.clone());
+    let desired_markdown_path_o = get_desired_markdown_path(desired_media_path_o.clone());
 
     let mut extra_info = None;
     if let Some(extra_info_bytes) = extra_info_bytes {
@@ -52,8 +49,9 @@ pub(crate) fn media_file_info_from_readable(
         extra_info = Some(string.trim().to_string());
     }
     let media_file_info = MediaFileInfo {
-        original_path: name.clone(),
-        file_format: guessed_ff.clone(),
+        original_path: vec![name.clone()],
+        accurate_file_type: guessed_ff.clone(),
+        quick_file_type: qsf.quick_file_type.clone(),
         parsed_exif: exif_o.clone(),
         short_checksum: short_checksum.clone(),
         long_checksum: long_checksum.clone(),
@@ -102,7 +100,6 @@ pub(crate) fn get_desired_media_path(
     }
     format!("{date_dir}/{}.{}", name, ext)
 }
-
 
 
 #[tokio::test()]

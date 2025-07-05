@@ -39,37 +39,42 @@ pub(crate) struct QuickScannedFile {
     pub(crate) supplemental_json_file: Option<String>,
 }
 
-pub(crate) fn quick_file_scan(
+pub(crate) fn quick_scan_files(
     container: &Box<dyn PsContainer>,
     files: &Vec<String>,
 ) -> Vec<QuickScannedFile> {
     debug!("Scanning {} files for quick file type", files.len());
     let mut scanned_files = vec![];
     for file in files {
-        let qft = find_quick_file_type(file);
-        match qft {
-            QuickFileType::Media => {
-                let scanned_file = QuickScannedFile {
-                    name: file.clone(),
-                    quick_file_type: qft,
-                    supplemental_json_file: detect_extra_info(&file.clone(), container),
-                };
-                scanned_files.push(scanned_file);
-            }
-            QuickFileType::AlbumCsv | QuickFileType::AlbumJson => {
-                let scanned_file = QuickScannedFile {
-                    name: file.clone(),
-                    quick_file_type: qft,
-                    supplemental_json_file: None,
-                };
-                scanned_files.push(scanned_file);
-            }
-            QuickFileType::Unknown => {
-                continue;
-            }
-        }
+        let Some(qsf) = quick_scan_file(container, &file) else {
+            continue;
+        };
+        scanned_files.push(qsf);
     }
     scanned_files
+}
+
+pub(crate) fn quick_scan_file(container: &Box<dyn PsContainer>, file: &String) -> Option<QuickScannedFile> {
+    let qft = find_quick_file_type(file);
+    match qft {
+        QuickFileType::Media => {
+            Some(QuickScannedFile {
+                name: file.clone(),
+                quick_file_type: qft,
+                supplemental_json_file: detect_extra_info(&file.clone(), container),
+            })
+        }
+        QuickFileType::AlbumCsv | QuickFileType::AlbumJson => {
+            Some(QuickScannedFile {
+                name: file.clone(),
+                quick_file_type: qft,
+                supplemental_json_file: None,
+            })
+        }
+        QuickFileType::Unknown => {
+            None
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -121,20 +126,20 @@ pub(crate) fn determine_file_type(bytes: &Vec<u8>, name: &String) -> AccurateFil
     // Limit buffer size same as that inside `file_format` crate
     // let buffer_res = media_file_readable.take(36_870);
     if bytes.is_empty() {
-        warn!("file is empty file:{:?}", name);
+        warn!("file is empty file:{name:?}");
         return AccurateFileType::Unsupported;
     };
     let fmt = file_format::FileFormat::from_bytes(bytes);
     let mt = fmt.media_type();
     if mt == "application/octet-stream" {
-        debug!("can not guess mime type file:{:?}", name);
+        debug!("can not guess mime type file:{name:?}");
         return AccurateFileType::Unsupported;
     }
     if mt == "application/x-empty" {
-        debug!("file appears to be empty file:{:?}", name);
+        debug!("file appears to be empty file:{name:?}");
         return AccurateFileType::Unsupported;
     }
-    debug!("mime type:{:?} file:{:?} ", name, mt);
+    debug!("mime type:{name:?} file:{mt:?} ");
     file_type_from_content_type(mt)
 }
 

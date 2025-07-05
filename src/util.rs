@@ -1,10 +1,13 @@
+use std::fmt::{Display, Formatter};
 use anyhow::Context;
 use anyhow::anyhow;
 use std::fs;
 use std::fs::File;
 use std::io::Read;
 use std::path::Path;
-use tracing::{debug, error};
+use std::sync::atomic::{AtomicU64, Ordering};
+use status_line::StatusLine;
+use tracing::{debug, error, warn};
 use zip::ZipArchive;
 
 pub(crate) fn checksum_file(path: &Path) -> anyhow::Result<(String, String)> {
@@ -12,7 +15,7 @@ pub(crate) fn checksum_file(path: &Path) -> anyhow::Result<(String, String)> {
     checksum_bytes(&bytes)
 }
 
-pub(crate) fn checksum_string(s: &String) -> anyhow::Result<(String,String)> {
+pub(crate) fn checksum_string(s: &String) -> anyhow::Result<(String, String)> {
     let bytes = &s.as_bytes().to_vec();
     checksum_bytes(bytes)
 }
@@ -193,9 +196,8 @@ pub(crate) fn is_existing_file_same(
     long_checksum: &String,
     output_path: &String,
 ) -> Option<bool> {
-    debug!("Output path exists, check checksum {:?}", output_path);
     let Ok(bytes) = output_container.file_bytes(output_path) else {
-        debug!("Could not read file for checksum: {:?}", output_path);
+        debug!("Could not read file bytes for checksum: {:?}", output_path);
         return None;
     };
     let existing_file_checksum_r = checksum_bytes(&bytes);
@@ -203,11 +205,49 @@ pub(crate) fn is_existing_file_same(
         debug!("Could not read file for checksum: {:?}", output_path);
         return None;
     };
-    if !existing_long_checksum.eq(long_checksum) {
-        debug!("File exists but checksum does not match: {:?}, {}, {}", output_path,
-               existing_long_checksum, long_checksum);
-        return Some(false);
+    Some(existing_long_checksum.eq(long_checksum))
+}
+
+pub(crate) fn dir_part(file_path_s: &String) -> String {
+    let file_path = Path::new(&file_path_s);
+    let Some(parent_path) = file_path.parent() else {
+        warn!("No parent directory for file path: {:?}", file_path_s);
+        return "@@broken".to_string();
+    };
+    parent_path.to_string_lossy().to_string()
+}
+
+pub(crate) fn name_part(file_path_s: &String) -> String {
+    let file_path = Path::new(&file_path_s);
+
+    let Some(file_name_str) = file_path.file_name() else {
+        warn!("No file name for file path: {:?}", file_path_s);
+        return "@@broken".to_string();
+    };
+    file_name_str.to_string_lossy().to_string()
+}
+
+
+// Make sure it is Send + Sync, so it can be read and written from different threads:
+pub(crate) struct Progress {
+    total: u64,
+    current: AtomicU64,
+}
+impl Progress {
+    pub(crate) fn new(total: u64) -> StatusLine<Progress> {
+        StatusLine::new(Progress {
+            current: AtomicU64::new(0),
+            total,
+        })
     }
-    debug!("File exists with matching checksum at {:?}", output_path);
-    Some(true)
+    pub(crate) fn inc(&self) {
+        self.current.fetch_add(1, Ordering::Relaxed);
+    }
+}
+
+impl Display for Progress {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let current = self.current.load(Ordering::Relaxed);
+        write!(f, "{} of {}", current, self.total)
+    }
 }

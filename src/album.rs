@@ -1,10 +1,10 @@
-use crate::file_type::{QuickFileType, QuickScannedFile};
-use crate::util::{PsContainer};
+use crate::file_type::{AccurateFileType, QuickFileType, QuickScannedFile};
+use crate::util::{dir_part, name_part, PsContainer};
 use std::collections::{HashMap, HashSet};
 use std::io;
-use std::path::Path;
 use serde_json::Value;
 use tracing::{debug, info, warn};
+use crate::media::MediaFileInfo;
 
 ///
 /// Albums do not relate to a file they are in effect a back reference against the md file.
@@ -24,7 +24,7 @@ pub(crate) fn parse_csv_album(
 }
 
 
-pub(crate) fn parse_json_album(container: &mut Box<dyn PsContainer>, qsf: &QuickScannedFile, all_files: &Vec<QuickScannedFile>, media_path_map: &HashMap<String, String>) -> Option<Album> {
+pub(crate) fn parse_json_album(container: &mut Box<dyn PsContainer>, qsf: &QuickScannedFile, all_media: &HashMap<String, MediaFileInfo>) -> Option<Album> {
     let bytes_r = container.file_bytes(&qsf.name);
     let Ok(bytes) = bytes_r else {
         debug!("No bytes for album: {:?}", &qsf.name);
@@ -46,30 +46,31 @@ pub(crate) fn parse_json_album(container: &mut Box<dyn PsContainer>, qsf: &Quick
         return None;
     }
     // all files in this directory are in the album
-    let file_path = Path::new(&qsf.name);
-    let directory_path = file_path.parent().unwrap();
-    let directory_path_str = directory_path.to_str().unwrap_or("@@broken");
-    let files = all_files.iter() //
-        .filter(|f| {
-            f.name.starts_with(&directory_path_str) && f.quick_file_type == QuickFileType::Media
+    let directory_path_str = dir_part(&qsf.name);
+    // look up the media path in the media_path_map
+    let same_dir_media_file_info = all_media.values()
+        .filter(|m| {
+            m.accurate_file_type != AccurateFileType::Unsupported &&
+                m.quick_file_type == QuickFileType::Media &&
+                m.original_path.iter().any(|p| {
+                    let pp = dir_part(p);
+                    pp.eq(&directory_path_str)
+                })
         })
-        // look up the media path in the media_path_map
-        .map(|f| media_path_map.get(&f.name.clone())) //
-        // remove None values
-        .filter_map(|f| f.cloned()) //
+        .collect::<Vec<&MediaFileInfo>>();
+    let same_dir_desired_paths = same_dir_media_file_info.iter()
+        .filter_map(|m| m.desired_media_path.clone())
         .collect::<Vec<String>>();
-    let directory_path_name_str = directory_path.file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or("@@broken")
-        .to_string();
-    let desired_album_md_path = format!("albums/{}.md", directory_path_name_str);
+
+    let directory_path_name_str = name_part(&directory_path_str);
+    let desired_album_md_path = format!("albums/{directory_path_name_str}.md");
+    // todo: how check for existing album?
     Some(Album {
         desired_album_md_path,
-        title: title.unwrap_or_else(|| directory_path_name_str),
-        files,
+        title: title.unwrap_or(directory_path_name_str),
+        files: same_dir_desired_paths,
     })
 }
-
 
 pub(crate) fn de_duplicate_albums(albums: &Vec<Album>) -> Vec<Album> {
     let mut clean_albums: Vec<Album> = vec![];
@@ -88,7 +89,7 @@ pub(crate) fn de_duplicate_albums(albums: &Vec<Album>) -> Vec<Album> {
                 used_names.insert(name);
                 break;
             }
-            name = format!("{}-{}", name, attempt);
+            name = format!("{name}-{attempt}");
             if attempt > 100 {
                 warn!(
                     "Too many attempts to find unique name for album: {:?}",
@@ -207,8 +208,8 @@ pub(crate) fn build_album_md(album: &Album) -> String {
     md.push_str("\n\n");
     for f in album.files.clone() {
         let alt_text = "Photo";
-        let path = format!("{}{}", media_relative_path, f);
-        md.push_str(&format!("\n![{}]({})", alt_text, path));
+        let path = format!("{media_relative_path}{f}");
+        md.push_str(&format!("\n![{alt_text}]({path})"));
     }
     md.push_str("\n\n");
     md

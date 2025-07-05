@@ -55,6 +55,20 @@ enum Commands {
     },
 }
 
+
+// struct State {
+//     progress: ProgressBar,
+// }
+//
+// static UI_STATE: OnceLock<State> = OnceLock::new();
+//
+// fn ui() -> &'static State {
+//     UI_STATE.get_or_init(|| State {
+//         progress: ProgressBar::new(10000),
+//     })
+// }
+
+
 #[tokio::main]
 async fn main() {
     match go().await {
@@ -68,9 +82,13 @@ async fn main() {
 
 fn enable_debug(debug: bool) {
     let mut tracing_level = tracing::Level::INFO;
+    //let level = log::LevelFilter::Debug;
+
     if debug {
         tracing_level = tracing::Level::DEBUG;
     }
+    //init_logger_with_level(level).unwrap();
+
     tracing_subscriber::fmt()
         .with_max_level(tracing_level)
         .with_target(false)
