@@ -2,7 +2,7 @@ use serde_json::Value;
 use tracing::{debug, warn};
 use crate::util::{PsContainer};
 
-pub(crate) fn detect_extra_info(path: &String, container: &dyn PsContainer) -> Option<String> {
+pub(crate) fn detect_extra_info(path: &String, container: &Box<dyn PsContainer>) -> Option<String> {
     let google_supp_json_exts = vec![
         ".supplemental-metadata.json",
         ".supplemental-metad.json",

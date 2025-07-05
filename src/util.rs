@@ -106,7 +106,7 @@ impl PsContainer for PsDirectoryContainer {
         let file_path = Path::new(&self.root).join(path);
         let mut file =
             File::open(&file_path) //
-                .with_context(|| format!("Unable to open file {:?}", file_path))?;
+                .with_context(|| format!("Unable to open file {file_path:?}"))?;
         let mut buffer = Vec::new();
         file.read_to_end(&mut buffer).unwrap_or(0);
         Ok(buffer)

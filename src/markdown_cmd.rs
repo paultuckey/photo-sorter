@@ -297,7 +297,7 @@ pub(crate) fn split_frontmatter(file_contents: &str) -> (String, String) {
             // If there's content after the closing ---, it should be the remaining content
             // If the original had CRLF line endings, preserve that in the remaining content
             if !after_closing.is_empty() {
-                let remaining_with_newline = format!("{}{}", line_ending, after_closing);
+                let remaining_with_newline = format!("{line_ending}{after_closing}");
                 return (fm, remaining_with_newline);
             } else {
                 // File ends with "---"

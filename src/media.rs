@@ -86,7 +86,7 @@ pub(crate) fn get_desired_media_path(
             Ok(dt) => {
                 date_dir = format!("{}/{:0>2}/{:0>2}", dt.year(), dt.month(), dt.day());
                 let time_name = format!("{:0>2}{:0>2}-{:0>2}", dt.hour(), dt.minute(), dt.second());
-                name = format!("{}-{}", time_name, short_checksum);
+                name = format!("{time_name}-{short_checksum}");
             }
             Err(e) => {
                 warn!("Could not parse EXIF datetime: {:?}", e);
@@ -120,6 +120,10 @@ async fn test_desired_md_path() {
 #[tokio::test()]
 async fn test_desired_path() -> anyhow::Result<()> {
     crate::test_util::setup_log().await;
+    use crate::util::PsDirectoryContainer;
+    use crate::util::PsContainer;
+    use crate::util::{checksum_bytes};
+
     let mut c = PsDirectoryContainer::new("test".to_string());
     let bytes = c.file_bytes(&"Canon_40D.jpg".to_string()).unwrap();
     let short_checksum = checksum_bytes(&bytes)?.0;

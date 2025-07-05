@@ -46,7 +46,7 @@ pub(crate) fn quick_scan_files(
     debug!("Scanning {} files for quick file type", files.len());
     let mut scanned_files = vec![];
     for file in files {
-        let Some(qsf) = quick_scan_file(container, &file) else {
+        let Some(qsf) = quick_scan_file(container, file) else {
             continue;
         };
         scanned_files.push(qsf);
