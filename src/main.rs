@@ -55,20 +55,6 @@ enum Commands {
     },
 }
 
-
-// struct State {
-//     progress: ProgressBar,
-// }
-//
-// static UI_STATE: OnceLock<State> = OnceLock::new();
-//
-// fn ui() -> &'static State {
-//     UI_STATE.get_or_init(|| State {
-//         progress: ProgressBar::new(10000),
-//     })
-// }
-
-
 #[tokio::main]
 async fn main() {
     match go().await {
@@ -78,6 +64,30 @@ async fn main() {
             std::process::exit(1);
         }
     }
+}
+
+async fn go() -> anyhow::Result<()> {
+    let cli = Cli::parse();
+    match cli.command {
+        Commands::Markdown { debug, input } => {
+            enable_debug(debug);
+            markdown_cmd::main(&input).await?
+        }
+        Commands::Sync {
+            debug,
+            dry_run,
+            skip_markdown,
+            input,
+            output,
+            skip_media,
+            skip_albums,
+        } => {
+            enable_debug(debug);
+            enable_dry_run(dry_run);
+            sync_cmd::main(dry_run, &input, &output, skip_markdown, skip_media, skip_albums).await?;
+        }
+    }
+    Ok(())
 }
 
 fn enable_debug(debug: bool) {
@@ -100,29 +110,4 @@ fn enable_dry_run(dry_run: bool) {
     if dry_run {
         info!("Dry run mode is on, no changes will be made to disk");
     }
-}
-
-async fn go() -> anyhow::Result<()> {
-    let cli = Cli::parse();
-    match cli.command {
-        Commands::Markdown { debug, input } => {
-            enable_debug(debug);
-            markdown_cmd::main(&input)?
-        }
-        Commands::Sync {
-            debug,
-            dry_run,
-            skip_markdown,
-            input,
-            output,
-            skip_media,
-            skip_albums,
-        } => {
-            enable_debug(debug);
-            enable_dry_run(dry_run);
-            sync_cmd::main(dry_run, &input, &output, skip_markdown, skip_media, skip_albums).await?;
-        }
-    }
-
-    Ok(())
 }

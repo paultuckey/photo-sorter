@@ -27,13 +27,12 @@ pub(crate) fn media_file_info_from_readable(
     let name = &qsf.name;
     let guessed_ff = determine_file_type(bytes, name);
     if guessed_ff == AccurateFileType::Unsupported {
-        debug!("File {name:?} is not a valid media file");
+        warn!("Not a valid media file {name:?}");
         return Err(anyhow!("File is not a valid media file"));
     }
     let exif_o = parse_exif(bytes, name, &guessed_ff);
 
     let ext = file_ext_from_file_type(&guessed_ff);
-
     let guessed_datetime = best_guess_taken_dt(&exif_o);
     let desired_media_path_o = Some(get_desired_media_path(
         &short_checksum.clone(),
@@ -44,9 +43,9 @@ pub(crate) fn media_file_info_from_readable(
 
     let mut extra_info = None;
     if let Some(extra_info_bytes) = extra_info_bytes {
-        debug!("Extra info file has {} bytes", extra_info_bytes.len());
         let string = String::from_utf8_lossy(extra_info_bytes);
         extra_info = Some(string.trim().to_string());
+        debug!("  Extra info file loaded with {} bytes", extra_info_bytes.len());
     }
     let media_file_info = MediaFileInfo {
         original_path: vec![name.clone()],
@@ -101,37 +100,40 @@ pub(crate) fn get_desired_media_path(
     format!("{date_dir}/{name}.{ext}")
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-#[tokio::test()]
-async fn test_desired_md_path() {
-    crate::test_util::setup_log().await;
-    assert_eq!(get_desired_markdown_path(None), None);
-    assert_eq!(
-        get_desired_markdown_path(Some("abc.jpg".to_string())),
-        Some("abc.md".to_string())
-    );
-    assert_eq!(get_desired_markdown_path(Some("abc".to_string())), None);
-    assert_eq!(
-        get_desired_markdown_path(Some("abc.def.ghi.jkl".to_string())),
-        Some("abc.def.ghi.md".to_string())
-    );
+    #[tokio::test()]
+    async fn test_desired_md_path() {
+        crate::test_util::setup_log().await;
+        assert_eq!(get_desired_markdown_path(None), None);
+        assert_eq!(
+            get_desired_markdown_path(Some("abc.jpg".to_string())),
+            Some("abc.md".to_string())
+        );
+        assert_eq!(get_desired_markdown_path(Some("abc".to_string())), None);
+        assert_eq!(
+            get_desired_markdown_path(Some("abc.def.ghi.jkl".to_string())),
+            Some("abc.def.ghi.md".to_string())
+        );
+    }
+
+    #[tokio::test()]
+    async fn test_desired_path() -> anyhow::Result<()> {
+        crate::test_util::setup_log().await;
+        use crate::util::PsDirectoryContainer;
+        use crate::util::PsContainer;
+        use crate::util::{checksum_bytes};
+
+        let mut c = PsDirectoryContainer::new("test".to_string());
+        let bytes = c.file_bytes(&"Canon_40D.jpg".to_string()).unwrap();
+        let short_checksum = checksum_bytes(&bytes)?.0;
+
+        assert_eq!(get_desired_media_path(&short_checksum, &None, &"jpeg".to_string()),
+                   "undated/6bfdabd.jpeg".to_string());
+        assert_eq!(get_desired_media_path(&short_checksum, &Some("2017-08-19T10:21:59Z".to_string()), &"jpeg".to_string()),
+                   "2017/08/19/1021-59-6bfdabd.jpeg".to_string());
+        Ok(())
+    }
 }
-
-#[tokio::test()]
-async fn test_desired_path() -> anyhow::Result<()> {
-    crate::test_util::setup_log().await;
-    use crate::util::PsDirectoryContainer;
-    use crate::util::PsContainer;
-    use crate::util::{checksum_bytes};
-
-    let mut c = PsDirectoryContainer::new("test".to_string());
-    let bytes = c.file_bytes(&"Canon_40D.jpg".to_string()).unwrap();
-    let short_checksum = checksum_bytes(&bytes)?.0;
-
-    assert_eq!(get_desired_media_path(&short_checksum, &None, &"jpeg".to_string()),
-               "undated/6bfdabd.jpeg".to_string());
-    assert_eq!(get_desired_media_path(&short_checksum, &Some("2017-08-19T10:21:59Z".to_string()), &"jpeg".to_string()),
-               "2017/08/19/1021-59-6bfdabd.jpeg".to_string());
-    Ok(())
-}
-

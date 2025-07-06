@@ -27,18 +27,18 @@ pub(crate) fn checksum_bytes(bytes: &Vec<u8>) -> anyhow::Result<(String, String)
     Ok((chars.clone().take(7).collect(), chars.take(64).collect()))
 }
 
-pub trait PsContainer {
+pub(crate) trait PsContainer {
     fn scan(&self) -> Vec<String>;
     fn file_bytes(&mut self, path: &String) -> anyhow::Result<Vec<u8>>;
     fn exists(&self, path: &String) -> bool;
 }
 
-pub struct PsDirectoryContainer {
+pub(crate) struct PsDirectoryContainer {
     root: String,
 }
 
 impl PsDirectoryContainer {
-    pub fn new(root: String) -> Self {
+    pub(crate) fn new(root: String) -> Self {
         PsDirectoryContainer { root }
     }
     pub(crate) fn write(&self, dry_run: bool, path: &String, bytes: &Vec<u8>) {
@@ -56,6 +56,9 @@ impl PsDirectoryContainer {
             return;
         }
         debug!("Wrote file {p:?}");
+    }
+    pub(crate) fn root_exists(&self) -> bool {
+        Path::new(&self.root).exists()
     }
 }
 
@@ -116,7 +119,7 @@ impl PsContainer for PsDirectoryContainer {
     }
 }
 
-pub struct PsZipContainer {
+pub(crate) struct PsZipContainer {
     zip_file: String,
     index: Vec<String>,
     zip: ZipArchive<File>,
@@ -258,20 +261,26 @@ impl Display for Progress {
     }
 }
 
-#[tokio::test()]
-async fn test_progress() -> anyhow::Result<()> {
-    crate::test_util::setup_log().await;
-    debug!("Progress test");
-    // increase delay to make it more visible as progress bar has a frame rate
-    let delay = tokio::time::Duration::from_millis(1);
-    let prog = Progress::new(10);
-    tokio::time::sleep(delay).await;
-    for i in 0..10 {
-        prog.inc();
-        if i % 2 == 0 {
-            debug!("Even {i}");
-        }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Progress example (not really a test)
+    /// increase delay to make it more visible as progress bar has a frame rate
+    #[tokio::test()]
+    async fn test_progress() -> anyhow::Result<()> {
+        crate::test_util::setup_log().await;
+        let delay = tokio::time::Duration::from_millis(1);
+        let prog = Progress::new(10);
         tokio::time::sleep(delay).await;
+        for i in 0..10 {
+            prog.inc();
+            if i % 2 == 0 {
+                debug!("Even {i}");
+            }
+            tokio::time::sleep(delay).await;
+        }
+        Ok(())
     }
-    Ok(())
 }

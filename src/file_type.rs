@@ -38,14 +38,24 @@ pub(crate) struct QuickScannedFile {
     pub(crate) supplemental_json_file: Option<String>,
 }
 
-pub(crate) fn quick_scan_files(
+impl QuickScannedFile {
+    pub(crate) fn new(name: String, quick_file_type: QuickFileType) -> Self {
+        QuickScannedFile {
+            name,
+            quick_file_type,
+            supplemental_json_file: None,
+        }
+    }
+}
+
+pub(crate) async fn quick_scan_files(
     container: &Box<dyn PsContainer>,
     files: &Vec<String>,
 ) -> Vec<QuickScannedFile> {
     debug!("Scanning {} files for quick file type", files.len());
     let mut scanned_files = vec![];
     for file in files {
-        let Some(qsf) = quick_scan_file(container, file) else {
+        let Some(qsf) = quick_scan_file(container, file).await else {
             continue;
         };
         scanned_files.push(qsf);
@@ -53,7 +63,7 @@ pub(crate) fn quick_scan_files(
     scanned_files
 }
 
-pub(crate) fn quick_scan_file(container: &Box<dyn PsContainer>, file: &String) -> Option<QuickScannedFile> {
+pub(crate) async fn quick_scan_file(container: &Box<dyn PsContainer>, file: &String) -> Option<QuickScannedFile> {
     let qft = find_quick_file_type(file);
     match qft {
         QuickFileType::Media => {
@@ -64,11 +74,7 @@ pub(crate) fn quick_scan_file(container: &Box<dyn PsContainer>, file: &String) -
             })
         }
         QuickFileType::AlbumCsv | QuickFileType::AlbumJson => {
-            Some(QuickScannedFile {
-                name: file.clone(),
-                quick_file_type: qft,
-                supplemental_json_file: None,
-            })
+            Some(QuickScannedFile::new(file.clone(), qft))
         }
         QuickFileType::Unknown => {
             None
@@ -119,58 +125,64 @@ pub(crate) fn determine_file_type(bytes: &Vec<u8>, name: &String) -> AccurateFil
     // take json files at face value
     if name.to_lowercase().ends_with(".json") {
         let mt = AccurateFileType::Json;
-        debug!("mime type:{name:?} file:{mt:?} ");
+        debug!("  mime type:{mt:?}");
         return mt;
     }
     // Limit buffer size same as that inside `file_format` crate
     // let buffer_res = media_file_readable.take(36_870);
     if bytes.is_empty() {
-        warn!("file is empty file:{name:?}");
+        warn!("  file is empty file:{name:?}");
         return AccurateFileType::Unsupported;
     };
     let fmt = file_format::FileFormat::from_bytes(bytes);
     let mt = fmt.media_type();
     if mt == "application/octet-stream" {
-        debug!("can not guess mime type file:{name:?}");
+        debug!("  can not calculate mime type file:{name:?}");
         return AccurateFileType::Unsupported;
     }
     if mt == "application/x-empty" {
-        debug!("file appears to be empty file:{name:?}");
+        debug!("  file appears to be empty file:{name:?}");
         return AccurateFileType::Unsupported;
     }
-    debug!("mime type:{name:?} file:{mt:?} ");
+    debug!("  mime type {mt:?}");
     file_type_from_content_type(mt)
 }
 
-#[tokio::test()]
-async fn test_quick_file_type() {
-    crate::test_util::setup_log().await;
-    assert_eq!(find_quick_file_type("test/test1.jpg"), QuickFileType::Media);
-    assert_eq!(find_quick_file_type("test/test1.mp4"), QuickFileType::Media);
-    assert_eq!(
-        find_quick_file_type("test/test1.abc"),
-        QuickFileType::Unknown
-    );
-    assert_eq!(find_quick_file_type("test/test1.csv"), QuickFileType::AlbumCsv);
-    assert_eq!(find_quick_file_type("test/test1.CsV"), QuickFileType::AlbumCsv);
-    assert_eq!(find_quick_file_type("test/metadata.json"), QuickFileType::AlbumJson);
-    assert_eq!(find_quick_file_type("test/MeTaDaTa.JsOn"), QuickFileType::AlbumJson);
-    assert_eq!(find_quick_file_type("test/tes"), QuickFileType::Unknown);
-    assert_eq!(find_quick_file_type("test/te.s.jpg"), QuickFileType::Media);
-}
 
-#[tokio::test()]
-async fn test_accurate_file_type() {
-    crate::test_util::setup_log().await;
-    use crate::util::PsDirectoryContainer;
-    let name = "Canon_40D.jpg".to_string();
-    let mut root = PsDirectoryContainer::new("test".to_string());
-    let bytes = root.file_bytes(&name).unwrap();
-    assert_eq!(determine_file_type(&bytes, &name), AccurateFileType::Jpg);
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-    let bad: Vec<u8> = vec![];
-    assert_eq!(
-        determine_file_type(&bad, &"bad.bad".to_string()),
-        AccurateFileType::Unsupported
-    );
+    #[tokio::test()]
+    async fn test_quick_file_type() {
+        crate::test_util::setup_log().await;
+        assert_eq!(find_quick_file_type("test/test1.jpg"), QuickFileType::Media);
+        assert_eq!(find_quick_file_type("test/test1.mp4"), QuickFileType::Media);
+        assert_eq!(
+            find_quick_file_type("test/test1.abc"),
+            QuickFileType::Unknown
+        );
+        assert_eq!(find_quick_file_type("test/test1.csv"), QuickFileType::AlbumCsv);
+        assert_eq!(find_quick_file_type("test/test1.CsV"), QuickFileType::AlbumCsv);
+        assert_eq!(find_quick_file_type("test/metadata.json"), QuickFileType::AlbumJson);
+        assert_eq!(find_quick_file_type("test/MeTaDaTa.JsOn"), QuickFileType::AlbumJson);
+        assert_eq!(find_quick_file_type("test/tes"), QuickFileType::Unknown);
+        assert_eq!(find_quick_file_type("test/te.s.jpg"), QuickFileType::Media);
+    }
+
+    #[tokio::test()]
+    async fn test_accurate_file_type() {
+        crate::test_util::setup_log().await;
+        use crate::util::PsDirectoryContainer;
+        let name = "Canon_40D.jpg".to_string();
+        let mut root = PsDirectoryContainer::new("test".to_string());
+        let bytes = root.file_bytes(&name).unwrap();
+        assert_eq!(determine_file_type(&bytes, &name), AccurateFileType::Jpg);
+
+        let bad: Vec<u8> = vec![];
+        assert_eq!(
+            determine_file_type(&bad, &"bad.bad".to_string()),
+            AccurateFileType::Unsupported
+        );
+    }
 }

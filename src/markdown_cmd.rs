@@ -7,7 +7,7 @@ use std::path::Path;
 use log::{debug, warn};
 use crate::file_type::{quick_scan_file};
 
-pub fn main(input: &String) -> anyhow::Result<()> {
+pub(crate) async fn main(input: &String) -> anyhow::Result<()> {
     debug!("Inspecting: {input}");
     let p = Path::new(input);
     let parent_dir = p
@@ -19,7 +19,7 @@ pub fn main(input: &String) -> anyhow::Result<()> {
         .with_context(|| "Unable to get file name")?
         .to_string_lossy();
     let mut root: Box<dyn PsContainer> = Box::new(PsDirectoryContainer::new(parent_dir_string));
-    let qsf_o = quick_scan_file(&root, input);
+    let qsf_o = quick_scan_file(&root, input).await;
     let Some(qsf) = qsf_o else {
         debug!("Not a valid media file: {input}");
         return Ok(());
@@ -122,7 +122,7 @@ pub(crate) struct MediaFrontMatter {
 
 pub(crate) fn sync_markdown(dry_run: bool, media_file: &MediaFileInfo, output_c: &mut PsDirectoryContainer) -> anyhow::Result<()> {
     let Some(output_path) = media_file.desired_markdown_path.clone() else {
-        debug!("No desired markdown path for media file: {:?}", media_file.original_path);
+        warn!("No desired markdown path for media file: {:?}", media_file.original_path);
         return Ok(());
     };
     let mfm = mfm_from_media_file_info(media_file);
@@ -132,7 +132,7 @@ pub(crate) fn sync_markdown(dry_run: bool, media_file: &MediaFileInfo, output_c:
     if output_c.exists(&output_path) {
         let existing_md_bytes_r = output_c.file_bytes(&output_path);
         let Ok(existing_md_bytes) = existing_md_bytes_r else {
-            debug!("Could not read existing markdown file at {output_path:?}");
+            warn!("Could not read existing markdown file at {output_path:?}");
             return Err(anyhow!("Could not read existing markdown file at {output_path:?}"));
         };
         let existing_full_md = String::from_utf8_lossy(&existing_md_bytes);
@@ -141,19 +141,18 @@ pub(crate) fn sync_markdown(dry_run: bool, media_file: &MediaFileInfo, output_c:
         if let Some(e_mfm) = e_mfm_o {
             let e_yaml = generate_yaml(&e_mfm)?;
             if yaml == e_yaml {
-                debug!("Markdown file already exists with same frontmatter at {output_path:?}");
+                debug!("  Markdown file already exists with same frontmatter at {output_path:?}");
                 return Ok(());
             } else {
-                debug!("Markdown file exists but frontmatter differs, copying markdown, clobbering frontmatter at {output_path:?} {yaml:?} {e_yaml:?}");
+                debug!("  Markdown file exists but frontmatter differs, copying markdown, clobbering frontmatter at {output_path:?} {yaml:?} {e_yaml:?}");
                 md = e_md;
             }
         } else {
             // frontmatter is empty, we will write new frontmatter but copy markdown content
-            debug!("Markdown file already exists with empty frontmatter at {output_path:?}");
+            debug!("  Markdown file already exists with empty frontmatter at {output_path:?}");
             md = e_md;
         }
     }
-
     let md_str = assemble_markdown(&mfm, &md)?;
     let md_bytes = md_str.as_bytes().to_vec();
     output_c.write(dry_run, &output_path, &md_bytes);
@@ -341,10 +340,15 @@ async fn file_exists(
     Ok(())
 }
 
-#[tokio::test()]
-async fn test_parse_frontmatter() {
-    crate::test_util::setup_log().await;
-    let (fm_o, md) = parse_frontmatter("---
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test()]
+    async fn test_parse_frontmatter() {
+        crate::test_util::setup_log().await;
+        let (fm_o, md) = parse_frontmatter("---
   photo-sorter:
     path: 2025/02/09/1123-23-abcdefg.jpg
     path-original:
@@ -354,109 +358,111 @@ async fn test_parse_frontmatter() {
 ---
 x
 last line", "test.md");
-    assert_eq!(fm_o.unwrap(), PhotoSorterFrontMatter {
-        path: Some("2025/02/09/1123-23-abcdefg.jpg".to_string()),
-        path_original: vec!["Google Photos/Photos from 2025/IMG_5071.HEIC".to_string()],
-        datetime_original: None,
-        datetime: Some("2025-02-09T18:17:01Z".to_string()),
-        gps_date: Some("2025-02-09".to_string()),
-        unique_id: None,
-    });
-    assert_eq!(md, "x\nlast line".to_string());
-}
+        assert_eq!(fm_o.unwrap(), PhotoSorterFrontMatter {
+            path: Some("2025/02/09/1123-23-abcdefg.jpg".to_string()),
+            path_original: vec!["Google Photos/Photos from 2025/IMG_5071.HEIC".to_string()],
+            datetime_original: None,
+            datetime: Some("2025-02-09T18:17:01Z".to_string()),
+            gps_date: Some("2025-02-09".to_string()),
+            unique_id: None,
+        });
+        assert_eq!(md, "x\nlast line".to_string());
+    }
 
-#[test]
-fn parse_with_missing_beginning_line() {
-    let text = "";
-    let (fm, md) = split_frontmatter(text);
-    assert_eq!(fm, "");
-    assert_eq!(md, "");
-}
+    #[test]
+    fn parse_with_missing_beginning_line() {
+        let text = "";
+        let (fm, md) = split_frontmatter(text);
+        assert_eq!(fm, "");
+        assert_eq!(md, "");
+    }
 
-#[test]
-fn parse_with_missing_ending_line() {
-    let text = "---\n";
-    let (fm, md) = split_frontmatter(text);
-    assert_eq!(fm, "");
-    assert_eq!(md, "---\n");
-}
+    #[test]
+    fn parse_with_missing_ending_line() {
+        let text = "---\n";
+        let (fm, md) = split_frontmatter(text);
+        assert_eq!(fm, "");
+        assert_eq!(md, "---\n");
+    }
 
-#[test]
-fn parse_with_missing_ending_line_crlf() {
-    let text = "---\r\n";
-    let (fm, md) = split_frontmatter(text);
-    assert_eq!(fm, "");
-    assert_eq!(md, "---\r\n");
-}
+    #[test]
+    fn parse_with_missing_ending_line_crlf() {
+        let text = "---\r\n";
+        let (fm, md) = split_frontmatter(text);
+        assert_eq!(fm, "");
+        assert_eq!(md, "---\r\n");
+    }
 
-#[test]
-fn parse_with_empty_frontmatter() {
-    let text = "---\n---\n";
-    let (fm, md) = split_frontmatter(text);
-    assert_eq!(fm, "");
-    assert_eq!(md, "---\n---\n");
-}
+    #[test]
+    fn parse_with_empty_frontmatter() {
+        let text = "---\n---\n";
+        let (fm, md) = split_frontmatter(text);
+        assert_eq!(fm, "");
+        assert_eq!(md, "---\n---\n");
+    }
 
-#[test]
-fn parse_with_empty_frontmatter_crlf() {
-    let text = "---\r\n---\r\n";
-    let (fm, md) = split_frontmatter(text);
-    assert_eq!(fm, "");
-    assert_eq!(md, "---\r\n---\r\n");
-}
+    #[test]
+    fn parse_with_empty_frontmatter_crlf() {
+        let text = "---\r\n---\r\n";
+        let (fm, md) = split_frontmatter(text);
+        assert_eq!(fm, "");
+        assert_eq!(md, "---\r\n---\r\n");
+    }
 
-#[test]
-fn parse_with_missing_known_field() {
-    let text = "---\ndate: 2000-01-01\n---\n";
-    let (fm, md) = split_frontmatter(text);
-    assert_eq!(fm, "date: 2000-01-01");
-    assert_eq!(md, "\n");
-}
+    #[test]
+    fn parse_with_missing_known_field() {
+        let text = "---\ndate: 2000-01-01\n---\n";
+        let (fm, md) = split_frontmatter(text);
+        assert_eq!(fm, "date: 2000-01-01");
+        assert_eq!(md, "\n");
+    }
 
-#[test]
-fn parse_with_missing_known_field_crlf() {
-    let text = "---\r\ndate: 2000-01-01\r\n---\r\n";
-    let (fm, md) = split_frontmatter(text);
-    assert_eq!(fm, "date: 2000-01-01");
-    assert_eq!(md, "\r\n");
-}
+    #[test]
+    fn parse_with_missing_known_field_crlf() {
+        let text = "---\r\ndate: 2000-01-01\r\n---\r\n";
+        let (fm, md) = split_frontmatter(text);
+        assert_eq!(fm, "date: 2000-01-01");
+        assert_eq!(md, "\r\n");
+    }
 
-#[test]
-fn parse_with_valid_frontmatter() {
-    let text = "---\ntitle: dummy_title---\ndummy_body";
-    let (fm, md) = split_frontmatter(text);
-    assert_eq!(fm, "title: dummy_title");
-    assert_eq!(md, "dummy_body");
-}
+    #[test]
+    fn parse_with_valid_frontmatter() {
+        let text = "---\ntitle: dummy_title---\ndummy_body";
+        let (fm, md) = split_frontmatter(text);
+        assert_eq!(fm, "title: dummy_title");
+        assert_eq!(md, "dummy_body");
+    }
 
-#[test]
-fn parse_with_valid_frontmatter_crlf() {
-    let text = "---\r\ntitle: dummy_title---\r\ndummy_body";
-    let (fm, md) = split_frontmatter(text);
-    assert_eq!(fm, "title: dummy_title");
-    assert_eq!(md, "dummy_body");
-}
+    #[test]
+    fn parse_with_valid_frontmatter_crlf() {
+        let text = "---\r\ntitle: dummy_title---\r\ndummy_body";
+        let (fm, md) = split_frontmatter(text);
+        assert_eq!(fm, "title: dummy_title");
+        assert_eq!(md, "dummy_body");
+    }
 
-#[test]
-fn parse_with_extra_whitespace() {
-    let text = "\n\n\n---\ntitle: dummy_title---\ndummy_body";
-    let (fm, md) = split_frontmatter(text);
-    assert_eq!(fm, "title: dummy_title");
-    assert_eq!(md, "dummy_body");
-}
+    #[test]
+    fn parse_with_extra_whitespace() {
+        let text = "\n\n\n---\ntitle: dummy_title---\ndummy_body";
+        let (fm, md) = split_frontmatter(text);
+        assert_eq!(fm, "title: dummy_title");
+        assert_eq!(md, "dummy_body");
+    }
 
-#[test]
-fn parse_md_only_with_no_frontmatter() {
-    let text = "\n\n\ndummy_body";
-    let (fm, md) = split_frontmatter(text);
-    assert_eq!(fm, "");
-    assert_eq!(md, "\n\n\ndummy_body");
-}
+    #[test]
+    fn parse_md_only_with_no_frontmatter() {
+        let text = "\n\n\ndummy_body";
+        let (fm, md) = split_frontmatter(text);
+        assert_eq!(fm, "");
+        assert_eq!(md, "\n\n\ndummy_body");
+    }
 
-#[test]
-fn parse_with_extra_whitespace_rn() {
-    let text = "\r\n\r\n\r\n---\r\ntitle: dummy_title---\r\ndummy_body";
-    let (fm, md) = split_frontmatter(text);
-    assert_eq!(fm, "title: dummy_title");
-    assert_eq!(md, "dummy_body");
+    #[test]
+    fn parse_with_extra_whitespace_rn() {
+        let text = "\r\n\r\n\r\n---\r\ntitle: dummy_title---\r\ndummy_body";
+        let (fm, md) = split_frontmatter(text);
+        assert_eq!(fm, "title: dummy_title");
+        assert_eq!(md, "dummy_body");
+    }
+
 }

@@ -27,7 +27,6 @@ pub(crate) fn parse_exif(
     if !does_file_format_have_exif(file_format) {
         return None;
     }
-    
     let exif_reader = Reader::new();
     let mut cursor = Cursor::new(bytes);
     let mut bufread_seek = BufReader::new(&mut cursor);
@@ -46,7 +45,7 @@ pub(crate) fn parse_exif(
             })
         }
         Err(e) => {
-            debug!("Could not read EXIF data from file: {} bytes len {} err {}", name, bytes.len(), e);
+            debug!("Could not read EXIF data from file: {} ({} bytes, err {})", name, bytes.len(), e);
             None
         }
     }
@@ -60,7 +59,7 @@ pub(crate) fn best_guess_taken_dt(pe: &Option<ParsedExif>) -> Option<String> {
         .or(pe.gps_date.clone())
 }
 
-pub(crate) fn all_tags(path: &Path) -> Option<HashMap<String, String>> {
+fn all_tags(path: &Path) -> Option<HashMap<String, String>> {
     let file = File::open(path).ok()?;
     let mut buf_reader = BufReader::new(file);
     let exif_reader = Reader::new();
@@ -153,50 +152,56 @@ fn parse_exif_date(d: &Option<String>) -> Option<String> {
     ))
 }
 
-#[tokio::test()]
-async fn test_dt() {
-    crate::test_util::setup_log().await;
-    let dt = parse_exif_datetime(&Some("2017:08:19 10:21:59".to_string()));
-    assert_eq!(dt, Some("2017-08-19T10:21:59Z".to_string()));
-    let dt = parse_exif_datetime(&Some("2017:08:19".to_string()));
-    assert_eq!(dt, Some("2017-08-19T00:00:00Z".to_string()));
-}
 
-#[tokio::test()]
-async fn test_dt2() {
-    crate::test_util::setup_log().await;
-    let dt = parse_exif_datetime(&Some("2019:04:04 18:04:98".to_string()));
-    assert_eq!(dt, Some("2019-04-04T18:05:38Z".to_string()));
-}
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-#[tokio::test()]
-async fn test_d1() {
-    crate::test_util::setup_log().await;
-    let d = parse_exif_date(&Some("2019:04:04".to_string()));
-    assert_eq!(d, Some("2019-04-04".to_string()));
-}
+    #[tokio::test()]
+    async fn test_dt() {
+        crate::test_util::setup_log().await;
+        let dt = parse_exif_datetime(&Some("2017:08:19 10:21:59".to_string()));
+        assert_eq!(dt, Some("2017-08-19T10:21:59Z".to_string()));
+        let dt = parse_exif_datetime(&Some("2017:08:19".to_string()));
+        assert_eq!(dt, Some("2017-08-19T00:00:00Z".to_string()));
+    }
 
-#[tokio::test()]
-async fn test_parse_exif_created() {
-    use crate::util::PsContainer;
-    use crate::util::PsDirectoryContainer;
-    let mut c = PsDirectoryContainer::new("test".to_string());
-    let bytes = c.file_bytes(&"Canon_40D.jpg".to_string()).unwrap();
-    let p = parse_exif(&bytes, &"test".to_string(), &AccurateFileType::Jpg).unwrap();
-    assert_eq!(
-        p.datetime_original,
-        Some("2008-05-30T15:56:01Z".to_string())
-    );
-}
+    #[tokio::test()]
+    async fn test_dt2() {
+        crate::test_util::setup_log().await;
+        let dt = parse_exif_datetime(&Some("2019:04:04 18:04:98".to_string()));
+        assert_eq!(dt, Some("2019-04-04T18:05:38Z".to_string()));
+    }
 
-#[tokio::test()]
-async fn test_parse_exif_all_tags() {
-    crate::test_util::setup_log().await;
-    let p = Path::new("test/Canon_40D.jpg").to_path_buf();
-    let t = all_tags(&p).unwrap();
-    assert_eq!(t.len(), 10);
-    assert_eq!(
-        t.get("Interoperability identification"),
-        Some(&"R98".to_string())
-    );
+    #[tokio::test()]
+    async fn test_d1() {
+        crate::test_util::setup_log().await;
+        let d = parse_exif_date(&Some("2019:04:04".to_string()));
+        assert_eq!(d, Some("2019-04-04".to_string()));
+    }
+
+    #[tokio::test()]
+    async fn test_parse_exif_created() {
+        use crate::util::PsContainer;
+        use crate::util::PsDirectoryContainer;
+        let mut c = PsDirectoryContainer::new("test".to_string());
+        let bytes = c.file_bytes(&"Canon_40D.jpg".to_string()).unwrap();
+        let p = parse_exif(&bytes, &"test".to_string(), &AccurateFileType::Jpg).unwrap();
+        assert_eq!(
+            p.datetime_original,
+            Some("2008-05-30T15:56:01Z".to_string())
+        );
+    }
+
+    #[tokio::test()]
+    async fn test_parse_exif_all_tags() {
+        crate::test_util::setup_log().await;
+        let p = Path::new("test/Canon_40D.jpg").to_path_buf();
+        let t = all_tags(&p).unwrap();
+        assert_eq!(t.len(), 10);
+        assert_eq!(
+            t.get("Interoperability identification"),
+            Some(&"R98".to_string())
+        );
+    }
 }

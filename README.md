@@ -1,52 +1,33 @@
 # photo-sorter-cli
 
-A CLI tool to take photos from Google Takeout and iCloud zips (or directory) and sort them into directories 
-based on their EXIF metadata and any supplemental info.
+A CLI tool to take photos, videos and albums from Google Takeout and iCloud zip files (or directories) and sort them 
+into directories based on their EXIF metadata and any supplemental info.
 
-- Input
-  - Google Takeout zip or a directory
-  - iCloud archive zip or a directory
-- Output
-  - Markdown file with frontmatter per photo/video and album
-  - Each Album as a markdown file
-  - Sync photos/videos from input into existing directories 
-    - without clobbering if same checksum ignore
-    - only updating frontmatter in existing markdown files
-    - additive only nothing will be deleted or overwritten
-
-yyyy/mm/dd/hhmm-ss[-i].ext
-yyyy/mm/dd/hhmm-ss[-i].md
+In detail:
+- Files are put into directories with the following format: `yyyy/mm/dd/hhmm-ss-{short checksum}.ext`
+- For each photo or video file:
+  - A matching Markdown file is written at the same path with the extension `md`
+  - This contains [YAML](https://en.wikipedia.org/wiki/YAML) frontmatter (the part between `---`'s) with metadata (based on EXIF tags)
+  - The Markdown part of this file can be edited with notes, and it will not be clobbered on later runs
+- Rename file with wrong extension based on a mime magic byte
+- For each Album (Google uses JSON format, iCloud CSV) a Markdown file will be produced
+- Input can be Google Takeout zip/directory or iCloud archive zip or directory
+- Sync photos/videos into existing directories without clobbering if same file exists already
+  - Additive only nothing will be deleted or overwritten
 
 ## FAQ
 
-> Why date based directories?
+> Why use date based directories? Why include the checksum in the file name?
 
-Time is the most important factor in archiving.
+Time is the most important factor in archiving, it enables you to take different actions with different year 
+directories. 
 
-> Why markdown?
+A robust failsafe solution for file naming is needed that will be durable _very_ long term. Multiple photos can be 
+taken during the same second, the checksum is used to differentiate them (date-based EXIF tags do not provide sub-second accuracy).
 
-Widely supported and human readable witout any special software.
+> Why use markdown files?
 
-Markdown files contain date information from exif used to determine file location.
-
-You can safely edit the markdown files to change the information. 
-When running the tool again, this will not be clobbered.
-
-
-## Markdown
-
-Example:
-
-```markdown
----
-photo-lister:
-    checksum: xxx
-    date: 2025-02-28
-    origin: xyz.takeout.zip
----
-
-Regular _Markdown_ follows...
-```
+Markdown is widely supported and human readable without any special software.
 
 ## Usage
 
@@ -60,8 +41,8 @@ cargo run -- markdown --debug --input "test/Canon_40D.jpg"
 
 ```shell
 cargo run -- \
-  sync --debug --dry-run --skip-media \
-    --input "/Users/paul/Downloads/takeout-20250614T030613Z-1-001.zip" \
+  sync --debug --dry-run \
+    --input "input/takeout-20250614T030613Z-1-001.zip" \
     --output "output/archive"
 ```
 
@@ -69,24 +50,7 @@ cargo run -- \
 cargo run -- sync --debug --input "input/Takeout-small" --output "output/archive-small"
 ```
 
-## Development
 
-- Don't use lifetimes
-- Don't use `unsafe`, `expect()` or `unwrap()`
-- Use `.clone()` to avoid hard things in Rust.
+---
 
-```shell
-cargo clippy
-```
-
-```shell
-cargo run
-```
-
-```shell
-cargo test
-```
-
-```shell
-cargo build
-```
+Google is a trademark of Google LLC. iCloud is a trademark of Apple Inc.
