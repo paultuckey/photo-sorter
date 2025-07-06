@@ -8,7 +8,7 @@ use log::{debug, warn};
 use crate::file_type::{quick_scan_file};
 
 pub fn main(input: &String) -> anyhow::Result<()> {
-    debug!("Inspecting: {}", input);
+    debug!("Inspecting: {input}");
     let p = Path::new(input);
     let parent_dir = p
         .parent() //
@@ -21,7 +21,7 @@ pub fn main(input: &String) -> anyhow::Result<()> {
     let mut root: Box<dyn PsContainer> = Box::new(PsDirectoryContainer::new(parent_dir_string));
     let qsf_o = quick_scan_file(&root, input);
     let Some(qsf) = qsf_o else {
-        debug!("Not a valid media file: {}", input);
+        debug!("Not a valid media file: {input}");
         return Ok(());
     };
     let bytes = root
@@ -37,7 +37,7 @@ pub fn main(input: &String) -> anyhow::Result<()> {
     let media_file_info_res = media_file_info_from_readable(
         &qsf, &bytes, &None, &short_checksum, &long_checksum);
     let Ok(media_file_info) = media_file_info_res else {
-        debug!("Not a valid media file: {}", input);
+        debug!("Not a valid media file: {input}");
         return Ok(());
     };
     debug!("Markdown:");
@@ -132,8 +132,8 @@ pub(crate) fn sync_markdown(dry_run: bool, media_file: &MediaFileInfo, output_c:
     if output_c.exists(&output_path) {
         let existing_md_bytes_r = output_c.file_bytes(&output_path);
         let Ok(existing_md_bytes) = existing_md_bytes_r else {
-            debug!("Could not read existing markdown file at {:?}", output_path);
-            return Err(anyhow!("Could not read existing markdown file at {:?}", output_path));
+            debug!("Could not read existing markdown file at {output_path:?}");
+            return Err(anyhow!("Could not read existing markdown file at {output_path:?}"));
         };
         let existing_full_md = String::from_utf8_lossy(&existing_md_bytes);
         let (e_mfm_o, e_md) = parse_frontmatter(&existing_full_md, &output_path);
@@ -141,15 +141,15 @@ pub(crate) fn sync_markdown(dry_run: bool, media_file: &MediaFileInfo, output_c:
         if let Some(e_mfm) = e_mfm_o {
             let e_yaml = generate_yaml(&e_mfm)?;
             if yaml == e_yaml {
-                debug!("Markdown file already exists with same frontmatter at {:?}", output_path);
+                debug!("Markdown file already exists with same frontmatter at {output_path:?}");
                 return Ok(());
             } else {
-                debug!("Markdown file exists but frontmatter differs, copying markdown, clobbering frontmatter at {:?} {:?} {:?}", output_path, yaml, e_yaml);
+                debug!("Markdown file exists but frontmatter differs, copying markdown, clobbering frontmatter at {output_path:?} {yaml:?} {e_yaml:?}");
                 md = e_md;
             }
         } else {
             // frontmatter is empty, we will write new frontmatter but copy markdown content
-            debug!("Markdown file already exists with empty frontmatter at {:?}", output_path);
+            debug!("Markdown file already exists with empty frontmatter at {output_path:?}");
             md = e_md;
         }
     }
@@ -168,7 +168,7 @@ pub(crate) fn parse_frontmatter(file_contents: &str, path: &str) -> (Option<Phot
             (Some(mfm), md)
         }
         Err(_) => {
-            warn!("Could not parse frontmatter at {:?}, treating as empty", path);
+            warn!("Could not parse frontmatter at {path:?}, treating as empty");
             (None, md)
         }
     }

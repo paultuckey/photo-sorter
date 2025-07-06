@@ -119,7 +119,7 @@ pub(crate) fn determine_file_type(bytes: &Vec<u8>, name: &String) -> AccurateFil
     // take json files at face value
     if name.to_lowercase().ends_with(".json") {
         let mt = AccurateFileType::Json;
-        debug!("mime type:{:?} file:{:?} ", name, mt);
+        debug!("mime type:{name:?} file:{mt:?} ");
         return mt;
     }
     // Limit buffer size same as that inside `file_format` crate

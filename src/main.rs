@@ -74,7 +74,7 @@ async fn main() {
     match go().await {
         Ok(_) => {}
         Err(e) => {
-            error!("Error: {}", e);
+            error!("Error: {e}");
             std::process::exit(1);
         }
     }

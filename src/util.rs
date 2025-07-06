@@ -52,10 +52,10 @@ impl PsDirectoryContainer {
             return;
         }
         if let Err(e) = fs::write(&p, bytes) {
-            error!("Unable to write file {:?}: {}", p, e);
+            error!("Unable to write file {p:?}: {e}");
             return;
         }
-        debug!("Wrote file {:?}", p);
+        debug!("Wrote file {p:?}");
     }
 }
 
@@ -65,7 +65,7 @@ fn scan_dir_recursively(files: &mut Vec<String>, dir_path: &Path, root_path: &Pa
         return;
     }
     let Ok(dir_reader) = fs::read_dir(dir_path) else {
-        debug!("Unable to read directory: {:?}", dir_path);
+        debug!("Unable to read directory: {dir_path:?}");
         return;
     };
     for dir_entry in dir_reader {
@@ -92,11 +92,11 @@ impl PsContainer for PsDirectoryContainer {
         let mut files = Vec::new();
         let root_path = Path::new(&self.root);
         if !root_path.exists() {
-            debug!("Root path does not exist: {:?}", root_path);
+            debug!("Root path does not exist: {root_path:?}");
             return files;
         }
         if !root_path.is_dir() {
-            debug!("Root path is not a directory: {:?}", root_path);
+            debug!("Root path is not a directory: {root_path:?}");
             return files;
         }
         scan_dir_recursively(&mut files, root_path, root_path);
@@ -197,12 +197,12 @@ pub(crate) fn is_existing_file_same(
     output_path: &String,
 ) -> Option<bool> {
     let Ok(bytes) = output_container.file_bytes(output_path) else {
-        debug!("Could not read file bytes for checksum: {:?}", output_path);
+        debug!("Could not read file bytes for checksum: {output_path:?}");
         return None;
     };
     let existing_file_checksum_r = checksum_bytes(&bytes);
     let Ok((_, existing_long_checksum)) = existing_file_checksum_r else {
-        debug!("Could not read file for checksum: {:?}", output_path);
+        debug!("Could not read file for checksum: {output_path:?}");
         return None;
     };
     Some(existing_long_checksum.eq(long_checksum))
@@ -211,7 +211,7 @@ pub(crate) fn is_existing_file_same(
 pub(crate) fn dir_part(file_path_s: &String) -> String {
     let file_path = Path::new(&file_path_s);
     let Some(parent_path) = file_path.parent() else {
-        warn!("No parent directory for file path: {:?}", file_path_s);
+        warn!("No parent directory for file path: {file_path_s:?}");
         return "@@broken".to_string();
     };
     parent_path.to_string_lossy().to_string()
@@ -221,7 +221,7 @@ pub(crate) fn name_part(file_path_s: &String) -> String {
     let file_path = Path::new(&file_path_s);
 
     let Some(file_name_str) = file_path.file_name() else {
-        warn!("No file name for file path: {:?}", file_path_s);
+        warn!("No file name for file path: {file_path_s:?}");
         return "@@broken".to_string();
     };
     file_name_str.to_string_lossy().to_string()
@@ -264,7 +264,7 @@ async fn test_progress() -> anyhow::Result<()> {
     debug!("Progress test");
     // increase delay to make it more visible as progress bar has a frame rate
     let delay = tokio::time::Duration::from_millis(1);
-    let mut prog = Progress::new(10);
+    let prog = Progress::new(10);
     tokio::time::sleep(delay).await;
     for i in 0..10 {
         prog.inc();

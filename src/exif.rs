@@ -103,7 +103,7 @@ fn parse_exif_datetime(d: &Option<String>) -> Option<String> {
     let nd = match nd_result {
         Ok(nd) => nd,
         Err(e) => {
-            warn!("Could not parsing EXIF date: {:?} {}", d, e);
+            warn!("Could not parsing EXIF date: {d:?} {e}");
             return None;
         }
     };
@@ -124,7 +124,7 @@ fn parse_exif_datetime(d: &Option<String>) -> Option<String> {
     }
     let ont = NaiveTime::from_hms_opt(hh, mm, ss);
     let Some(nt) = ont else {
-        warn!("Could not parse EXIF time: {:?}", d);
+        warn!("Could not parse EXIF time: {d:?}");
         return None;
     };
     let ndt = NaiveDateTime::new(nd, nt);
@@ -141,7 +141,7 @@ fn parse_exif_date(d: &Option<String>) -> Option<String> {
     let nd = match nd_result {
         Ok(nd) => nd,
         Err(e) => {
-            warn!("Could not parsing EXIF date: {:?} {}", d, e);
+            warn!("Could not parsing EXIF date: {d:?} {e}");
             return None;
         }
     };

@@ -26,7 +26,7 @@ pub(crate) async fn main(
     } else {
         container = Box::new(PsZipContainer::new(input.clone()));
     }
-    info!("Input zip: {}", input);
+    info!("Input zip: {input}");
 
 
     info!("Indexing...");
@@ -52,10 +52,10 @@ pub(crate) async fn main(
             };
             let bytes = container.file_bytes(&path);
             let Ok(bytes) = bytes else {
-                debug!("Could not read supplemental json file: {}", path);
+                debug!("Could not read supplemental json file: {path}");
                 continue;
             };
-            debug!("Read supplemental json file: {}", path);
+            debug!("Read supplemental json file: {path}");
             json_hashmap.insert(path, bytes);
         }
         info!("Read {} supplemental files", json_hashmap.len());
@@ -65,7 +65,7 @@ pub(crate) async fn main(
             .filter(|m| m.quick_file_type == QuickFileType::Media)
             .collect::<Vec<&QuickScannedFile>>();
         info!("Inspecting {} photo and video files", quick_media_files.len());
-        let mut prog = Progress::new(quick_media_files.len() as u64);
+        let prog = Progress::new(quick_media_files.len() as u64);
         for quick_scanned_file in quick_media_files {
             prog.inc();
             let bytes = container.file_bytes(&quick_scanned_file.name.clone());
@@ -78,7 +78,7 @@ pub(crate) async fn main(
         drop(prog);
 
         if let Some(ref mut output_container) = output_container_o {
-            let mut prog = Progress::new(all_media.len() as u64);
+            let prog = Progress::new(all_media.len() as u64);
             for media in all_media.values() {
                 prog.inc();
                 let _ = write_media(media, dry_run, &mut container, output_container);
@@ -99,7 +99,7 @@ pub(crate) async fn main(
             .collect::<Vec<&QuickScannedFile>>();
         info!("Inspecting {} albums", quick_scanned_albums.len());
         let mut albums = vec![];
-        let mut prog = Progress::new(all_media.len() as u64);
+        let prog = Progress::new(all_media.len() as u64);
         for qsf in quick_scanned_albums {
             prog.inc();
             match qsf.quick_file_type {
@@ -130,7 +130,7 @@ pub(crate) async fn main(
             };
             let output_path = &album.desired_album_md_path;
             if output_c.exists(&album.desired_album_md_path) {
-                debug!("Album markdown file already exists, clobbering, at {:?}", output_path);
+                debug!("Album markdown file already exists, clobbering, at {output_path:?}");
             }
             let bytes = &a_s.as_bytes().to_vec();
             output_c.write(dry_run, output_path, bytes);
@@ -168,7 +168,7 @@ pub(crate) fn read_media(
         if let Some(b) = extra_files.get(&path) {
             extra_info_bytes = Some(b.clone());
         } else {
-            debug!("No extra info file found for: {:?}", path);
+            debug!("No extra info file found for: {path:?}");
         }
     }
     let media_file_info_res = media_file_info_from_readable(
@@ -188,18 +188,18 @@ pub(crate) fn write_media(
     output_container: &mut PsDirectoryContainer,
 ) -> anyhow::Result<()> {
     let Some(desired_output_path) = &media_file.desired_media_path else {
-        debug!("No desired media path for file: {:?}", media_file);
-        return Err(anyhow!("No desired media path for file: {:?}", media_file));
+        debug!("No desired media path for file: {media_file:?}");
+        return Err(anyhow!("No desired media path for file: {media_file:?}"));
     };
     if output_container.exists(desired_output_path) {
         let es_o =
             is_existing_file_same(output_container, &media_file.long_checksum, desired_output_path);
         if let Some(existing_same) = es_o {
             if !existing_same {
-                warn!("File with different checksum is at {:?}", desired_output_path);
-                return Err(anyhow!("File clash: {:?}", desired_output_path));
+                warn!("File with different checksum is at {desired_output_path:?}");
+                return Err(anyhow!("File clash: {desired_output_path:?}"));
             }
-            debug!("No need to write, file already exists with same checksum at {:?}", desired_output_path);
+            debug!("No need to write, file already exists with same checksum at {desired_output_path:?}");
         }
     } else {
         let bytes = input_container.file_bytes(desired_output_path)?;

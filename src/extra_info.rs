@@ -22,14 +22,14 @@ fn read_extra_info(bytes: &Vec<u8>, name: &String) -> Option<String> {
     if let Ok(j) = j {
         let c = serde_json::to_string(&j);
         if let Ok(c) = c {
-            debug!("Found supplemental metadata: {:?}", name);
+            debug!("Found supplemental metadata: {name:?}");
             Some(c)
         } else {
-            warn!("Unable to encode extra info JSON: {:?}", name);
+            warn!("Unable to encode extra info JSON: {name:?}");
             None
         }
     } else {
-        warn!("Unable to decode extra info JSON: {:?}", name);
+        warn!("Unable to decode extra info JSON: {name:?}");
         None
     }
 }

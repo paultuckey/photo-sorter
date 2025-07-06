@@ -27,7 +27,7 @@ pub(crate) fn media_file_info_from_readable(
     let name = &qsf.name;
     let guessed_ff = determine_file_type(bytes, name);
     if guessed_ff == AccurateFileType::Unsupported {
-        debug!("File {:?} is not a valid media file", name);
+        debug!("File {name:?} is not a valid media file");
         return Err(anyhow!("File is not a valid media file"));
     }
     let exif_o = parse_exif(bytes, name, &guessed_ff);
@@ -89,7 +89,7 @@ pub(crate) fn get_desired_media_path(
                 name = format!("{time_name}-{short_checksum}");
             }
             Err(e) => {
-                warn!("Could not parse EXIF datetime: {:?}", e);
+                warn!("Could not parse EXIF datetime: {e:?}");
                 date_dir = "undated".to_string();
                 name = short_checksum.to_owned();
             }
@@ -98,7 +98,7 @@ pub(crate) fn get_desired_media_path(
         date_dir = "undated".to_string();
         name = short_checksum.to_owned();
     }
-    format!("{date_dir}/{}.{}", name, ext)
+    format!("{date_dir}/{name}.{ext}")
 }
 
 

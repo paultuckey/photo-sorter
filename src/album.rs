@@ -35,7 +35,7 @@ pub(crate) fn parse_json_album(container: &mut Box<dyn PsContainer>, qsf: &Quick
     if let Ok(j) = j {
         let title_res = j.get("title");
         if let Some(title_value) = title_res {
-            debug!("Found album title: {:?}", title_value);
+            debug!("Found album title: {title_value:?}");
             title = Some(title_value.as_str().unwrap_or("").to_string());
         } else {
             debug!("");
@@ -115,7 +115,7 @@ fn parse_csv(bytes: &Vec<u8>, name: &String) -> Option<Album> {
         debug!("No headers");
         return None;
     };
-    debug!("Headers: {:?}", s);
+    debug!("Headers: {s:?}");
     if s.is_empty() {
         debug!("No headers");
         return None;
@@ -134,7 +134,7 @@ fn parse_csv(bytes: &Vec<u8>, name: &String) -> Option<Album> {
             debug!("Error reading record");
             continue;
         };
-        debug!("{:?}", record);
+        debug!("{record:?}");
         if record.is_empty() {
             continue;
         }
@@ -148,7 +148,7 @@ fn parse_csv(bytes: &Vec<u8>, name: &String) -> Option<Album> {
         files.push(col0.to_string());
     }
     if files.is_empty() {
-        debug!("Not an album: {:?}", name);
+        debug!("Not an album: {name:?}");
         return None;
     }
     // find index of last dot and get all chars before that
@@ -157,13 +157,13 @@ fn parse_csv(bytes: &Vec<u8>, name: &String) -> Option<Album> {
     if dot_idx > 0 {
         name_without_ext = name[..dot_idx].to_string();
         if name_without_ext.is_empty() {
-            debug!("Album file has no name: {:?}", name);
+            debug!("Album file has no name: {name:?}");
             return None;
         }
     } else {
         name_without_ext = name.clone();
         if name_without_ext.is_empty() {
-            debug!("Album file has no name: {:?}", name);
+            debug!("Album file has no name: {name:?}");
             return None;
         }
     }
