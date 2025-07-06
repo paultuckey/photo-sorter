@@ -1,14 +1,15 @@
-use std::fmt::{Display, Formatter};
-use anyhow::Context;
 use anyhow::anyhow;
+use anyhow::Context;
+use chrono::DateTime;
+use log::{debug, error, warn};
+use status_line::StatusLine;
+use std::fmt::{Display, Formatter};
 use std::fs;
 use std::fs::File;
 use std::io::Read;
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
-use chrono::DateTime;
-use status_line::StatusLine;
-use log::{debug, error, warn};
+use std::time::SystemTime;
 use zip::ZipArchive;
 
 pub(crate) fn checksum_file(path: &Path) -> anyhow::Result<(String, String)> {
@@ -66,7 +67,34 @@ impl PsDirectoryContainer {
             return;
         }
         debug!("Wrote file {p:?}");
-        // todo: set file modified datetime, created
+    }
+    pub(crate) fn set_modified(&self, dry_run: bool, path: &String, modified_datetime: &Option<String>) {
+        let p = Path::new(&self.root).join(path);
+        let Some(dt) = modified_datetime else {
+            return;
+        };
+        let dt_parsed = DateTime::parse_from_rfc3339(&dt)
+            .map_err(|e| error!("Unable to parse datetime {dt:?}: {e}"))
+            .ok();
+        if let Some(dt) = dt_parsed {
+            let st = SystemTime::from(dt);
+            if dry_run {
+                debug!("  Dry run: would set modified datetime for file {p:?} to {dt}");
+                return;
+            }
+            let f_r = File::open(p.clone());
+            let Ok(f) = f_r else {
+                error!("Unable to open file {p:?} for setting modified datetime {p:?}");
+                return;
+            };
+            if let Err(e) = f.set_modified(st) {
+                error!("Unable to set modified datetime for file {p:?}: {e}");
+            } else {
+                debug!("Set modified datetime for file {p:?} to {dt}");
+            }
+        } else {
+            warn!("Modified datetime is not valid rfc3339: {dt:?}");
+        }
     }
 }
 
@@ -289,7 +317,6 @@ impl Display for Progress {
         Ok(())
     }
 }
-
 
 #[cfg(test)]
 mod tests {

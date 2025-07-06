@@ -1,0 +1,38 @@
+{
+  "title": "IMG_0337.jpeg",
+  "description": "",
+  "imageViews": "122",
+  "creationTime": {
+    "timestamp": "1716539968",
+    "formatted": "24 May 2024, 08:39:28 UTC"
+  },
+  "photoTakenTime": {
+    "timestamp": "1716337071",
+    "formatted": "22 May 2024, 00:17:51 UTC"
+  },
+  "geoData": {
+    "latitude": -21.630319399999998,
+    "longitude": 152.2605444,
+    "altitude": 77.77271268057785,
+    "latitudeSpan": 0.0,
+    "longitudeSpan": 0.0
+  },
+  "geoDataExif": {
+    "latitude": -20.630319399999998,
+    "longitude": 133.2605444,
+    "altitude": 77.77271268057785,
+    "latitudeSpan": 0.0,
+    "longitudeSpan": 0.0
+  },
+  "people": [
+    {
+      "name": "Tim Tam"
+    }
+  ],
+  "url": "https://photos.google.com/photo/abc123",
+  "googlePhotosOrigin": {
+    "mobileUpload": {
+      "deviceType": "IOS_PHONE"
+    }
+  }
+}

@@ -6,6 +6,7 @@ use std::fs::File;
 use std::io::{BufReader, Cursor};
 use std::path::Path;
 use log::{debug, warn};
+use crate::supplemental_info::SupplementalInfo;
 
 #[derive(Debug, Clone)]
 pub(crate) struct ParsedExif {
@@ -51,10 +52,20 @@ pub(crate) fn parse_exif(
     }
 }
 
-pub(crate) fn best_guess_taken_dt(pe_o: &Option<ParsedExif>, modified_datetime: &Option<String>) -> Option<String> {
-    let Some(pe) = pe_o else {
+/// Best guess at the date the photo was taken from messy optional data, in the order of preference:
+/// 1. SupplementalInfo photo_taken_time
+/// 2. EXIF DateTimeOriginal
+/// 3. EXIF DateTime
+/// 4. EXIF GPSDateStamp - only accurate up to minute
+/// 5. SupplementalInfo creation_time
+/// 6. File modified time
+///   - no timezone info, unreliable in zips, somewhat unreliable in directories due to file
+///     copying / syncing not preserving, only use as a last resprt
+pub(crate) fn best_guess_taken_dt(pe_o: &Option<ParsedExif>, modified_datetime: &Option<String>, supp_info: &Option<SupplementalInfo>) -> Option<String> {
+        let Some(pe) = pe_o else {
         return modified_datetime.clone()
     };
+    // todo: implement rules
     pe.datetime_original
         .clone()
         .or(pe.datetime.clone())

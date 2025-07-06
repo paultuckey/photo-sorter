@@ -1,5 +1,5 @@
 use std::path::Path;
-use crate::extra_info::detect_extra_info;
+use crate::supplemental_info::detect_supplemental_info;
 use crate::util::{PsContainer, ScanInfo};
 use log::{debug, warn};
 
@@ -73,7 +73,7 @@ pub(crate) async fn quick_scan_file(container: &Box<dyn PsContainer>, si: &ScanI
                 name: si.file_path.clone(),
                 modified_datetime: si.modified_datetime.clone(),
                 quick_file_type: qft,
-                supplemental_json_file: detect_extra_info(&si.file_path.clone(), container),
+                supplemental_json_file: detect_supplemental_info(&si.file_path.clone(), container),
             })
         }
         QuickFileType::AlbumCsv | QuickFileType::AlbumJson => {

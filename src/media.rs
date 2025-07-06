@@ -2,7 +2,8 @@ use crate::exif::{ParsedExif, best_guess_taken_dt, parse_exif};
 use crate::file_type::{AccurateFileType, determine_file_type, file_ext_from_file_type, QuickFileType, QuickScannedFile};
 use anyhow::anyhow;
 use chrono::{DateTime, Datelike, Timelike};
-use log::{debug, warn};
+use log::{warn};
+use crate::supplemental_info::SupplementalInfo;
 
 #[derive(Debug, Clone)]
 pub(crate) struct MediaFileInfo {
@@ -14,13 +15,15 @@ pub(crate) struct MediaFileInfo {
     pub(crate) accurate_file_type: AccurateFileType,
     pub(crate) short_checksum: String,
     pub(crate) long_checksum: String,
-    pub(crate) extra_info: Option<String>,
+    pub(crate) supp_info: Option<SupplementalInfo>,
+    // Modified date in RFC3339 format
+    pub(crate) modified: Option<String>,
 }
 
 pub(crate) fn media_file_info_from_readable(
     qsf: &QuickScannedFile,
     bytes: &Vec<u8>,
-    extra_info_bytes: &Option<Vec<u8>>,
+    supp_info: &Option<SupplementalInfo>,
     short_checksum: &String,
     long_checksum: &String,
 ) -> anyhow::Result<MediaFileInfo> {
@@ -33,7 +36,7 @@ pub(crate) fn media_file_info_from_readable(
     let exif_o = parse_exif(bytes, name, &guessed_ff);
 
     let ext = file_ext_from_file_type(&guessed_ff);
-    let guessed_datetime = best_guess_taken_dt(&exif_o, &qsf.modified_datetime);
+    let guessed_datetime = best_guess_taken_dt(&exif_o, &qsf.modified_datetime, &supp_info);
     let desired_media_path_o = Some(get_desired_media_path(
         &short_checksum.clone(),
         &guessed_datetime,
@@ -41,12 +44,6 @@ pub(crate) fn media_file_info_from_readable(
     ));
     let desired_markdown_path_o = get_desired_markdown_path(desired_media_path_o.clone());
 
-    let mut extra_info = None;
-    if let Some(extra_info_bytes) = extra_info_bytes {
-        let string = String::from_utf8_lossy(extra_info_bytes);
-        extra_info = Some(string.trim().to_string());
-        debug!("  Extra info file loaded with {} bytes", extra_info_bytes.len());
-    }
     let media_file_info = MediaFileInfo {
         original_path: vec![name.clone()],
         accurate_file_type: guessed_ff.clone(),
@@ -56,7 +53,8 @@ pub(crate) fn media_file_info_from_readable(
         long_checksum: long_checksum.clone(),
         desired_media_path: desired_media_path_o.clone(),
         desired_markdown_path: desired_markdown_path_o.clone(),
-        extra_info,
+        supp_info: supp_info.clone(),
+        modified: qsf.modified_datetime.clone(),
     };
     Ok(media_file_info)
 }

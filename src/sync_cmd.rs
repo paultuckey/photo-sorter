@@ -7,6 +7,7 @@ use anyhow::anyhow;
 use std::collections::HashMap;
 use std::path::Path;
 use log::{debug, info, warn};
+use crate::supplemental_info::{load_supplemental_info, SupplementalInfo};
 
 pub(crate) async fn main(
     dry_run: bool,
@@ -48,21 +49,12 @@ pub(crate) async fn main(
     if !skip_media {
         let supplemental_paths = quick_scanned_files
             .iter()
-            .filter(|m| m.supplemental_json_file.is_some())
+            .filter(|qsf| qsf.supplemental_json_file.is_some())
             .collect::<Vec<&QuickScannedFile>>();
-        let mut json_hashmap: HashMap<String, Vec<u8>> = HashMap::new();
+        let mut supp_info_map: HashMap<String, SupplementalInfo> = HashMap::new();
         info!("Loading {} supplemental JSON files", supplemental_paths.len());
         for qsf in supplemental_paths {
-            let Some(path) = qsf.supplemental_json_file.clone() else {
-                continue;
-            };
-            let bytes = container.file_bytes(&path);
-            let Ok(bytes) = bytes else {
-                warn!("Could not read supplemental json file: {path}");
-                continue;
-            };
-            debug!("  Loaded: {path}");
-            json_hashmap.insert(path, bytes);
+            load_supplemental_info(&qsf, &mut container, &mut supp_info_map);
         }
 
         let quick_media_files = quick_scanned_files
@@ -78,7 +70,7 @@ pub(crate) async fn main(
                 warn!("Could not read file: {}", quick_scanned_file.name);
                 return Err(anyhow!("Could not read file: {}", quick_scanned_file.name));
             };
-            let _ = inspect_media(bytes, quick_scanned_file, &mut all_media, &json_hashmap);
+            let _ = inspect_media(bytes, quick_scanned_file, &mut all_media, &supp_info_map);
         }
         drop(prog);
 
@@ -143,7 +135,7 @@ pub(crate) fn inspect_media(
     bytes: Vec<u8>,
     qsf: &QuickScannedFile,
     all_media: &mut HashMap<String, MediaFileInfo>,
-    extra_files: &HashMap<String, Vec<u8>>,
+    supp_info_map: &HashMap<String, SupplementalInfo>,
 ) -> anyhow::Result<()> {
     info!("Inspect: {}", qsf.name);
     let checksum_o = checksum_bytes(&bytes).ok();
@@ -157,14 +149,14 @@ pub(crate) fn inspect_media(
         return Ok(());
     }
     let extra_info_path = qsf.supplemental_json_file.clone();
-    let mut extra_info_bytes: Option<Vec<u8>> = None;
+    let mut supp_info: Option<SupplementalInfo> = None;
     if let Some(path) = extra_info_path.clone() {
-        if let Some(b) = extra_files.get(&path) {
-            extra_info_bytes = Some(b.clone());
+        if let Some(si) = supp_info_map.get(&path) {
+            supp_info = Some(si.clone());
         }
     }
     let media_file_info_res = media_file_info_from_readable(
-        qsf, &bytes, &extra_info_bytes, &short_checksum, &long_checksum);
+        qsf, &bytes, &supp_info, &short_checksum, &long_checksum);
     let Ok(media_file) = media_file_info_res else {
         warn!("Could not calculate info for: {:?}", qsf.name);
         return Err(anyhow!("File type unsupported: {:?}", qsf.name));
@@ -197,6 +189,7 @@ pub(crate) fn write_media(
     } else {
         let bytes = input_container.file_bytes(desired_output_path)?;
         output_container.write(dry_run, &desired_output_path.clone(), &bytes);
+        output_container.set_modified(dry_run, &desired_output_path.clone(), &media_file.modified);
     }
     Ok(())
 }

@@ -1,6 +1,6 @@
 mod album;
 mod exif;
-mod extra_info;
+mod supplemental_info;
 mod file_type;
 mod markdown_cmd;
 mod media;
