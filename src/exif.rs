@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufReader, Cursor};
 use std::path::Path;
-use tracing::{debug, warn};
+use log::{debug, warn};
 
 #[derive(Debug, Clone)]
 pub(crate) struct ParsedExif {

@@ -1,5 +1,5 @@
 use serde_json::Value;
-use tracing::{debug, warn};
+use log::{debug, warn};
 use crate::util::{PsContainer};
 
 pub(crate) fn detect_extra_info(path: &String, container: &Box<dyn PsContainer>) -> Option<String> {

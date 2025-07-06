@@ -2,7 +2,7 @@ use crate::exif::{ParsedExif, best_guess_taken_dt, parse_exif};
 use crate::file_type::{AccurateFileType, determine_file_type, file_ext_from_file_type, QuickFileType, QuickScannedFile};
 use anyhow::anyhow;
 use chrono::{DateTime, Datelike, Timelike};
-use tracing::{debug, warn};
+use log::{debug, warn};
 
 #[derive(Debug, Clone)]
 pub(crate) struct MediaFileInfo {

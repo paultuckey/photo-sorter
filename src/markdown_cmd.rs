@@ -4,7 +4,7 @@ use anyhow::{anyhow, Context};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
-use tracing::{debug, warn};
+use log::{debug, warn};
 use crate::file_type::{quick_scan_file};
 
 pub fn main(input: &String) -> anyhow::Result<()> {

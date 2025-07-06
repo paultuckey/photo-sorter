@@ -9,7 +9,7 @@ mod test_util;
 mod util;
 
 use clap::{Parser, Subcommand};
-use tracing::{error, info};
+use log::{debug, error, info, LevelFilter};
 
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
@@ -81,22 +81,18 @@ async fn main() {
 }
 
 fn enable_debug(debug: bool) {
-    let mut tracing_level = tracing::Level::INFO;
-    //let level = log::LevelFilter::Debug;
-
+    let mut level = LevelFilter::Info;
     if debug {
-        tracing_level = tracing::Level::DEBUG;
+        level = LevelFilter::Debug;
     }
-    //init_logger_with_level(level).unwrap();
-
-    tracing_subscriber::fmt()
-        .with_max_level(tracing_level)
-        .with_target(false)
-        .without_time()
-        .with_level(false)
+    env_logger::builder()
+        .filter_level(level)
+        .format_target(false)
+        .format_timestamp(None)
+        .format_level(false)
         .init();
     if debug {
-        info!("Debug mode is on");
+        debug!("Debug mode is on");
     }
 }
 

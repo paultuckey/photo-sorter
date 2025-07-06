@@ -6,7 +6,7 @@ use crate::util::{PsContainer, PsDirectoryContainer, PsZipContainer, is_existing
 use anyhow::anyhow;
 use std::collections::HashMap;
 use std::path::Path;
-use tracing::{debug, info, warn};
+use log::{debug, info, warn};
 
 pub(crate) async fn main(
     dry_run: bool,
@@ -65,7 +65,7 @@ pub(crate) async fn main(
             .filter(|m| m.quick_file_type == QuickFileType::Media)
             .collect::<Vec<&QuickScannedFile>>();
         info!("Inspecting {} photo and video files", quick_media_files.len());
-        let prog = Progress::new(quick_media_files.len() as u64);
+        let mut prog = Progress::new(quick_media_files.len() as u64);
         for quick_scanned_file in quick_media_files {
             prog.inc();
             let bytes = container.file_bytes(&quick_scanned_file.name.clone());
@@ -78,7 +78,7 @@ pub(crate) async fn main(
         drop(prog);
 
         if let Some(ref mut output_container) = output_container_o {
-            let prog = Progress::new(all_media.len() as u64);
+            let mut prog = Progress::new(all_media.len() as u64);
             for media in all_media.values() {
                 prog.inc();
                 let _ = write_media(media, dry_run, &mut container, output_container);
@@ -99,7 +99,7 @@ pub(crate) async fn main(
             .collect::<Vec<&QuickScannedFile>>();
         info!("Inspecting {} albums", quick_scanned_albums.len());
         let mut albums = vec![];
-        let prog = Progress::new(all_media.len() as u64);
+        let mut prog = Progress::new(all_media.len() as u64);
         for qsf in quick_scanned_albums {
             prog.inc();
             match qsf.quick_file_type {

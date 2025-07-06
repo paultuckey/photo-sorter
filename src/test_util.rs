@@ -7,8 +7,8 @@ static INIT: Once = Once::new();
 #[cfg(test)]
 pub(crate) async fn setup_log() {
     INIT.call_once(|| {
-        tracing_subscriber::fmt()
-            .with_max_level(tracing::Level::INFO)
+        env_logger::builder()
+            .filter_level(log::LevelFilter::Debug)
             .init();
     });
 }

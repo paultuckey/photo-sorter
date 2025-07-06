@@ -1,8 +1,7 @@
 use std::path::Path;
 use crate::extra_info::detect_extra_info;
 use crate::util::PsContainer;
-use tracing::debug;
-use tracing::log::warn;
+use log::{debug, warn};
 
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) enum QuickFileType {
