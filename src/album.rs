@@ -2,6 +2,7 @@ use crate::file_type::{AccurateFileType, QuickFileType, QuickScannedFile};
 use crate::util::{dir_part, name_part, PsContainer};
 use std::collections::{HashMap, HashSet};
 use std::io;
+use std::path::Path;
 use serde_json::Value;
 use log::{debug, info, warn};
 use crate::media::MediaFileInfo;
@@ -13,7 +14,7 @@ pub(crate) fn parse_album(container: &mut Box<dyn PsContainer>,
 ) -> Option<Album> {
     match qsf.quick_file_type {
         QuickFileType::AlbumCsv => {
-            parse_csv_album(container, qsf)
+            parse_csv_album(container, qsf, all_media)
         }
         QuickFileType::AlbumJson => {
             parse_json_album(container, qsf, &all_media)
@@ -27,6 +28,7 @@ pub(crate) fn parse_album(container: &mut Box<dyn PsContainer>,
 fn parse_csv_album(
     container: &mut Box<dyn PsContainer>,
     qsf: &QuickScannedFile,
+    all_media: &HashMap<String, MediaFileInfo>,
 ) -> Option<Album> {
     info!("Parse CSV album: {:?}", &qsf.name);
     let bytes_r = container.file_bytes(&qsf.name);
@@ -63,15 +65,31 @@ fn parse_csv_album(
         if record.is_empty() {
             continue;
         }
-        let Some(col0) = record.get(0) else {
+        let Some(file_name) = record.get(0) else {
             continue;
         };
+
+        // look for file with the original path {} + file_name
+        let directory_path_str = dir_part(&qsf.name);
+        let original_file = Path::new(&directory_path_str).join(&file_name)
+            .to_string_lossy().to_string();
         // todo check file in in all media and map to new file name
         //if !is_file_media(&col0.to_string()) {
         //    debug!("Non media file: {:?}", col0);
         //    continue;
         //}
-        //files.push(col0.to_string());
+
+        let same_dir_media_file_info = all_media.values()
+            .filter(|m| {
+                m.accurate_file_type != AccurateFileType::Unsupported &&
+                    m.quick_file_type == QuickFileType::Media &&
+                    m.original_path.iter().any(|p| p.eq(&original_file))
+            })
+            .collect::<Vec<&MediaFileInfo>>();
+        let same_dir_desired_paths = same_dir_media_file_info.iter()
+            .filter_map(|m| m.desired_media_path.clone())
+            .collect::<Vec<String>>();
+        files.push(file_name.to_string());
     }
     if files.is_empty() {
         debug!("Not an album: {name:?}");
@@ -235,7 +253,8 @@ mod tests {
         crate::test_util::setup_log().await;
         use crate::util::PsDirectoryContainer;
         let mut c: Box<dyn PsContainer> = Box::new(PsDirectoryContainer::new("test".to_string()));
-        let qsf = QuickScannedFile::new("ic-album-sample.csv".to_string(), QuickFileType::AlbumCsv);
+        assert_eq!(c.root_exists(), true);
+        let qsf = QuickScannedFile::new("ic-album-sample.csv".to_string(), QuickFileType::AlbumCsv, None);
         let a = parse_album(&mut c, &qsf, &HashMap::new()).unwrap();
         assert_eq!(a.title, "ic-album-sample".to_string());
         assert_eq!(a.files.len(), 5);
@@ -248,7 +267,7 @@ mod tests {
         crate::test_util::setup_log().await;
         use crate::util::PsDirectoryContainer;
         let mut c: Box<dyn PsContainer> = Box::new(PsDirectoryContainer::new("test".to_string()));
-        let qsf = QuickScannedFile::new("g-metadata-sample.json".to_string(), QuickFileType::AlbumJson);
+        let qsf = QuickScannedFile::new("g-metadata-sample.json".to_string(), QuickFileType::AlbumJson, None);
         let a = parse_album(&mut c, &qsf, &HashMap::new()).unwrap();
         assert_eq!(a.title, "Some album title".to_string());
         Ok(())

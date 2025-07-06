@@ -9,15 +9,16 @@ In detail:
   - A matching Markdown file is written at the same path with the extension `md`
   - This contains [YAML](https://en.wikipedia.org/wiki/YAML) frontmatter (the part between `---`'s) with metadata (based on EXIF tags)
   - The Markdown part of this file can be edited with notes, and it will not be clobbered on later runs
-- Rename file with wrong extension based on a mime magic byte
+  - Determine date based on EXIF tags or file modification time
+- Rename files with the wrong extension based on a inspecting bytes of the file
 - For each Album (Google uses JSON format, iCloud CSV) a Markdown file will be produced
 - Input can be Google Takeout zip/directory or iCloud archive zip or directory
-- Sync photos/videos into existing directories without clobbering if same file exists already
+- Sync photos/videos into existing directories without clobbering if the same file exists already
   - Additive only nothing will be deleted or overwritten
 
 ## FAQ
 
-> Why use date based directories? Why include the checksum in the file name?
+> Why use date based file and directory names? Why include the checksum in the file name?
 
 Time is the most important factor in archiving, it enables you to take different actions with different year 
 directories. 

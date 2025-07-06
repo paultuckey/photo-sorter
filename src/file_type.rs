@@ -1,6 +1,6 @@
 use std::path::Path;
 use crate::extra_info::detect_extra_info;
-use crate::util::PsContainer;
+use crate::util::{PsContainer, ScanInfo};
 use log::{debug, warn};
 
 #[derive(Clone, Debug, PartialEq)]
@@ -24,7 +24,6 @@ pub(crate) fn find_quick_file_type(file_path: &str) -> QuickFileType {
         .and_then(|ext| ext.to_str())
         .map(|s| s.to_lowercase())
         .unwrap_or_default();
-    // todo: not supported gif
     match lowercase_file_ext.as_str() {
         "jpg" | "jpeg" | "png" | "gif" | "heic" | "mp4" => QuickFileType::Media,
         "csv" => QuickFileType::AlbumCsv,
@@ -34,14 +33,17 @@ pub(crate) fn find_quick_file_type(file_path: &str) -> QuickFileType {
 
 pub(crate) struct QuickScannedFile {
     pub(crate) name: String,
+    /// rfc3339 formatted datetime of the last modification
+    pub(crate) modified_datetime: Option<String>,
     pub(crate) quick_file_type: QuickFileType,
     pub(crate) supplemental_json_file: Option<String>,
 }
 
 impl QuickScannedFile {
-    pub(crate) fn new(name: String, quick_file_type: QuickFileType) -> Self {
+    pub(crate) fn new(name: String, quick_file_type: QuickFileType, modified_datetime: Option<String>) -> Self {
         QuickScannedFile {
             name,
+            modified_datetime,
             quick_file_type,
             supplemental_json_file: None,
         }
@@ -50,12 +52,12 @@ impl QuickScannedFile {
 
 pub(crate) async fn quick_scan_files(
     container: &Box<dyn PsContainer>,
-    files: &Vec<String>,
+    files: &Vec<ScanInfo>,
 ) -> Vec<QuickScannedFile> {
     debug!("Scanning {} files for quick file type", files.len());
     let mut scanned_files = vec![];
-    for file in files {
-        let Some(qsf) = quick_scan_file(container, file).await else {
+    for si in files {
+        let Some(qsf) = quick_scan_file(container, si).await else {
             continue;
         };
         scanned_files.push(qsf);
@@ -63,18 +65,19 @@ pub(crate) async fn quick_scan_files(
     scanned_files
 }
 
-pub(crate) async fn quick_scan_file(container: &Box<dyn PsContainer>, file: &String) -> Option<QuickScannedFile> {
-    let qft = find_quick_file_type(file);
+pub(crate) async fn quick_scan_file(container: &Box<dyn PsContainer>, si: &ScanInfo) -> Option<QuickScannedFile> {
+    let qft = find_quick_file_type(&si.file_path);
     match qft {
         QuickFileType::Media => {
             Some(QuickScannedFile {
-                name: file.clone(),
+                name: si.file_path.clone(),
+                modified_datetime: si.modified_datetime.clone(),
                 quick_file_type: qft,
-                supplemental_json_file: detect_extra_info(&file.clone(), container),
+                supplemental_json_file: detect_extra_info(&si.file_path.clone(), container),
             })
         }
         QuickFileType::AlbumCsv | QuickFileType::AlbumJson => {
-            Some(QuickScannedFile::new(file.clone(), qft))
+            Some(QuickScannedFile::new(si.file_path.clone(), qft, si.modified_datetime.clone()))
         }
         QuickFileType::Unknown => {
             None

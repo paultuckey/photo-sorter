@@ -6,6 +6,7 @@ use std::fs::File;
 use std::io::Read;
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
+use chrono::DateTime;
 use status_line::StatusLine;
 use log::{debug, error, warn};
 use zip::ZipArchive;
@@ -28,11 +29,20 @@ pub(crate) fn checksum_bytes(bytes: &Vec<u8>) -> anyhow::Result<(String, String)
 }
 
 pub(crate) trait PsContainer {
-    fn scan(&self) -> Vec<String>;
+    fn scan(&self) -> Vec<ScanInfo>;
     fn file_bytes(&mut self, path: &String) -> anyhow::Result<Vec<u8>>;
     fn exists(&self, path: &String) -> bool;
+    fn root_exists(&self) -> bool;
 }
 
+#[derive(Debug, Clone)]
+pub(crate) struct ScanInfo {
+    pub(crate) file_path: String,
+    /// rfc3339 formatted datetime of the last modification
+    pub(crate) modified_datetime: Option<String>,
+}
+
+#[derive(Debug, Clone)]
 pub(crate) struct PsDirectoryContainer {
     root: String,
 }
@@ -56,14 +66,12 @@ impl PsDirectoryContainer {
             return;
         }
         debug!("Wrote file {p:?}");
-    }
-    pub(crate) fn root_exists(&self) -> bool {
-        Path::new(&self.root).exists()
+        // todo: set file modified datetime, created
     }
 }
 
 /// Recursively scans the directory and its subdirectories,
-fn scan_dir_recursively(files: &mut Vec<String>, dir_path: &Path, root_path: &Path) {
+fn scan_dir_recursively(files: &mut Vec<ScanInfo>, dir_path: &Path, root_path: &Path) {
     if !dir_path.exists() || !dir_path.is_dir() {
         return;
     }
@@ -83,7 +91,18 @@ fn scan_dir_recursively(files: &mut Vec<String>, dir_path: &Path, root_path: &Pa
         if path.is_file() {
             // trim root path from the file path
             let relative_path = path.strip_prefix(root_path).unwrap_or(&path);
-            files.push(relative_path.to_string_lossy().to_string());
+            files.push(ScanInfo {
+                file_path: relative_path.to_string_lossy().to_string(),
+                modified_datetime: path
+                    .metadata()
+                    .ok()
+                    .and_then(|m| m.modified().ok())
+                    .map(|dt| {
+                        // convert SystemTime to rfc3339 format string
+                        DateTime::<chrono::Utc>::from(dt)
+                            .to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
+                    }),
+            });
         } else if path.is_dir() {
             scan_dir_recursively(files, &path, root_path);
         }
@@ -91,7 +110,7 @@ fn scan_dir_recursively(files: &mut Vec<String>, dir_path: &Path, root_path: &Pa
 }
 
 impl PsContainer for PsDirectoryContainer {
-    fn scan(&self) -> Vec<String> {
+    fn scan(&self) -> Vec<ScanInfo> {
         let mut files = Vec::new();
         let root_path = Path::new(&self.root);
         if !root_path.exists() {
@@ -117,11 +136,14 @@ impl PsContainer for PsDirectoryContainer {
     fn exists(&self, file: &String) -> bool {
         Path::new(&self.root).join(file).exists()
     }
+    fn root_exists(&self) -> bool {
+        Path::new(&self.root).exists()
+    }
 }
 
 pub(crate) struct PsZipContainer {
     zip_file: String,
-    index: Vec<String>,
+    index: Vec<ScanInfo>,
     zip: ZipArchive<File>,
 }
 
@@ -137,25 +159,16 @@ impl PsZipContainer {
         c
     }
     fn index(&mut self) {
-        // let zip_path = Path::new(&self.zip_file);
-        // let Ok(zip_file) = File::open(zip_path) else {
-        //     error!("Unable to open file {:?}", zip_path);
-        //     return;
-        // };
-        let zip_archive = &mut self.zip; //::new(zip_file);
-        // let Ok(mut zip_archive) = zip_archive else {
-        //     error!("Unable to open zip file {:?}", zip_path);
-        //     return;
-        // };
+        let zip_archive = &mut self.zip;
         for i in 0..zip_archive.len() {
             let file_res = zip_archive.by_index(i);
-            let Some(file) = file_res.ok() else {
+            let Some(file_in_zip) = file_res.ok() else {
                 continue;
             };
-            if file.is_dir() {
+            if file_in_zip.is_dir() {
                 continue;
             }
-            let Some(enclosed_name) = file.enclosed_name() else {
+            let Some(enclosed_name) = file_in_zip.enclosed_name() else {
                 continue;
             };
             let p = enclosed_name.as_path();
@@ -163,7 +176,20 @@ impl PsZipContainer {
             let Some(file_name) = file_name_o else {
                 continue;
             };
-            self.index.push(file_name.to_string());
+            let mut dt_o = None;
+            if let Some(lm) = file_in_zip.last_modified() {
+                // convert zip date to rfc3339 format
+                // YYY-MM-DDTHH:mm:ss.sssZ
+                // not zip dates are dodgy, see zip crate's docs
+                let dt_s = format!("{}-{}-{}T{}:{}:{}Z",
+                                   lm.year(), lm.month(), lm.day(),
+                                   lm.hour(), lm.minute(), lm.second());
+                dt_o = Some(dt_s);
+            };
+            self.index.push(ScanInfo {
+                file_path: file_name.to_string(),
+                modified_datetime: dt_o,
+            });
         }
         debug!(
             "Counted {} files in zip {:?}",
@@ -174,7 +200,7 @@ impl PsZipContainer {
 }
 
 impl PsContainer for PsZipContainer {
-    fn scan(&self) -> Vec<String> {
+    fn scan(&self) -> Vec<ScanInfo> {
         self.index.clone()
     }
     fn file_bytes(&mut self, path: &String) -> anyhow::Result<Vec<u8>> {
@@ -190,7 +216,10 @@ impl PsContainer for PsZipContainer {
         Ok(buffer)
     }
     fn exists(&self, path: &String) -> bool {
-        self.index.contains(path)
+        self.index.iter().any(|i| i.file_path.eq(path))
+    }
+    fn root_exists(&self) -> bool {
+        Path::new(&self.zip_file).exists()
     }
 }
 

@@ -51,12 +51,15 @@ pub(crate) fn parse_exif(
     }
 }
 
-pub(crate) fn best_guess_taken_dt(pe: &Option<ParsedExif>) -> Option<String> {
-    let Some(pe) = pe else { return None };
+pub(crate) fn best_guess_taken_dt(pe_o: &Option<ParsedExif>, modified_datetime: &Option<String>) -> Option<String> {
+    let Some(pe) = pe_o else {
+        return modified_datetime.clone()
+    };
     pe.datetime_original
         .clone()
         .or(pe.datetime.clone())
         .or(pe.gps_date.clone())
+        .or(modified_datetime.clone())
 }
 
 fn all_tags(path: &Path) -> Option<HashMap<String, String>> {

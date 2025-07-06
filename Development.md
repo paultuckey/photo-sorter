@@ -63,3 +63,9 @@ Console output is based on rsync.
 rsync --dry-run -a --verbose ../input/takeout-small/ ../output/takeout-small/
 ```
 
+## Zip File Debugging
+
+
+```sh
+zipinfo -m input/takeout-20250614T030613Z-1-001.zip > output/takeout-list.txt
+```

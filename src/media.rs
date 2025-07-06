@@ -33,7 +33,7 @@ pub(crate) fn media_file_info_from_readable(
     let exif_o = parse_exif(bytes, name, &guessed_ff);
 
     let ext = file_ext_from_file_type(&guessed_ff);
-    let guessed_datetime = best_guess_taken_dt(&exif_o);
+    let guessed_datetime = best_guess_taken_dt(&exif_o, &qsf.modified_datetime);
     let desired_media_path_o = Some(get_desired_media_path(
         &short_checksum.clone(),
         &guessed_datetime,

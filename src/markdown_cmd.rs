@@ -1,5 +1,5 @@
 use crate::media::{MediaFileInfo, media_file_info_from_readable};
-use crate::util::{PsContainer, PsDirectoryContainer, checksum_file, checksum_string, checksum_bytes};
+use crate::util::{PsContainer, PsDirectoryContainer, checksum_file, checksum_string, checksum_bytes, ScanInfo};
 use anyhow::{anyhow, Context};
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -19,7 +19,11 @@ pub(crate) async fn main(input: &String) -> anyhow::Result<()> {
         .with_context(|| "Unable to get file name")?
         .to_string_lossy();
     let mut root: Box<dyn PsContainer> = Box::new(PsDirectoryContainer::new(parent_dir_string));
-    let qsf_o = quick_scan_file(&root, input).await;
+    let si = ScanInfo {
+        file_path: input.clone(),
+        modified_datetime: None,
+    };
+    let qsf_o = quick_scan_file(&root, &si).await;
     let Some(qsf) = qsf_o else {
         debug!("Not a valid media file: {input}");
         return Ok(());
@@ -129,6 +133,9 @@ pub(crate) fn sync_markdown(dry_run: bool, media_file: &MediaFileInfo, output_c:
     let yaml = generate_yaml(&mfm)?;
     let mut md = "".to_string();
 
+    // todo: when merging yaml take previous yaml and ADD to it
+    //   eg, can sync from icloud and google and the files will only be saved once
+    //       with both listed in yaml frontmatter
     if output_c.exists(&output_path) {
         let existing_md_bytes_r = output_c.file_bytes(&output_path);
         let Ok(existing_md_bytes) = existing_md_bytes_r else {

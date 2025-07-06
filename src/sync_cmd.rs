@@ -46,7 +46,6 @@ pub(crate) async fn main(
     let mut all_media = HashMap::<String, MediaFileInfo>::new();
 
     if !skip_media {
-
         let supplemental_paths = quick_scanned_files
             .iter()
             .filter(|m| m.supplemental_json_file.is_some())
