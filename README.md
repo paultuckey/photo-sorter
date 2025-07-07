@@ -1,12 +1,18 @@
-# photo-sorter-cli
+# Photo Sorter CLI
 
-Problem: There is no shared format for archiving photos and videos, this tool aims to provide a simple solution that 
-works with both Google Takeout and iCloud archives, while being robust, portable and future-proof.
+> [!WARNING]
+> This tool is in active development, use at your own risk.
 
-This is a CLI tool to organise photos, videos and albums from Google Takeout and iCloud zip files (or directories) and 
-sort them into directories based on their EXIF metadata and any supplemental info.
+Problem: Google Takeout and iCloud archives of photos and videos:
+- do _not_ share a common standard for directory and photo naming
+- do _not_ represent albums in a standardized way
+- do _not_ allow for duplicates to be merged
+
+Solution: A CLI tool that syncs photos, videos and albums from Google Takeout and iCloud archives
+into a standard directory structure that removes duplicates, standardizes albums and makes long-term archiving easy.
 
 In detail:
+- EXIF metadata and supplemental is extracted from photos and videos and used to determine the date and time of the file
 - Files are put into directories with the following format: `yyyy/mm/dd/hhmm-ss-{short checksum}.ext`
 - For each photo or video file:
   - A matching Markdown file is written at the same path with the extension `md`
@@ -31,7 +37,18 @@ taken during the same second, the checksum is used to differentiate them (date-b
 
 > Why use markdown files?
 
-Markdown is widely supported and human readable without any special software.
+Markdown is widely supported and human readable without any special software. Just as with
+[Obsidian](https://obsidian.md/), you can edit the Markdown files with any text editor, or backup the directoryies to 
+any storage solution.
+
+> What format is the short checksum?
+
+It's the first 7 characters of a SHA256 hash over the bytes of the file. As with a git short hash it's a good trade-off
+between uniqueness and length.
+
+## Installation
+
+For now, you will need to build the project from source.
 
 ## Usage
 

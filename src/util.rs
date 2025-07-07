@@ -10,6 +10,7 @@ use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, SystemTime};
 use zip::ZipArchive;
+use crate::file_type::{find_quick_file_type, QuickFileType};
 
 pub(crate) fn checksum_file(path: &Path) -> anyhow::Result<(String, String)> {
     let bytes = fs::read(path)?;
@@ -40,13 +41,16 @@ pub(crate) struct ScanInfo {
     pub(crate) file_path: String,
     /// rfc3339 formatted datetime of the last modification
     pub(crate) modified_datetime: Option<i64>,
+    pub(crate) quick_file_type: QuickFileType,
 }
 
 impl ScanInfo {
     pub(crate) fn new(file_path: String, modified_datetime: Option<i64>) -> Self {
+        let quick_file_type = find_quick_file_type(&file_path);
         ScanInfo {
             file_path,
             modified_datetime,
+            quick_file_type
         }
     }
 }

@@ -7,6 +7,7 @@ mod media;
 mod sync_cmd;
 mod test_util;
 mod util;
+mod album_cmd;
 
 use clap::{Parser, Subcommand};
 use log::{debug, error, info, LevelFilter};
@@ -25,6 +26,13 @@ enum Commands {
         debug: bool,
 
         #[arg(short, long, help = "Photo or video to generate markdown for")]
+        input: String,
+    },
+    Album {
+        #[arg(short, long, help = "Turn debugging information on")]
+        debug: bool,
+
+        #[arg(short, long, help = "Album file to generate markdown for")]
         input: String,
     },
     Sync {
@@ -72,6 +80,10 @@ async fn go() -> anyhow::Result<()> {
         Commands::Markdown { debug, input } => {
             enable_debug(debug);
             markdown_cmd::main(&input).await?
+        }
+        Commands::Album { debug, input } => {
+            enable_debug(debug);
+            album_cmd::main(&input).await?
         }
         Commands::Sync {
             debug,

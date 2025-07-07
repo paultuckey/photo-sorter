@@ -1,7 +1,5 @@
-use std::collections::HashMap;
 use log::{debug, warn};
 use serde::Deserialize;
-use crate::file_type::QuickScannedFile;
 use crate::util::{PsContainer};
 
 pub(crate) fn detect_supplemental_info(path: &String, container: &Box<dyn PsContainer>) -> Option<String> {
@@ -19,21 +17,15 @@ pub(crate) fn detect_supplemental_info(path: &String, container: &Box<dyn PsCont
     None
 }
 
-pub(crate) fn load_supplemental_info(qsf: &QuickScannedFile, container: &mut Box<dyn PsContainer>, json_hashmap: &mut HashMap<String, SupplementalInfo>) {
-    let Some(path) = qsf.supplemental_json_file.clone() else {
-        return;
-    };
+pub(crate) fn load_supplemental_info(path: &String, container: &mut Box<dyn PsContainer>) -> Option<SupplementalInfo> {
     let bytes = container.file_bytes(&path);
     let Ok(bytes) = bytes else {
         warn!("Could not read supplemental json file: {path}");
-        return;
+        return None;
     };
     debug!("  Loaded: {path}");
     let s = String::from_utf8_lossy(&bytes).to_string();
-    let si_o = parse_supplemental_info(s);
-    if let Some(si) = si_o {
-        json_hashmap.insert(path, si);
-    }
+    parse_supplemental_info(s)
 }
 
 #[derive(Deserialize, Debug, Clone)]

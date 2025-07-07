@@ -1,6 +1,5 @@
 use std::path::Path;
-use crate::supplemental_info::detect_supplemental_info;
-use crate::util::{PsContainer, ScanInfo};
+use crate::util::{PsContainer};
 use log::{debug, warn};
 
 #[derive(Clone, Debug, PartialEq)]
@@ -28,60 +27,6 @@ pub(crate) fn find_quick_file_type(file_path: &str) -> QuickFileType {
         "jpg" | "jpeg" | "png" | "gif" | "heic" | "mp4" => QuickFileType::Media,
         "csv" => QuickFileType::AlbumCsv,
         _ => QuickFileType::Unknown,
-    }
-}
-
-pub(crate) struct QuickScannedFile {
-    pub(crate) name: String,
-    /// rfc3339 formatted datetime of the last modification
-    pub(crate) modified_datetime: Option<i64>,
-    pub(crate) quick_file_type: QuickFileType,
-    pub(crate) supplemental_json_file: Option<String>,
-}
-
-impl QuickScannedFile {
-    pub(crate) fn new(name: String, quick_file_type: QuickFileType, modified_datetime: Option<i64>) -> Self {
-        QuickScannedFile {
-            name,
-            modified_datetime,
-            quick_file_type,
-            supplemental_json_file: None,
-        }
-    }
-}
-
-pub(crate) async fn quick_scan_files(
-    container: &Box<dyn PsContainer>,
-    files: &Vec<ScanInfo>,
-) -> Vec<QuickScannedFile> {
-    debug!("Scanning {} files for quick file type", files.len());
-    let mut scanned_files = vec![];
-    for si in files {
-        let Some(qsf) = quick_scan_file(container, si).await else {
-            continue;
-        };
-        scanned_files.push(qsf);
-    }
-    scanned_files
-}
-
-pub(crate) async fn quick_scan_file(container: &Box<dyn PsContainer>, si: &ScanInfo) -> Option<QuickScannedFile> {
-    let qft = find_quick_file_type(&si.file_path);
-    match qft {
-        QuickFileType::Media => {
-            Some(QuickScannedFile {
-                name: si.file_path.clone(),
-                modified_datetime: si.modified_datetime,
-                quick_file_type: qft,
-                supplemental_json_file: detect_supplemental_info(&si.file_path.clone(), container),
-            })
-        }
-        QuickFileType::AlbumCsv | QuickFileType::AlbumJson => {
-            Some(QuickScannedFile::new(si.file_path.clone(), qft, si.modified_datetime))
-        }
-        QuickFileType::Unknown => {
-            None
-        }
     }
 }
 
