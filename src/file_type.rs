@@ -34,13 +34,13 @@ pub(crate) fn find_quick_file_type(file_path: &str) -> QuickFileType {
 pub(crate) struct QuickScannedFile {
     pub(crate) name: String,
     /// rfc3339 formatted datetime of the last modification
-    pub(crate) modified_datetime: Option<String>,
+    pub(crate) modified_datetime: Option<i64>,
     pub(crate) quick_file_type: QuickFileType,
     pub(crate) supplemental_json_file: Option<String>,
 }
 
 impl QuickScannedFile {
-    pub(crate) fn new(name: String, quick_file_type: QuickFileType, modified_datetime: Option<String>) -> Self {
+    pub(crate) fn new(name: String, quick_file_type: QuickFileType, modified_datetime: Option<i64>) -> Self {
         QuickScannedFile {
             name,
             modified_datetime,
@@ -71,13 +71,13 @@ pub(crate) async fn quick_scan_file(container: &Box<dyn PsContainer>, si: &ScanI
         QuickFileType::Media => {
             Some(QuickScannedFile {
                 name: si.file_path.clone(),
-                modified_datetime: si.modified_datetime.clone(),
+                modified_datetime: si.modified_datetime,
                 quick_file_type: qft,
                 supplemental_json_file: detect_supplemental_info(&si.file_path.clone(), container),
             })
         }
         QuickFileType::AlbumCsv | QuickFileType::AlbumJson => {
-            Some(QuickScannedFile::new(si.file_path.clone(), qft, si.modified_datetime.clone()))
+            Some(QuickScannedFile::new(si.file_path.clone(), qft, si.modified_datetime))
         }
         QuickFileType::Unknown => {
             None

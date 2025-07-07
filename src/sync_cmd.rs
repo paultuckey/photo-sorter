@@ -54,7 +54,7 @@ pub(crate) async fn main(
         let mut supp_info_map: HashMap<String, SupplementalInfo> = HashMap::new();
         info!("Loading {} supplemental JSON files", supplemental_paths.len());
         for qsf in supplemental_paths {
-            load_supplemental_info(&qsf, &mut container, &mut supp_info_map);
+            load_supplemental_info(qsf, &mut container, &mut supp_info_map);
         }
 
         let quick_media_files = quick_scanned_files
@@ -100,7 +100,7 @@ pub(crate) async fn main(
         let prog = Progress::new(all_media.len() as u64);
         for qsf in quick_scanned_albums {
             prog.inc();
-            let album_o = parse_album(&mut container, qsf, &all_media);
+            let album_o = parse_album(&mut container, qsf, &quick_scanned_files);
             let Some(album) = album_o else {
                 continue;
             };
@@ -110,7 +110,7 @@ pub(crate) async fn main(
 
         info!("Outputting {} albums", albums.len());
         for album in albums {
-            let a_s = build_album_md(&album);
+            let a_s = build_album_md(&album, &all_media);
             let Some(output_c) = &output_container_o else {
                 continue;
             };

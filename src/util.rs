@@ -1,6 +1,5 @@
 use anyhow::anyhow;
 use anyhow::Context;
-use chrono::DateTime;
 use log::{debug, error, warn};
 use status_line::StatusLine;
 use std::fmt::{Display, Formatter};
@@ -9,7 +8,7 @@ use std::fs::File;
 use std::io::Read;
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime};
 use zip::ZipArchive;
 
 pub(crate) fn checksum_file(path: &Path) -> anyhow::Result<(String, String)> {
@@ -40,7 +39,16 @@ pub(crate) trait PsContainer {
 pub(crate) struct ScanInfo {
     pub(crate) file_path: String,
     /// rfc3339 formatted datetime of the last modification
-    pub(crate) modified_datetime: Option<String>,
+    pub(crate) modified_datetime: Option<i64>,
+}
+
+impl ScanInfo {
+    pub(crate) fn new(file_path: String, modified_datetime: Option<i64>) -> Self {
+        ScanInfo {
+            file_path,
+            modified_datetime,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -68,32 +76,28 @@ impl PsDirectoryContainer {
         }
         debug!("Wrote file {p:?}");
     }
-    pub(crate) fn set_modified(&self, dry_run: bool, path: &String, modified_datetime: &Option<String>) {
+
+    pub(crate) fn set_modified(&self, dry_run: bool, path: &String, modified_datetime: &Option<i64>) {
         let p = Path::new(&self.root).join(path);
         let Some(dt) = modified_datetime else {
             return;
         };
-        let dt_parsed = DateTime::parse_from_rfc3339(&dt)
-            .map_err(|e| error!("Unable to parse datetime {dt:?}: {e}"))
-            .ok();
-        if let Some(dt) = dt_parsed {
-            let st = SystemTime::from(dt);
-            if dry_run {
-                debug!("  Dry run: would set modified datetime for file {p:?} to {dt}");
-                return;
-            }
-            let f_r = File::open(p.clone());
-            let Ok(f) = f_r else {
-                error!("Unable to open file {p:?} for setting modified datetime {p:?}");
-                return;
-            };
-            if let Err(e) = f.set_modified(st) {
-                error!("Unable to set modified datetime for file {p:?}: {e}");
-            } else {
-                debug!("Set modified datetime for file {p:?} to {dt}");
-            }
+        let st = SystemTime::UNIX_EPOCH
+            .checked_add(Duration::from_millis(dt.clone() as u64))
+            .unwrap_or(SystemTime::UNIX_EPOCH);
+        if dry_run {
+            debug!("  Dry run: would set modified datetime for file {p:?} to {dt}");
+            return;
+        }
+        let f_r = File::open(&p);
+        let Ok(f) = f_r else {
+            error!("Unable to open file {p:?} for setting modified datetime {p:?}");
+            return;
+        };
+        if let Err(e) = f.set_modified(st) {
+            error!("Unable to set modified datetime for file {p:?}: {e}");
         } else {
-            warn!("Modified datetime is not valid rfc3339: {dt:?}");
+            debug!("Set modified datetime for file {p:?} to {dt}");
         }
     }
 }
@@ -119,22 +123,23 @@ fn scan_dir_recursively(files: &mut Vec<ScanInfo>, dir_path: &Path, root_path: &
         if path.is_file() {
             // trim root path from the file path
             let relative_path = path.strip_prefix(root_path).unwrap_or(&path);
-            files.push(ScanInfo {
-                file_path: relative_path.to_string_lossy().to_string(),
-                modified_datetime: path
-                    .metadata()
-                    .ok()
-                    .and_then(|m| m.modified().ok())
-                    .map(|dt| {
-                        // convert SystemTime to rfc3339 format string
-                        DateTime::<chrono::Utc>::from(dt)
-                            .to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
-                    }),
-            });
+            files.push(ScanInfo::new(relative_path.to_string_lossy().to_string(), modified_epoch_ms(&path)));
         } else if path.is_dir() {
             scan_dir_recursively(files, &path, root_path);
         }
     }
+}
+
+fn modified_epoch_ms(path: &Path) -> Option<i64> {
+    path
+        .metadata()
+        .ok()
+        .and_then(|m| m.modified().ok())
+        .map(|dt| {
+            dt.duration_since(SystemTime::UNIX_EPOCH)
+                .map(|d| d.as_millis() as i64)
+                .unwrap_or(0)
+        })
 }
 
 impl PsContainer for PsDirectoryContainer {
@@ -206,18 +211,15 @@ impl PsZipContainer {
             };
             let mut dt_o = None;
             if let Some(lm) = file_in_zip.last_modified() {
-                // convert zip date to rfc3339 format
-                // YYY-MM-DDTHH:mm:ss.sssZ
                 // not zip dates are dodgy, see zip crate's docs
-                let dt_s = format!("{}-{}-{}T{}:{}:{}Z",
-                                   lm.year(), lm.month(), lm.day(),
-                                   lm.hour(), lm.minute(), lm.second());
-                dt_o = Some(dt_s);
-            };
-            self.index.push(ScanInfo {
-                file_path: file_name.to_string(),
-                modified_datetime: dt_o,
-            });
+                // zip times don't include tz, blindly assume they are in the local tz
+                let tz = chrono::Local::now().offset().to_owned();
+                dt_o = chrono::NaiveDate::from_ymd_opt(lm.year() as i32, lm.month() as u32, lm.day() as u32)
+                    .and_then(|date| date.and_hms_opt(lm.hour() as u32, lm.minute() as u32, 0))
+                    .and_then(|naive_dt| naive_dt.and_local_timezone(tz).single())
+                    .map(|dt| dt.timestamp_millis());
+            }
+            self.index.push(ScanInfo::new(file_name.to_string(), dt_o));
         }
         debug!(
             "Counted {} files in zip {:?}",
@@ -337,6 +339,18 @@ mod tests {
             }
             tokio::time::sleep(delay).await;
         }
+        Ok(())
+    }
+
+    #[tokio::test()]
+    async fn test_zip() -> anyhow::Result<()> {
+        crate::test_util::setup_log().await;
+        let c = PsZipContainer::new("test/Canon_40D.jpg.zip".to_string());
+        let index = c.scan();
+        assert_eq!(index.len(), 2);
+        let si = index.first().unwrap();
+        assert_eq!(si.file_path, "Canon_40D.jpg");
+        assert_eq!(si.modified_datetime, Some(1749874140000));
         Ok(())
     }
 }

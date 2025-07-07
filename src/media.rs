@@ -17,7 +17,7 @@ pub(crate) struct MediaFileInfo {
     pub(crate) long_checksum: String,
     pub(crate) supp_info: Option<SupplementalInfo>,
     // Modified date in RFC3339 format
-    pub(crate) modified: Option<String>,
+    pub(crate) modified: Option<i64>,
 }
 
 pub(crate) fn media_file_info_from_readable(
@@ -54,7 +54,7 @@ pub(crate) fn media_file_info_from_readable(
         desired_media_path: desired_media_path_o.clone(),
         desired_markdown_path: desired_markdown_path_o.clone(),
         supp_info: supp_info.clone(),
-        modified: qsf.modified_datetime.clone(),
+        modified: qsf.modified_datetime,
     };
     Ok(media_file_info)
 }
@@ -72,21 +72,21 @@ pub(crate) fn get_desired_markdown_path(desired_media_path: Option<String>) -> O
 /// OR `undated/checksum.ext`
 pub(crate) fn get_desired_media_path(
     short_checksum: &String,
-    exif_datetime: &Option<String>,
+    media_datetime: &Option<i64>,
     ext: &String,
 ) -> String {
     let date_dir;
     let name;
-    if let Some(dt_s) = exif_datetime {
-        let dt = DateTime::parse_from_rfc3339(dt_s);
+    if let Some(dt_ms) = media_datetime {
+        let dt = DateTime::from_timestamp_millis(dt_ms.clone());
         match dt {
-            Ok(dt) => {
+            Some(dt) => {
                 date_dir = format!("{}/{:0>2}/{:0>2}", dt.year(), dt.month(), dt.day());
                 let time_name = format!("{:0>2}{:0>2}-{:0>2}", dt.hour(), dt.minute(), dt.second());
                 name = format!("{time_name}-{short_checksum}");
             }
-            Err(e) => {
-                warn!("Could not parse EXIF datetime: {e:?}");
+            None => {
+                warn!("Could not parse datetime: {dt_ms:?}");
                 date_dir = "undated".to_string();
                 name = short_checksum.to_owned();
             }
@@ -130,8 +130,8 @@ mod tests {
 
         assert_eq!(get_desired_media_path(&short_checksum, &None, &"jpeg".to_string()),
                    "undated/6bfdabd.jpeg".to_string());
-        assert_eq!(get_desired_media_path(&short_checksum, &Some("2017-08-19T10:21:59Z".to_string()), &"jpeg".to_string()),
-                   "2017/08/19/1021-59-6bfdabd.jpeg".to_string());
+        assert_eq!(get_desired_media_path(&short_checksum, &Some(1212162961000), &"jpeg".to_string()),
+                   "2008/05/30/1556-01-6bfdabd.jpeg".to_string());
         Ok(())
     }
 }

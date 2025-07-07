@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use log::{debug, info, warn};
+use log::{debug, warn};
 use serde::Deserialize;
 use crate::file_type::QuickScannedFile;
 use crate::util::{PsContainer};
@@ -51,16 +51,27 @@ pub(crate) struct SupplementalInfoPerson {
 #[serde(rename_all(deserialize = "camelCase", serialize = "camelCase"))]
 pub(crate) struct SupplementalInfoDateTime {
     timestamp: Option<String>, // actually a unix timestamp in seconds eg, 1716539968
-    formatted: Option<String>,
+    pub(crate) formatted: Option<String>,
+}
+
+impl SupplementalInfoDateTime {
+    pub(crate) fn timestamp_as_epoch_ms(&self) -> Option<i64> {
+        if let Some(ts) = &self.timestamp {
+            if let Ok(ts_i64) = ts.parse::<i64>() {
+                return Some(ts_i64);
+            }
+        }
+        None
+    }
 }
 #[derive(Deserialize, Debug, Clone)]
 #[serde(rename_all(deserialize = "camelCase", serialize = "camelCase"))]
 pub(crate) struct SupplementalInfo {
-    geo_data: Option<SupplementalInfoGeoData>,
-    geo_data_exif: Option<SupplementalInfoGeoData>,
-    people: Vec<SupplementalInfoPerson>,
-    photo_taken_time: Option<SupplementalInfoDateTime>,
-    creation_time: Option<SupplementalInfoDateTime>,
+    pub(crate) geo_data: Option<SupplementalInfoGeoData>,
+    pub(crate) geo_data_exif: Option<SupplementalInfoGeoData>,
+    pub(crate) people: Vec<SupplementalInfoPerson>,
+    pub(crate) photo_taken_time: Option<SupplementalInfoDateTime>,
+    pub(crate) creation_time: Option<SupplementalInfoDateTime>,
 }
 
 fn parse_supplemental_info(json: String) -> Option<SupplementalInfo> {
@@ -75,7 +86,7 @@ fn lat_long_from_geo_data(geo_data: SupplementalInfoGeoData) -> Option<String> {
     if let Some(lat) = geo_data.latitude {
         if let Some(long) = geo_data.longitude {
             // only need 5 decimal places to get 50m acuracy
-            return Some(format!("{:.6},{:.6}", lat, long));
+            return Some(format!("{lat:.6},{long:.6}"));
         }
     }
     None

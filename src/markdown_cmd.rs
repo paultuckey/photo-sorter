@@ -19,10 +19,7 @@ pub(crate) async fn main(input: &String) -> anyhow::Result<()> {
         .with_context(|| "Unable to get file name")?
         .to_string_lossy();
     let mut root: Box<dyn PsContainer> = Box::new(PsDirectoryContainer::new(parent_dir_string));
-    let si = ScanInfo {
-        file_path: input.clone(),
-        modified_datetime: None,
-    };
+    let si = ScanInfo::new(input.clone(), None);
     let qsf_o = quick_scan_file(&root, &si).await;
     let Some(qsf) = qsf_o else {
         debug!("Not a valid media file: {input}");
@@ -37,7 +34,6 @@ pub(crate) async fn main(input: &String) -> anyhow::Result<()> {
         return Err(anyhow!("Could not calculate checksum for file: {:?}", qsf.name));
     };
 
-    // todo: extra info
     let media_file_info_res = media_file_info_from_readable(
         &qsf, &bytes, &None, &short_checksum, &long_checksum);
     let Ok(media_file_info) = media_file_info_res else {
@@ -116,6 +112,7 @@ pub(crate) struct PhotoSorterFrontMatter {
     pub(crate) datetime: Option<String>,
     pub(crate) gps_date: Option<String>,
     pub(crate) unique_id: Option<String>,
+    // todo: add supplemental fields?
 }
 
 #[derive(Serialize, Deserialize, PartialEq, Debug)]
@@ -195,6 +192,9 @@ fn generate_yaml(mfm: &PhotoSorterFrontMatter) -> anyhow::Result<String> {
             yaml.push_str(&format!("    - {po}\n"));
         }
     }
+
+    // todo: add longitude, latitude and people
+
     if let Some(s) = mfm.datetime.clone() {
         yaml.push_str(&format!("  datetime: {s}\n"));
     }

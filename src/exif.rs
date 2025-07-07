@@ -16,6 +16,17 @@ pub(crate) struct ParsedExif {
     pub(crate) unique_id: Option<String>,
 }
 
+fn exif_dt_as_epoch_ms(dt: String) -> Option<i64> {
+    let dt = NaiveDateTime::parse_from_str(&dt, "%Y-%m-%dT%H:%M:%S%.fZ").ok()?;
+    Some(dt.and_utc().timestamp_millis())
+}
+
+fn exif_d_as_epoch_ms(dt: String) -> Option<i64> {
+    let d = NaiveDate::parse_from_str(&dt, "%Y-%m-%d").ok()?;
+    let dt = d.and_hms_milli_opt(0, 0, 0, 0)?;
+    Some(dt.and_utc().timestamp_millis())
+}
+
 pub(crate) fn does_file_format_have_exif(file_format: &AccurateFileType) -> bool {
     matches!(file_format, AccurateFileType::Jpg | AccurateFileType::Png | AccurateFileType::Heic)
 }
@@ -61,16 +72,41 @@ pub(crate) fn parse_exif(
 /// 6. File modified time
 ///   - no timezone info, unreliable in zips, somewhat unreliable in directories due to file
 ///     copying / syncing not preserving, only use as a last resprt
-pub(crate) fn best_guess_taken_dt(pe_o: &Option<ParsedExif>, modified_datetime: &Option<String>, supp_info: &Option<SupplementalInfo>) -> Option<String> {
-        let Some(pe) = pe_o else {
-        return modified_datetime.clone()
-    };
-    // todo: implement rules
-    pe.datetime_original
-        .clone()
-        .or(pe.datetime.clone())
-        .or(pe.gps_date.clone())
-        .or(modified_datetime.clone())
+pub(crate) fn best_guess_taken_dt(pe_o: &Option<ParsedExif>, modified_datetime: &Option<i64>, supp_info: &Option<SupplementalInfo>) -> Option<i64> {
+    if let Some(dt) = supp_info
+        .as_ref()
+        .and_then(|si| si.photo_taken_time.as_ref())
+        .and_then(|si_dt| si_dt.timestamp_as_epoch_ms()) {
+        return Some(dt);
+    }
+    if let Some(dt) = pe_o
+        .as_ref()
+        .and_then(|pe| pe.datetime_original.clone())
+        .and_then(exif_dt_as_epoch_ms) {
+        return Some(dt);
+    }
+    if let Some(dt) = pe_o
+        .as_ref()
+        .and_then(|pe| pe.datetime.clone())
+        .and_then(exif_dt_as_epoch_ms) {
+        return Some(dt);
+    }
+    if let Some(dt) = pe_o
+        .as_ref()
+        .and_then(|pe| pe.gps_date.clone())
+        .and_then(exif_d_as_epoch_ms){
+        return Some(dt);
+    }
+    if let Some(dt) = supp_info
+        .as_ref()
+        .and_then(|si| si.creation_time.as_ref())
+        .and_then(|si_dt| si_dt.timestamp_as_epoch_ms()) {
+        return Some(dt);
+    }
+    if let Some(dt) = modified_datetime  {
+        return Some(dt.clone());
+    }
+    None
 }
 
 fn all_tags(path: &Path) -> Option<HashMap<String, String>> {
@@ -205,6 +241,12 @@ mod tests {
             p.datetime_original,
             Some("2008-05-30T15:56:01Z".to_string())
         );
+    }
+
+    #[tokio::test()]
+    async fn test_exif_date_epoch_ms() {
+        assert_eq!(exif_dt_as_epoch_ms("2008-05-30T15:56:01Z".to_string()), Some(1212162961000));
+        assert_eq!(exif_d_as_epoch_ms("2008-05-30".to_string()), Some(1212105600000));
     }
 
     #[tokio::test()]
