@@ -1,7 +1,10 @@
 # photo-sorter-cli
 
-A CLI tool to take photos, videos and albums from Google Takeout and iCloud zip files (or directories) and sort them 
-into directories based on their EXIF metadata and any supplemental info.
+Problem: There is no shared format for archiving photos and videos, this tool aims to provide a simple solution that 
+works with both Google Takeout and iCloud archives, while being robust, portable and future-proof.
+
+This is a CLI tool to organise photos, videos and albums from Google Takeout and iCloud zip files (or directories) and 
+sort them into directories based on their EXIF metadata and any supplemental info.
 
 In detail:
 - Files are put into directories with the following format: `yyyy/mm/dd/hhmm-ss-{short checksum}.ext`
