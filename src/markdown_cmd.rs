@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
 use log::{debug, warn};
-use crate::file_type::{quick_scan_file};
+use crate::supplemental_info::{detect_supplemental_info, load_supplemental_info};
 
 pub(crate) async fn main(input: &String) -> anyhow::Result<()> {
     debug!("Inspecting: {input}");
@@ -20,22 +20,22 @@ pub(crate) async fn main(input: &String) -> anyhow::Result<()> {
         .to_string_lossy();
     let mut root: Box<dyn PsContainer> = Box::new(PsDirectoryContainer::new(parent_dir_string));
     let si = ScanInfo::new(input.clone(), None);
-    let qsf_o = quick_scan_file(&root, &si).await;
-    let Some(qsf) = qsf_o else {
-        debug!("Not a valid media file: {input}");
-        return Ok(());
-    };
     let bytes = root
         .file_bytes(&file_name.to_string()) //
         .with_context(|| "Error reading media file")?;
     let checksum_o = checksum_bytes(&bytes).ok();
     let Some((short_checksum, long_checksum)) = checksum_o else {
-        debug!("Could not calculate checksum for file: {:?}", qsf.name);
-        return Err(anyhow!("Could not calculate checksum for file: {:?}", qsf.name));
+        debug!("Could not calculate checksum for file: {:?}", si.file_path);
+        return Err(anyhow!("Could not calculate checksum for file: {:?}", si.file_path));
     };
+    let mut supp_info_o = None;
+    let supp_info_path_o = detect_supplemental_info(&si.file_path.clone(), &mut root);
+    if let Some(supp_info_path) = supp_info_path_o {
+        supp_info_o = load_supplemental_info(&supp_info_path, &mut root);
+    }
 
     let media_file_info_res = media_file_info_from_readable(
-        &qsf, &bytes, &None, &short_checksum, &long_checksum);
+        &si, &bytes, &supp_info_o, &short_checksum, &long_checksum);
     let Ok(media_file_info) = media_file_info_res else {
         debug!("Not a valid media file: {input}");
         return Ok(());

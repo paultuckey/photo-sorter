@@ -1,9 +1,10 @@
 use crate::exif::{ParsedExif, best_guess_taken_dt, parse_exif};
-use crate::file_type::{AccurateFileType, determine_file_type, file_ext_from_file_type, QuickFileType, QuickScannedFile};
+use crate::file_type::{AccurateFileType, determine_file_type, file_ext_from_file_type, QuickFileType};
 use anyhow::anyhow;
 use chrono::{DateTime, Datelike, Timelike};
 use log::{warn};
 use crate::supplemental_info::SupplementalInfo;
+use crate::util::ScanInfo;
 
 #[derive(Debug, Clone)]
 pub(crate) struct MediaFileInfo {
@@ -21,13 +22,13 @@ pub(crate) struct MediaFileInfo {
 }
 
 pub(crate) fn media_file_info_from_readable(
-    qsf: &QuickScannedFile,
+    qsf: &ScanInfo,
     bytes: &Vec<u8>,
     supp_info: &Option<SupplementalInfo>,
     short_checksum: &String,
     long_checksum: &String,
 ) -> anyhow::Result<MediaFileInfo> {
-    let name = &qsf.name;
+    let name = &qsf.file_path;
     let guessed_ff = determine_file_type(bytes, name);
     if guessed_ff == AccurateFileType::Unsupported {
         warn!("Not a valid media file {name:?}");

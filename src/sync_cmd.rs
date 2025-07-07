@@ -1,13 +1,13 @@
 use crate::album::{build_album_md, parse_album};
-use crate::file_type::{QuickFileType, QuickScannedFile, quick_scan_files};
+use crate::file_type::{QuickFileType};
 use crate::markdown_cmd::{sync_markdown};
 use crate::media::{media_file_info_from_readable, MediaFileInfo};
-use crate::util::{PsContainer, PsDirectoryContainer, PsZipContainer, is_existing_file_same, checksum_bytes, Progress};
+use crate::util::{PsContainer, PsDirectoryContainer, PsZipContainer, is_existing_file_same, checksum_bytes, Progress, ScanInfo};
 use anyhow::anyhow;
 use std::collections::HashMap;
 use std::path::Path;
 use log::{debug, info, warn};
-use crate::supplemental_info::{load_supplemental_info, SupplementalInfo};
+use crate::supplemental_info::{detect_supplemental_info, load_supplemental_info, SupplementalInfo};
 
 pub(crate) async fn main(
     dry_run: bool,
@@ -32,7 +32,6 @@ pub(crate) async fn main(
     }
 
     let files = container.scan();
-    let quick_scanned_files = quick_scan_files(&container, &files).await;
     info!("Found {} files in input", files.len());
 
     let mut output_container_o: Option<PsDirectoryContainer> = None;
@@ -48,30 +47,26 @@ pub(crate) async fn main(
     let mut all_media = HashMap::<String, MediaFileInfo>::new();
 
     if !skip_media {
-        let supplemental_paths = quick_scanned_files
-            .iter()
-            .filter(|qsf| qsf.supplemental_json_file.is_some())
-            .collect::<Vec<&QuickScannedFile>>();
-        let mut supp_info_map: HashMap<String, SupplementalInfo> = HashMap::new();
-        info!("Loading {} supplemental JSON files", supplemental_paths.len());
-        for qsf in supplemental_paths {
-            load_supplemental_info(qsf, &mut container, &mut supp_info_map);
-        }
-
-        let quick_media_files = quick_scanned_files
+        let media_si_files = files
             .iter()
             .filter(|m| m.quick_file_type == QuickFileType::Media)
-            .collect::<Vec<&QuickScannedFile>>();
-        info!("Inspecting {} photo and video files", quick_media_files.len());
-        let prog = Progress::new(quick_media_files.len() as u64);
-        for quick_scanned_file in quick_media_files {
+            .collect::<Vec<&ScanInfo>>();
+        info!("Inspecting {} photo and video files", media_si_files.len());
+        let prog = Progress::new(media_si_files.len() as u64);
+        for media_si in media_si_files {
             prog.inc();
-            let bytes = container.file_bytes(&quick_scanned_file.name.clone());
+
+            let mut supp_info_o = None;
+            let supp_info_path_o = detect_supplemental_info(&media_si.file_path.clone(), &mut container);
+            if let Some(supp_info_path) = supp_info_path_o {
+                supp_info_o = load_supplemental_info(&supp_info_path, &mut container);
+            }
+            let bytes = container.file_bytes(&media_si.file_path.clone());
             let Ok(bytes) = bytes else {
-                warn!("Could not read file: {}", quick_scanned_file.name);
-                return Err(anyhow!("Could not read file: {}", quick_scanned_file.name));
+                warn!("Could not read file: {}", media_si.file_path);
+                return Err(anyhow!("Could not read file: {}", media_si.file_path));
             };
-            let _ = inspect_media(bytes, quick_scanned_file, &mut all_media, &supp_info_map);
+            let _ = inspect_media(bytes, media_si, &mut all_media, &supp_info_o);
         }
         drop(prog);
 
@@ -90,18 +85,18 @@ pub(crate) async fn main(
     }
 
     if !skip_albums {
-        let quick_scanned_albums = quick_scanned_files
+        let scan_info_albums = files
             .iter()
             .filter(|m|
                 m.quick_file_type == QuickFileType::AlbumCsv
                     || m.quick_file_type == QuickFileType::AlbumJson)
-            .collect::<Vec<&QuickScannedFile>>();
-        info!("Inspecting {} album files", quick_scanned_albums.len());
+            .collect::<Vec<&ScanInfo>>();
+        info!("Inspecting {} album files", scan_info_albums.len());
         let mut albums = vec![];
         let prog = Progress::new(all_media.len() as u64);
-        for qsf in quick_scanned_albums {
+        for si in scan_info_albums {
             prog.inc();
-            let album_o = parse_album(&mut container, qsf, &quick_scanned_files);
+            let album_o = parse_album(&mut container, si, &files);
             let Some(album) = album_o else {
                 continue;
             };
@@ -134,33 +129,26 @@ pub(crate) async fn main(
 /// - populate exif data
 pub(crate) fn inspect_media(
     bytes: Vec<u8>,
-    qsf: &QuickScannedFile,
+    qsf: &ScanInfo,
     all_media: &mut HashMap<String, MediaFileInfo>,
-    supp_info_map: &HashMap<String, SupplementalInfo>,
+    supp_info: &Option<SupplementalInfo>,
 ) -> anyhow::Result<()> {
-    info!("Inspect: {}", qsf.name);
+    info!("Inspect: {}", qsf.file_path);
     let checksum_o = checksum_bytes(&bytes).ok();
     let Some((short_checksum, long_checksum)) = checksum_o else {
-        warn!("Could not calculate checksum for: {:?}", qsf.name);
-        return Err(anyhow!("Could not calculate checksum for file: {:?}", qsf.name));
+        warn!("Could not calculate checksum for: {:?}", qsf.file_path);
+        return Err(anyhow!("Could not calculate checksum for file: {:?}", qsf.file_path));
     };
     debug!("  Checksum calculated: {long_checksum}");
     if let Some(m) = all_media.get_mut(&long_checksum) {
-        m.original_path.push(qsf.name.clone());
+        m.original_path.push(qsf.file_path.clone());
         return Ok(());
-    }
-    let extra_info_path = qsf.supplemental_json_file.clone();
-    let mut supp_info: Option<SupplementalInfo> = None;
-    if let Some(path) = extra_info_path.clone() {
-        if let Some(si) = supp_info_map.get(&path) {
-            supp_info = Some(si.clone());
-        }
     }
     let media_file_info_res = media_file_info_from_readable(
         qsf, &bytes, &supp_info, &short_checksum, &long_checksum);
     let Ok(media_file) = media_file_info_res else {
-        warn!("Could not calculate info for: {:?}", qsf.name);
-        return Err(anyhow!("File type unsupported: {:?}", qsf.name));
+        warn!("Could not calculate info for: {:?}", qsf.file_path);
+        return Err(anyhow!("File type unsupported: {:?}", qsf.file_path));
     };
     all_media.insert(media_file.long_checksum.clone(), media_file.clone());
     Ok(())
