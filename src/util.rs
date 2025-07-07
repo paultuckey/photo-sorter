@@ -91,7 +91,7 @@ impl PsDirectoryContainer {
         }
         let f_r = File::open(&p);
         let Ok(f) = f_r else {
-            error!("Unable to open file {p:?} for setting modified datetime {p:?}");
+            error!("Unable to open file {p:?} for setting modified datetime ");
             return;
         };
         if let Err(e) = f.set_modified(st) {
@@ -178,15 +178,17 @@ pub(crate) struct PsZipContainer {
     zip_file: String,
     index: Vec<ScanInfo>,
     zip: ZipArchive<File>,
+    tz: chrono::FixedOffset,
 }
 
 impl PsZipContainer {
-    pub(crate) fn new(zip_file: String) -> Self {
+    pub(crate) fn new(zip_file: String, tz: chrono::FixedOffset) -> Self {
         let z = ZipArchive::new(File::open(zip_file.clone()).unwrap());
         let mut c = PsZipContainer {
             zip_file,
             index: vec![],
             zip: z.unwrap(),
+            tz
         };
         c.index();
         c
@@ -213,10 +215,9 @@ impl PsZipContainer {
             if let Some(lm) = file_in_zip.last_modified() {
                 // not zip dates are dodgy, see zip crate's docs
                 // zip times don't include tz, blindly assume they are in the local tz
-                let tz = chrono::Local::now().offset().to_owned();
                 dt_o = chrono::NaiveDate::from_ymd_opt(lm.year() as i32, lm.month() as u32, lm.day() as u32)
                     .and_then(|date| date.and_hms_opt(lm.hour() as u32, lm.minute() as u32, 0))
-                    .and_then(|naive_dt| naive_dt.and_local_timezone(tz).single())
+                    .and_then(|naive_dt| naive_dt.and_local_timezone(self.tz).single())
                     .map(|dt| dt.timestamp_millis());
             }
             self.index.push(ScanInfo::new(file_name.to_string(), dt_o));
@@ -345,12 +346,13 @@ mod tests {
     #[tokio::test()]
     async fn test_zip() -> anyhow::Result<()> {
         crate::test_util::setup_log().await;
-        let c = PsZipContainer::new("test/Canon_40D.jpg.zip".to_string());
+        let tz = chrono::FixedOffset::east_opt(0).unwrap();
+        let c = PsZipContainer::new("test/Canon_40D.jpg.zip".to_string(), tz);
         let index = c.scan();
         assert_eq!(index.len(), 2);
         let si = index.first().unwrap();
         assert_eq!(si.file_path, "Canon_40D.jpg");
-        assert_eq!(si.modified_datetime, Some(1749874140000));
+        assert_eq!(si.modified_datetime, Some(1749917340000));
         Ok(())
     }
 }

@@ -27,7 +27,8 @@ pub(crate) async fn main(
         container = Box::new(PsDirectoryContainer::new(input.clone()));
     } else {
         info!("Input zip: {input}");
-        container = Box::new(PsZipContainer::new(input.clone()));
+        let tz = chrono::Local::now().offset().to_owned();
+        container = Box::new(PsZipContainer::new(input.clone(), tz));
     }
 
     let files = container.scan();
