@@ -234,7 +234,7 @@ mod tests {
     async fn test_parse_exif_created() {
         use crate::util::PsContainer;
         use crate::util::PsDirectoryContainer;
-        let mut c = PsDirectoryContainer::new("test".to_string());
+        let mut c = PsDirectoryContainer::new(&"test".to_string());
         let bytes = c.file_bytes(&"Canon_40D.jpg".to_string()).unwrap();
         let p = parse_exif(&bytes, &"test".to_string(), &AccurateFileType::Jpg).unwrap();
         assert_eq!(

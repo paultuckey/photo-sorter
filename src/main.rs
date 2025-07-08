@@ -7,7 +7,7 @@ mod media;
 mod sync_cmd;
 mod test_util;
 mod util;
-mod album_cmd;
+mod markdown;
 
 use clap::{Parser, Subcommand};
 use log::{debug, error, info, LevelFilter};
@@ -25,14 +25,10 @@ enum Commands {
         #[arg(short, long, help = "Turn debugging information on")]
         debug: bool,
 
-        #[arg(short, long, help = "Photo or video to generate markdown for")]
-        input: String,
-    },
-    Album {
-        #[arg(short, long, help = "Turn debugging information on")]
-        debug: bool,
+        #[arg(short, long, help = "The takeout or iCloud zip/directory")]
+        root: String,
 
-        #[arg(short, long, help = "Album file to generate markdown for")]
+        #[arg(short, long, help = "Photo, video or album to generate markdown for")]
         input: String,
     },
     Sync {
@@ -77,14 +73,12 @@ async fn main() {
 async fn go() -> anyhow::Result<()> {
     let cli = Cli::parse();
     match cli.command {
-        Commands::Markdown { debug, input } => {
+        Commands::Markdown { debug, root, input } => {
             enable_debug(debug);
-            markdown_cmd::main(&input).await?
+            markdown_cmd::main(&input, &root).await?
         }
-        Commands::Album { debug, input } => {
-            enable_debug(debug);
-            album_cmd::main(&input).await?
-        }
+        // todo: command to index a zip/directory and find a count of all file types and list any
+        //   unknown files, useful for debugging
         Commands::Sync {
             debug,
             dry_run,

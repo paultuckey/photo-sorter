@@ -206,27 +206,35 @@ pub(crate) fn albums_to_files_map(albums: &[Album]) -> HashMap<String, Vec<Strin
     m
 }
 
-pub(crate) fn build_album_md(album: &Album, all_media: &HashMap<String, MediaFileInfo>) -> String {
+pub(crate) fn build_album_md(album: &Album, all_media_o: Option<&HashMap<String, MediaFileInfo>>, media_relative_path: &str) -> String {
     let mut md = String::new();
     let generated_warning = "---\nphoto-lister:\n  album: This file is a GENERATED album, do NOT edit it directly.\n---\n\n";
-    let media_relative_path = "../";
 
     md.push_str(generated_warning);
     md.push_str(&format!("# {}", &album.title));
     md.push_str("\n\n");
     for f in album.files.clone() {
         let alt_text = "Photo";
-
-        let media_file_info_o = all_media.values()
-            .find(|m| {
-                m.accurate_file_type != AccurateFileType::Unsupported &&
-                    m.quick_file_type == QuickFileType::Media &&
-                    m.original_path.iter().any(|p| p.eq(&f))
-            });
-        let desired_path_o = media_file_info_o
-            .and_then(|m| m.desired_media_path.clone());
-        if let Some(desired_path) = desired_path_o {
-            let path = format!("{media_relative_path}{desired_path}");
+        let mut target_path_o = None;
+        if let Some(all_media) = all_media_o {
+            let media_file_info_o = all_media.values()
+                .find(|m| {
+                    m.accurate_file_type != AccurateFileType::Unsupported &&
+                        m.quick_file_type == QuickFileType::Media &&
+                        m.original_path.iter().any(|p| p.eq(&f))
+                });
+            let target_path_o = media_file_info_o
+                .and_then(|m| m.desired_media_path.clone());
+            if target_path_o.is_none() {
+                warn!("No media file desired path found for: {f}");
+                continue;
+            }
+        } else {
+            // intentionally use the original path
+            target_path_o = Some(f.clone());
+        }
+        if let Some(target_path) = target_path_o {
+            let path = format!("{media_relative_path}{target_path}");
             md.push_str(&format!("\n![{alt_text}]({path})"));
         }
     }
@@ -243,7 +251,7 @@ mod tests {
     async fn test_ic_sample() -> anyhow::Result<()> {
         crate::test_util::setup_log().await;
         use crate::util::PsDirectoryContainer;
-        let mut c: Box<dyn PsContainer> = Box::new(PsDirectoryContainer::new("test".to_string()));
+        let mut c: Box<dyn PsContainer> = Box::new(PsDirectoryContainer::new(&"test".to_string()));
         assert_eq!(c.root_exists(), true);
         let qsf = ScanInfo::new("ic-album-sample.csv".to_string(), None);
         let a = parse_album(&mut c, &qsf, &vec![]).unwrap();
@@ -257,14 +265,14 @@ mod tests {
     async fn test_g_sample() -> anyhow::Result<()> {
         crate::test_util::setup_log().await;
         use crate::util::PsDirectoryContainer;
-        let mut c: Box<dyn PsContainer> = Box::new(PsDirectoryContainer::new("test".to_string()));
-        let qsf = ScanInfo::new("metadata.json".to_string(), None);
-        let si1 = ScanInfo::new("test1.jpg".to_string(), None);
+        let mut c: Box<dyn PsContainer> = Box::new(PsDirectoryContainer::new(&"test/takeout1".to_string()));
+        let qsf = ScanInfo::new("Google Photos/album1/metadata.json".to_string(), None);
+        let si1 = ScanInfo::new("Google Photos/album1/test1.jpg".to_string(), None);
         let si2 = ScanInfo::new("different/test2.jpg".to_string(), None);
         let a = parse_album(&mut c, &qsf, &vec![si1, si2]).unwrap();
         assert_eq!(a.title, "Some album title".to_string());
         assert_eq!(a.files.len(), 1);
-        assert_eq!(a.files.get(0).unwrap().to_string(), "test1.jpg".to_string());
+        assert_eq!(a.files.get(0).unwrap().to_string(), "Google Photos/album1/test1.jpg".to_string());
         Ok(())
     }
 }

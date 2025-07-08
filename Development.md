@@ -33,10 +33,16 @@ Verify help is working:
 cargo run -- --help
 ```
 
-Test a single file:
+Test a single photo file:
 
 ```shell
-cargo run -- markdown --debug --input "test/Canon_40D.jpg"
+cargo run -- markdown --debug --root "test" --input "Canon_40D.jpg"
+```
+
+Test a single album file:
+
+```shell
+cargo run -- markdown --debug --root "test/takeout1" --input "Google Photos/album1/metadata.json"
 ```
 
 Dry run a sync operation:
@@ -68,4 +74,14 @@ rsync --dry-run -a --verbose ../input/takeout-small/ ../output/takeout-small/
 
 ```sh
 zipinfo -m input/takeout-20250614T030613Z-1-001.zip > output/takeout-list.txt
+```
+
+
+## Notes
+
+The same photo from different sources give different sizes:
+
+```shell
+ls -la "input/iCloud Photos/Photos/IMG_5071.HEIC"
+ls -la "input/Takeout/Google Photos/Photos from 2025/IMG_5071.HEIC"
 ```
