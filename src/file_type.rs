@@ -1,5 +1,4 @@
 use std::path::Path;
-use crate::util::{PsContainer};
 use log::{debug, warn};
 
 #[derive(Clone, Debug, PartialEq)]
@@ -99,6 +98,7 @@ pub(crate) fn determine_file_type(bytes: &Vec<u8>, name: &String) -> AccurateFil
 
 #[cfg(test)]
 mod tests {
+    use crate::util::PsContainer;
     use super::*;
 
     #[tokio::test()]
@@ -123,7 +123,7 @@ mod tests {
         crate::test_util::setup_log().await;
         use crate::util::PsDirectoryContainer;
         let name = "Canon_40D.jpg".to_string();
-        let mut root = PsDirectoryContainer::new("test".to_string());
+        let mut root = PsDirectoryContainer::new(&"test".to_string());
         let bytes = root.file_bytes(&name).unwrap();
         assert_eq!(determine_file_type(&bytes, &name), AccurateFileType::Jpg);
 

@@ -33,10 +33,16 @@ Verify help is working:
 cargo run -- --help
 ```
 
-Test a single file:
+Test a single photo file:
 
 ```shell
-cargo run -- markdown --debug --input "test/Canon_40D.jpg"
+cargo run -- markdown --debug --root "test" --input "Canon_40D.jpg"
+```
+
+Test a single album file:
+
+```shell
+cargo run -- markdown --debug --root "test/takeout1" --input "Google Photos/album1/metadata.json"
 ```
 
 Dry run a sync operation:

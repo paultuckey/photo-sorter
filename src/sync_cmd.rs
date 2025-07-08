@@ -1,12 +1,12 @@
 use crate::album::{build_album_md, parse_album};
 use crate::file_type::{QuickFileType};
-use crate::markdown_cmd::{sync_markdown};
 use crate::media::{media_file_info_from_readable, MediaFileInfo};
 use crate::util::{PsContainer, PsDirectoryContainer, PsZipContainer, is_existing_file_same, checksum_bytes, Progress, ScanInfo};
 use anyhow::anyhow;
 use std::collections::HashMap;
 use std::path::Path;
 use log::{debug, info, warn};
+use crate::markdown::sync_markdown;
 use crate::supplemental_info::{detect_supplemental_info, load_supplemental_info, SupplementalInfo};
 
 pub(crate) async fn main(
@@ -24,11 +24,11 @@ pub(crate) async fn main(
     let mut container: Box<dyn PsContainer>;
     if path.is_dir() {
         info!("Input directory: {input}");
-        container = Box::new(PsDirectoryContainer::new(input.clone()));
+        container = Box::new(PsDirectoryContainer::new(input));
     } else {
         info!("Input zip: {input}");
         let tz = chrono::Local::now().offset().to_owned();
-        container = Box::new(PsZipContainer::new(input.clone(), tz));
+        container = Box::new(PsZipContainer::new(input, tz));
     }
 
     let files = container.scan();
@@ -37,7 +37,7 @@ pub(crate) async fn main(
     let mut output_container_o: Option<PsDirectoryContainer> = None;
     if let Some(output) = output_directory {
         info!("Output directory: {output}");
-        let output_container = PsDirectoryContainer::new(output.clone());
+        let output_container = PsDirectoryContainer::new(output);
         if !output_container.root_exists() {
             warn!("  Output directory does not exist");
             return Err(anyhow!("Output directory does not exist"));
@@ -106,7 +106,7 @@ pub(crate) async fn main(
 
         info!("Outputting {} albums", albums.len());
         for album in albums {
-            let a_s = build_album_md(&album, &all_media);
+            let a_s = build_album_md(&album, Some(&all_media), "../");
             let Some(output_c) = &output_container_o else {
                 continue;
             };

@@ -125,7 +125,7 @@ mod tests {
         use crate::util::PsContainer;
         use crate::util::{checksum_bytes};
 
-        let mut c = PsDirectoryContainer::new("test".to_string());
+        let mut c = PsDirectoryContainer::new(&"test".to_string());
         let bytes = c.file_bytes(&"Canon_40D.jpg".to_string()).unwrap();
         let short_checksum = checksum_bytes(&bytes)?.0;
 

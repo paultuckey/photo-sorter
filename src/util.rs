@@ -1,5 +1,4 @@
 use anyhow::anyhow;
-use anyhow::Context;
 use log::{debug, error, warn};
 use status_line::StatusLine;
 use std::fmt::{Display, Formatter};
@@ -61,8 +60,8 @@ pub(crate) struct PsDirectoryContainer {
 }
 
 impl PsDirectoryContainer {
-    pub(crate) fn new(root: String) -> Self {
-        PsDirectoryContainer { root }
+    pub(crate) fn new(root: &String) -> Self {
+        PsDirectoryContainer { root: root.to_string() }
     }
     pub(crate) fn write(&self, dry_run: bool, path: &String, bytes: &Vec<u8>) {
         let p = Path::new(&self.root).join(path);
@@ -163,9 +162,11 @@ impl PsContainer for PsDirectoryContainer {
     }
     fn file_bytes(&mut self, path: &String) -> anyhow::Result<Vec<u8>> {
         let file_path = Path::new(&self.root).join(path);
-        let mut file =
-            File::open(&file_path) //
-                .with_context(|| format!("Unable to open file {file_path:?}"))?;
+        let file_r = File::open(&file_path);
+        let Ok(mut file) = file_r else {
+            debug!("Unable to open file: {file_path:?}");
+            return Err(anyhow!("Unable to open file {file_path:?}"));
+        };
         let mut buffer = Vec::new();
         file.read_to_end(&mut buffer).unwrap_or(0);
         Ok(buffer)
@@ -186,10 +187,10 @@ pub(crate) struct PsZipContainer {
 }
 
 impl PsZipContainer {
-    pub(crate) fn new(zip_file: String, tz: chrono::FixedOffset) -> Self {
+    pub(crate) fn new(zip_file: &String, tz: chrono::FixedOffset) -> Self {
         let z = ZipArchive::new(File::open(zip_file.clone()).unwrap());
         let mut c = PsZipContainer {
-            zip_file,
+            zip_file: zip_file.to_string(),
             index: vec![],
             zip: z.unwrap(),
             tz
@@ -295,6 +296,8 @@ pub(crate) fn name_part(file_path_s: &String) -> String {
 }
 
 
+
+
 // Make sure it is Send + Sync, so it can be read and written from different threads:
 pub(crate) struct Progress {
     total: u64,
@@ -325,6 +328,8 @@ impl Display for Progress {
     }
 }
 
+
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -351,7 +356,7 @@ mod tests {
     async fn test_zip() -> anyhow::Result<()> {
         crate::test_util::setup_log().await;
         let tz = chrono::FixedOffset::east_opt(0).unwrap();
-        let c = PsZipContainer::new("test/Canon_40D.jpg.zip".to_string(), tz);
+        let c = PsZipContainer::new(&"test/Canon_40D.jpg.zip".to_string(), tz);
         let index = c.scan();
         assert_eq!(index.len(), 2);
         let si = index.first().unwrap();
