@@ -75,3 +75,13 @@ rsync --dry-run -a --verbose ../input/takeout-small/ ../output/takeout-small/
 ```sh
 zipinfo -m input/takeout-20250614T030613Z-1-001.zip > output/takeout-list.txt
 ```
+
+
+## Notes
+
+The same photo from different sources give different sizes:
+
+```shell
+ls -la "input/iCloud Photos/Photos/IMG_5071.HEIC"
+ls -la "input/Takeout/Google Photos/Photos from 2025/IMG_5071.HEIC"
+```
