@@ -16,7 +16,7 @@ In detail:
 - Files are put into directories with the following format: `yyyy/mm/dd/hhmm-ss-{short checksum}.ext`
 - For each photo or video file:
   - A matching Markdown file is written at the same path with the extension `md`
-  - This contains [YAML](https://en.wikipedia.org/wiki/YAML) frontmatter (the part between `---`'s) with metadata (based on EXIF tags)
+  - This contains [YAML](https://en.wikipedia.org/wiki/YAML) frontmatter (the part between `---`'s) with metadata
   - The Markdown part of this file can be edited with notes, and it will not be clobbered on later runs
   - Determine date based on EXIF tags or file modification time
 - Rename files with the wrong extension based on a inspecting bytes of the file
