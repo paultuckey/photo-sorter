@@ -2,9 +2,10 @@ use std::fs;
 use std::path::Path;
 use anyhow::{anyhow, Context};
 use log::{debug, warn};
-use serde::{Deserialize, Serialize};
 use crate::media::MediaFileInfo;
 use crate::util::{checksum_file, checksum_string, PsContainer, PsDirectoryContainer};
+use yaml_rust2::{YamlLoader, YamlEmitter, Yaml};
+use yaml_rust2::yaml::Hash;
 
 pub(crate) fn mfm_from_media_file_info(media_file_info: &MediaFileInfo) -> PhotoSorterFrontMatter {
     let mut mfm = PhotoSorterFrontMatter {
@@ -62,8 +63,8 @@ async fn save_markdown(
     Ok(())
 }
 
-#[derive(Serialize, Deserialize, PartialEq, Debug)]
-#[serde(rename_all(deserialize = "kebab-case", serialize = "kebab-case"))]
+//#[derive(Serialize, Deserialize, PartialEq, Debug)]
+//#[serde(rename_all(deserialize = "kebab-case", serialize = "kebab-case"))]
 pub(crate) struct PhotoSorterFrontMatter {
     pub(crate) path: Option<String>,
     pub(crate) path_original: Vec<String>,
@@ -74,11 +75,11 @@ pub(crate) struct PhotoSorterFrontMatter {
     // todo: add supplemental fields?
 }
 
-#[derive(Serialize, Deserialize, PartialEq, Debug)]
-#[serde(rename_all(deserialize = "kebab-case", serialize = "kebab-case"))]
-pub(crate) struct MediaFrontMatter {
-    pub(crate) photo_sorter: Option<PhotoSorterFrontMatter>,
-}
+// #[derive(Serialize, Deserialize, PartialEq, Debug)]
+// #[serde(rename_all(deserialize = "kebab-case", serialize = "kebab-case"))]
+// pub(crate) struct MediaFrontMatter {
+//     pub(crate) photo_sorter: Option<PhotoSorterFrontMatter>,
+// }
 
 pub(crate) fn sync_markdown(dry_run: bool, media_file: &MediaFileInfo, output_c: &mut PsDirectoryContainer) -> anyhow::Result<()> {
     let Some(output_path) = media_file.desired_markdown_path.clone() else {
@@ -86,12 +87,9 @@ pub(crate) fn sync_markdown(dry_run: bool, media_file: &MediaFileInfo, output_c:
         return Ok(());
     };
     let mfm = mfm_from_media_file_info(media_file);
-    let yaml = generate_yaml(&mfm)?;
-    let mut md = "".to_string();
+    let mut e_md = "".to_string();
+    let mut e_yaml = "".to_string();
 
-    // todo: when merging yaml take previous yaml and ADD to it
-    //   eg, can sync from icloud and google and the files will only be saved once
-    //       with both listed in yaml frontmatter
     if output_c.exists(&output_path) {
         let existing_md_bytes_r = output_c.file_bytes(&output_path);
         let Ok(existing_md_bytes) = existing_md_bytes_r else {
@@ -99,94 +97,81 @@ pub(crate) fn sync_markdown(dry_run: bool, media_file: &MediaFileInfo, output_c:
             return Err(anyhow!("Could not read existing markdown file at {output_path:?}"));
         };
         let existing_full_md = String::from_utf8_lossy(&existing_md_bytes);
-        let (e_mfm_o, e_md) = parse_frontmatter(&existing_full_md, &output_path);
-
-        if let Some(e_mfm) = e_mfm_o {
-            let e_yaml = generate_yaml(&e_mfm)?;
-            if yaml == e_yaml {
-                debug!("  Markdown file already exists with same frontmatter at {output_path:?}");
-                return Ok(());
-            } else {
-                debug!("  Markdown file exists but frontmatter differs, copying markdown, clobbering frontmatter at {output_path:?} {yaml:?} {e_yaml:?}");
-                md = e_md;
-            }
-        } else {
-            // frontmatter is empty, we will write new frontmatter but copy markdown content
-            debug!("  Markdown file already exists with empty frontmatter at {output_path:?}");
-            md = e_md;
-        }
+        let (e_yaml_i, e_md_i) = split_frontmatter(&existing_full_md);
+        e_yaml = e_yaml_i;
+        e_md = e_md_i;
     }
-    let md_str = assemble_markdown(&mfm, &md)?;
+    let md_str = assemble_markdown(&mfm, &e_yaml, &e_md)?;
     let md_bytes = md_str.as_bytes().to_vec();
     output_c.write(dry_run, &output_path, &md_bytes);
     Ok(())
 }
 
-pub(crate) fn parse_frontmatter(file_contents: &str, path: &str) -> (Option<PhotoSorterFrontMatter>, String) {
-    let (fm, md) = split_frontmatter(file_contents);
-    let mfm_r = parse_yaml(&fm);
-    match mfm_r {
-        Ok(mfm) => {
-            (Some(mfm), md)
-        }
-        Err(_) => {
-            warn!("Could not parse frontmatter at {path:?}, treating as empty");
-            (None, md)
-        }
-    }
-}
+// pub(crate) fn parse_frontmatter(file_contents: &str, path: &str) -> (Option<PhotoSorterFrontMatter>, String) {
+//     let (fm, md) = split_frontmatter(file_contents);
+//     let mfm_r = parse_yaml(&fm);
+//     match mfm_r {
+//         Ok(mfm) => {
+//             (Some(mfm), md)
+//         }
+//         Err(_) => {
+//             warn!("Could not parse frontmatter at {path:?}, treating as empty");
+//             (None, md)
+//         }
+//     }
+// }
 
 /// We write yaml manually so we have _exact_ control over output.
 /// We want to write plain style yaml, not the more complex
 /// https://yaml.org/spec/1.2-old/spec.html#id2788859
-fn generate_yaml(mfm: &PhotoSorterFrontMatter) -> anyhow::Result<String> {
-    let mut yaml = String::new();
-    yaml.push_str("photo-sorter:\n");
-    if let Some(s) = mfm.path.clone() {
-        yaml.push_str(&format!("  path: {s}\n"));
-    }
-    if !mfm.path_original.is_empty() {
-        yaml.push_str("  path-original:\n");
-        for po in mfm.path_original.clone() {
-            yaml.push_str(&format!("    - {po}\n"));
-        }
-    }
+// fn generate_yaml(mfm: &PhotoSorterFrontMatter) -> anyhow::Result<String> {
+//     let mut yaml = String::new();
+//     yaml.push_str("photo-sorter:\n");
+//     if let Some(s) = mfm.path.clone() {
+//         yaml.push_str(&format!("  path: {s}\n"));
+//     }
+//     if !mfm.path_original.is_empty() {
+//         yaml.push_str("  path-original:\n");
+//         for po in mfm.path_original.clone() {
+//             yaml.push_str(&format!("    - {po}\n"));
+//         }
+//     }
+//
+//     // todo: add longitude, latitude and people
+//
+//     if let Some(s) = mfm.datetime.clone() {
+//         yaml.push_str(&format!("  datetime: {s}\n"));
+//     }
+//     if let Some(s) = mfm.datetime_original.clone() {
+//         // If datetime and original datetime are the same, skip writing original datetime
+//         if s != mfm.datetime.clone().unwrap_or_default() {
+//             yaml.push_str(&format!("  original-datetime: {s}\n"));
+//         }
+//     }
+//     if let Some(s) = mfm.gps_date.clone() {
+//         yaml.push_str(&format!("  gps-date: {s}\n"));
+//     }
+//     Ok(yaml)
+// }
 
-    // todo: add longitude, latitude and people
-
-    if let Some(s) = mfm.datetime.clone() {
-        yaml.push_str(&format!("  datetime: {s}\n"));
-    }
-    if let Some(s) = mfm.datetime_original.clone() {
-        // If datetime and original datetime are the same, skip writing original datetime
-        if s != mfm.datetime.clone().unwrap_or_default() {
-            yaml.push_str(&format!("  original-datetime: {s}\n"));
-        }
-    }
-    if let Some(s) = mfm.gps_date.clone() {
-        yaml.push_str(&format!("  gps-date: {s}\n"));
-    }
-    Ok(yaml)
-}
-
-fn parse_yaml(s: &str) -> anyhow::Result<PhotoSorterFrontMatter> {
-    let mfm: MediaFrontMatter = serde_yml::from_str(s)?;
-    match mfm.photo_sorter {
-        None => {
-            Ok(PhotoSorterFrontMatter {
-                path: None,
-                path_original: vec![],
-                datetime_original: None,
-                datetime: None,
-                gps_date: None,
-                unique_id: None,
-            })
-        }
-        Some(psfm) => {
-            Ok(psfm)
-        }
-    }
-}
+// fn parse_yaml(s: &str) -> anyhow::Result<PhotoSorterFrontMatter> {
+//     let mfm: MediaFrontMatter = serde_yml::from_str(s)?;
+//     match mfm.photo_sorter {
+//         None => {
+//             Ok(PhotoSorterFrontMatter {
+//                 path: None,
+//                 path_original: vec![],
+//                 datetime_original: None,
+//                 datetime: None,
+//                 gps_date: None,
+//                 unique_id: None,
+//             })
+//         }
+//         Some(psfm) => {
+//             Ok(psfm)
+//         }
+//     }
+// }
 
 /// Grab anything between "---[\r]\n" and "---[\r]\n" and put into .0. Put everything else into .1.
 /// If any sort of invalid case is encountered, return empty frontmatter and original content.
@@ -277,11 +262,22 @@ pub(crate) fn split_frontmatter(file_contents: &str) -> (String, String) {
 
 pub(crate) fn assemble_markdown(
     mfm: &PhotoSorterFrontMatter,
+    existing_yaml: &str,
     markdown_content: &str,
 ) -> anyhow::Result<String> {
+    let new_yaml = merge_yaml(existing_yaml, mfm);
+    if new_yaml.is_empty() {
+        warn!("Generated YAML is empty, returning original markdown content");
+        return Ok(markdown_content.to_string());
+    }
+    if new_yaml.eq(existing_yaml) {
+        warn!("Generated YAML matches existing, returning original content");
+        // todo: better return type
+        return Ok(markdown_content.to_string());
+    }
     let mut s = String::new();
     s.push_str("---\n");
-    s.push_str(&generate_yaml(mfm)?);
+    s.push_str(&new_yaml);
     s.push_str("---\n");
     s.push_str(markdown_content);
     Ok(s)
@@ -306,34 +302,143 @@ async fn file_exists(
     Ok(())
 }
 
+fn merge_yaml(s: &str, fm: &PhotoSorterFrontMatter) -> String {
+    let yaml_docs_r = YamlLoader::load_from_str(s);
+    let Ok(yaml_docs) = yaml_docs_r else {
+        warn!("Could not parse YAML: {}", s);
+        return s.to_string();
+    };
+    let yaml_doc_o = yaml_docs.get(0);
+    let Some(yaml_doc) = yaml_doc_o else {
+        warn!("No YAML document found in: {}", s);
+        return s.to_string();
+    };
+    let Yaml::Hash(hash) = &yaml_doc else {
+        warn!("Root YAML is not a hash {:?}", yaml_doc);
+        return s.to_string();
+    };
+    let mut root: Hash = hash.clone();
+    yaml_array_merge(&mut root, &"original-paths".to_string(), &fm.path_original);
+
+    // todo: add longitude, latitude and people
+    // todo: add exif datetime, gps date, unique id
+
+    let mut out_str = String::new();
+    {
+        let mut emitter = YamlEmitter::new(&mut out_str);
+        let yaml_hash = Yaml::Hash(root);
+        emitter.dump(&yaml_hash).unwrap();
+    }
+    out_str = out_str.trim_start_matches("---").to_string();
+    out_str
+}
+
+fn yaml_array_merge(root: &mut Hash, key: &String, arr: &Vec<String>) {
+    if let Some(value_o) = root.get(&Yaml::String(key.clone())) {
+        match value_o.clone() {
+            Yaml::Array(po) => {
+                let mut new_po = po.clone();
+                for v in arr {
+                    if po.contains(&Yaml::String(v.clone())) {
+                        debug!("Path original {v} already exists in {key}");
+                    } else {
+                        debug!("Adding {v} to {key}");
+                        new_po.push(Yaml::String(v.to_string()));
+
+                    }
+                }
+                root[&Yaml::String(key.to_string())] = Yaml::Array(new_po);
+                return;
+            }
+            Yaml::BadValue => {
+                // fall through as current value is empty/unknown
+            }
+            _ => {
+                warn!("Expected {key} to be an array, found: {:?}", value_o);
+                return;
+            }
+        }
+    }
+    debug!("Adding {key} to YAML");
+    let arr_y = arr.clone()
+        .iter().map(|x| Yaml::String(x.to_string())).collect::<Vec<Yaml>>();
+    root.insert(Yaml::String(key.to_string()), Yaml::Array(arr_y));
+}
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    #[tokio::test()]
-    async fn test_parse_frontmatter() {
-        crate::test_util::setup_log().await;
-        let (fm_o, md) = parse_frontmatter("---
-  photo-sorter:
-    path: 2025/02/09/1123-23-abcdefg.jpg
-    path-original:
-      - Google Photos/Photos from 2025/IMG_5071.HEIC
-    datetime: 2025-02-09T18:17:01Z
-    gps-date: 2025-02-09
----
-x
-last line", "test.md");
-        assert_eq!(fm_o.unwrap(), PhotoSorterFrontMatter {
-            path: Some("2025/02/09/1123-23-abcdefg.jpg".to_string()),
-            path_original: vec!["Google Photos/Photos from 2025/IMG_5071.HEIC".to_string()],
+    fn get_mfi() -> PhotoSorterFrontMatter {
+        PhotoSorterFrontMatter {
+            path: None,
+            path_original: vec!["p1".to_string(), "p2".to_string()],
             datetime_original: None,
-            datetime: Some("2025-02-09T18:17:01Z".to_string()),
-            gps_date: Some("2025-02-09".to_string()),
+            datetime: None,
+            gps_date: None,
             unique_id: None,
-        });
-        assert_eq!(md, "x\nlast line".to_string());
+        }
     }
+
+
+    #[tokio::test()]
+    async fn test_yaml_output() {
+        crate::test_util::setup_log().await;
+        let s = "
+foo:
+  - list1
+";
+        let yaml = merge_yaml(s, &get_mfi());
+        assert_eq!(yaml, "
+foo:
+  - list1
+original-paths:
+  - p1
+  - p2");
+    }
+
+    #[tokio::test()]
+    async fn test_yaml_output_existing() {
+        crate::test_util::setup_log().await;
+        let s = "
+foo:
+  - list1
+original-paths:
+  - p0
+";
+        let yaml = merge_yaml(s, &get_mfi());
+        assert_eq!(yaml, "
+foo:
+  - list1
+original-paths:
+  - p0
+  - p1
+  - p2");
+    }
+
+//     #[tokio::test()]
+//     async fn test_parse_frontmatter() {
+//         crate::test_util::setup_log().await;
+//         let (fm_o, md) = parse_frontmatter("---
+//   photo-sorter:
+//     path: 2025/02/09/1123-23-abcdefg.jpg
+//     path-original:
+//       - Google Photos/Photos from 2025/IMG_5071.HEIC
+//     datetime: 2025-02-09T18:17:01Z
+//     gps-date: 2025-02-09
+// ---
+// x
+// last line", "test.md");
+//         assert_eq!(fm_o.unwrap(), PhotoSorterFrontMatter {
+//             path: Some("2025/02/09/1123-23-abcdefg.jpg".to_string()),
+//             path_original: vec!["Google Photos/Photos from 2025/IMG_5071.HEIC".to_string()],
+//             datetime_original: None,
+//             datetime: Some("2025-02-09T18:17:01Z".to_string()),
+//             gps_date: Some("2025-02-09".to_string()),
+//             unique_id: None,
+//         });
+//         assert_eq!(md, "x\nlast line".to_string());
+//     }
 
     #[test]
     fn parse_with_missing_beginning_line() {
