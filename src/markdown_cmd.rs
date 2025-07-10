@@ -49,7 +49,7 @@ pub(crate) async fn media(si: &ScanInfo, root: &mut Box<dyn PsContainer>) -> any
     };
     debug!("Markdown:");
     let mfm = mfm_from_media_file_info(&media_file_info);
-    let s = assemble_markdown(&mfm, "", "")?;
+    let s = assemble_markdown(&mfm, &None, "")?;
     println!("{s}");
     Ok(())
 }
