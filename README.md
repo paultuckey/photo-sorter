@@ -48,27 +48,33 @@ between uniqueness and length.
 
 ## Installation
 
-For now, you will need to build the project from source.
+You will need to install Rust and Cargo, follow the instructions on the [Rust installation page](https://www.rust-lang.org/tools/install).
+
+Then build the project from source.
+
+```shell
+cargo install --git https://github.com/paultuckey/photo-sorter.git photo-sorter
+```
 
 ## Usage
 
 ```shell
-cargo run -- --help
+photo-sorter --help
 ```
 
 ```shell
-cargo run -- markdown --debug --root "test" --input "Canon_40D.jpg"
+photo-sorter markdown --debug --root "test" --input "Canon_40D.jpg"
 ```
 
 ```shell
-cargo run -- \
+photo-sorter \
   sync --debug --dry-run \
     --input "input/takeout-20250614T030613Z-1-001.zip" \
     --output "output/archive"
 ```
 
 ```shell
-cargo run -- sync --debug --input "input/Takeout-small" --output "output/archive-small"
+photo-sorter sync --debug --input "input/Takeout-small" --output "output/archive-small"
 ```
 
 

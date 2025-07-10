@@ -208,8 +208,8 @@ pub(crate) fn albums_to_files_map(albums: &[Album]) -> HashMap<String, Vec<Strin
 
 pub(crate) fn build_album_md(album: &Album, all_media_o: Option<&HashMap<String, MediaFileInfo>>, media_relative_path: &str) -> String {
     let mut md = String::new();
-    let generated_warning = "---\nphoto-lister:\n  album: This file is a GENERATED album, do NOT edit it directly.\n---\n\n";
-
+    let generated_warning = "\n\n\n[ This file is a GENERATED album, do NOT edit it directly ]: #\n\n\n";
+    // todo: in yaml front matter link back to original album
     md.push_str(generated_warning);
     md.push_str(&format!("# {}", &album.title));
     md.push_str("\n\n");
