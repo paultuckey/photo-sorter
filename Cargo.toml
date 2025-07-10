@@ -1,5 +1,5 @@
 [package]
-name = "photo-sorter-cli"
+name = "photo-sorter"
 version = "0.1.0"
 edition = "2024"
 

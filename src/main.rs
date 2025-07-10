@@ -8,6 +8,7 @@ mod sync_cmd;
 mod test_util;
 mod util;
 mod markdown;
+mod index_cmd;
 
 use clap::{Parser, Subcommand};
 use log::{debug, error, info, LevelFilter};
