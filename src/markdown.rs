@@ -88,7 +88,7 @@ pub(crate) fn sync_markdown(dry_run: bool, media_file: &MediaFileInfo, output_c:
     };
     let mfm = mfm_from_media_file_info(media_file);
     let mut e_md = "".to_string();
-    let mut e_yaml = "".to_string();
+    let mut e_yaml = None;
 
     if output_c.exists(&output_path) {
         let existing_md_bytes_r = output_c.file_bytes(&output_path);
@@ -98,7 +98,7 @@ pub(crate) fn sync_markdown(dry_run: bool, media_file: &MediaFileInfo, output_c:
         };
         let existing_full_md = String::from_utf8_lossy(&existing_md_bytes);
         let (e_yaml_i, e_md_i) = split_frontmatter(&existing_full_md);
-        e_yaml = e_yaml_i;
+        e_yaml = Some(e_yaml_i);
         e_md = e_md_i;
     }
     let md_str = assemble_markdown(&mfm, &e_yaml, &e_md)?;
@@ -262,18 +262,20 @@ pub(crate) fn split_frontmatter(file_contents: &str) -> (String, String) {
 
 pub(crate) fn assemble_markdown(
     mfm: &PhotoSorterFrontMatter,
-    existing_yaml: &str,
+    existing_yaml: &Option<String>,
     markdown_content: &str,
 ) -> anyhow::Result<String> {
     let new_yaml = merge_yaml(existing_yaml, mfm);
     if new_yaml.is_empty() {
-        warn!("Generated YAML is empty, returning original markdown content");
+        warn!("Generated YAML is empty, returning markdown content");
         return Ok(markdown_content.to_string());
     }
-    if new_yaml.eq(existing_yaml) {
-        warn!("Generated YAML matches existing, returning original content");
-        // todo: better return type
-        return Ok(markdown_content.to_string());
+    if let Some(existing_yaml) = existing_yaml {
+        if new_yaml.eq(existing_yaml) {
+            warn!("Generated YAML matches existing, returning original content");
+            // todo: better return type
+            return Ok(markdown_content.to_string());
+        }
     }
     let mut s = String::new();
     s.push_str("---\n");
@@ -302,22 +304,27 @@ async fn file_exists(
     Ok(())
 }
 
-fn merge_yaml(s: &str, fm: &PhotoSorterFrontMatter) -> String {
-    let yaml_docs_r = YamlLoader::load_from_str(s);
-    let Ok(yaml_docs) = yaml_docs_r else {
-        warn!("Could not parse YAML: {}", s);
-        return s.to_string();
-    };
-    let yaml_doc_o = yaml_docs.get(0);
-    let Some(yaml_doc) = yaml_doc_o else {
-        warn!("No YAML document found in: {}", s);
-        return s.to_string();
-    };
-    let Yaml::Hash(hash) = &yaml_doc else {
-        warn!("Root YAML is not a hash {:?}", yaml_doc);
-        return s.to_string();
-    };
-    let mut root: Hash = hash.clone();
+fn merge_yaml(s: &Option<String>, fm: &PhotoSorterFrontMatter) -> String {
+    let mut root: Hash;
+    if let Some(s) = s {
+        let yaml_docs_r = YamlLoader::load_from_str(s);
+        let Ok(yaml_docs) = yaml_docs_r else {
+            warn!("Could not parse YAML: {}", s);
+            return s.to_string();
+        };
+        let yaml_doc_o = yaml_docs.get(0);
+        let Some(yaml_doc) = yaml_doc_o else {
+            warn!("No YAML document found in: {}", s);
+            return s.to_string();
+        };
+        let Yaml::Hash(hash) = &yaml_doc else {
+            warn!("Root YAML is not a hash {:?}", yaml_doc);
+            return s.to_string();
+        };
+        root = hash.clone();
+    } else {
+        root = Hash::default();
+    }
     yaml_array_merge(&mut root, &"original-paths".to_string(), &fm.path_original);
 
     // todo: add longitude, latitude and people
@@ -330,6 +337,9 @@ fn merge_yaml(s: &str, fm: &PhotoSorterFrontMatter) -> String {
         emitter.dump(&yaml_hash).unwrap();
     }
     out_str = out_str.trim_start_matches("---").to_string();
+    out_str = out_str.trim_start_matches("\n").to_string();
+    out_str = out_str.trim_end_matches("\n").to_string();
+    out_str = out_str + "\n";
     out_str
 }
 
@@ -384,36 +394,34 @@ mod tests {
     #[tokio::test()]
     async fn test_yaml_output() {
         crate::test_util::setup_log().await;
-        let s = "
-foo:
+        let s = "foo:
   - list1
-";
-        let yaml = merge_yaml(s, &get_mfi());
-        assert_eq!(yaml, "
-foo:
+".to_string();
+        let yaml = merge_yaml(&Some(s), &get_mfi());
+        assert_eq!(yaml, "foo:
   - list1
 original-paths:
   - p1
-  - p2");
+  - p2
+");
     }
 
     #[tokio::test()]
     async fn test_yaml_output_existing() {
         crate::test_util::setup_log().await;
-        let s = "
-foo:
+        let s = "foo:
   - list1
 original-paths:
   - p0
-";
-        let yaml = merge_yaml(s, &get_mfi());
-        assert_eq!(yaml, "
-foo:
+".to_string();
+        let yaml = merge_yaml(&Some(s), &get_mfi());
+        assert_eq!(yaml, "foo:
   - list1
 original-paths:
   - p0
   - p1
-  - p2");
+  - p2
+");
     }
 
 //     #[tokio::test()]
