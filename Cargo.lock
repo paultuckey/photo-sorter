@@ -770,6 +770,7 @@ dependencies = [
  "file-format",
  "kamadak-exif",
  "log",
+ "regex",
  "serde",
  "serde_json",
  "sha256",
