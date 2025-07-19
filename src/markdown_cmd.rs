@@ -42,7 +42,7 @@ pub(crate) async fn media(si: &ScanInfo, root: &mut Box<dyn PsContainer>) -> any
         supp_info_o = load_supplemental_info(&supp_info_path, root);
     }
     let media_file_info_res = media_file_info_from_readable(
-        &si, &bytes, &supp_info_o, &short_checksum, &long_checksum);
+        si, &bytes, &supp_info_o, &short_checksum, &long_checksum);
     let Ok(media_file_info) = media_file_info_res else {
         debug!("Not a valid media file: {}", si.file_path);
         return Ok(());
@@ -57,7 +57,7 @@ pub(crate) async fn media(si: &ScanInfo, root: &mut Box<dyn PsContainer>) -> any
 
 pub(crate) async fn album(si: &ScanInfo, root: &mut Box<dyn PsContainer>) -> anyhow::Result<()> {
     let files = root.scan();
-    let album_o = parse_album(root, &si, &files);
+    let album_o = parse_album(root, si, &files);
     let Some(album) = album_o else {
         warn!("Not a valid album file: {}", si.file_path);
         return Ok(());

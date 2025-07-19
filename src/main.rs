@@ -1,17 +1,17 @@
 mod album;
 mod exif;
-mod supplemental_info;
 mod file_type;
+mod index_cmd;
+mod markdown;
 mod markdown_cmd;
 mod media;
+mod supplemental_info;
 mod sync_cmd;
 mod test_util;
 mod util;
-mod markdown;
-mod index_cmd;
 
 use clap::{Parser, Subcommand};
-use log::{debug, error, info, LevelFilter};
+use log::{LevelFilter, debug, error, info};
 
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
@@ -30,6 +30,13 @@ enum Commands {
         root: String,
 
         #[arg(short, long, help = "Photo, video or album to generate markdown for")]
+        input: String,
+    },
+    Index {
+        #[arg(short, long, help = "Turn debugging information on")]
+        debug: bool,
+
+        #[arg(short, long, help = "The takeout or iCloud zip/directory")]
         input: String,
     },
     Sync {
@@ -78,8 +85,10 @@ async fn go() -> anyhow::Result<()> {
             enable_debug(debug);
             markdown_cmd::main(&input, &root).await?
         }
-        // todo: command to index a zip/directory and find a count of all file types and list any
-        //   unknown files, useful for debugging
+        Commands::Index { debug, input } => {
+            enable_debug(debug);
+            index_cmd::main(&input).await?
+        }
         Commands::Sync {
             debug,
             dry_run,
@@ -91,7 +100,15 @@ async fn go() -> anyhow::Result<()> {
         } => {
             enable_debug(debug);
             enable_dry_run(dry_run);
-            sync_cmd::main(dry_run, &input, &output, skip_markdown, skip_media, skip_albums).await?;
+            sync_cmd::main(
+                dry_run,
+                &input,
+                &output,
+                skip_markdown,
+                skip_media,
+                skip_albums,
+            )
+            .await?;
         }
     }
     Ok(())

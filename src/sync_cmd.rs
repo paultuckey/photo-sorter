@@ -145,7 +145,7 @@ pub(crate) fn inspect_media(
         return Ok(());
     }
     let media_file_info_res = media_file_info_from_readable(
-        qsf, &bytes, &supp_info, &short_checksum, &long_checksum);
+        qsf, &bytes, supp_info, &short_checksum, &long_checksum);
     let Ok(media_file) = media_file_info_res else {
         warn!("Could not calculate info for: {:?}", qsf.file_path);
         return Err(anyhow!("File type unsupported: {:?}", qsf.file_path));

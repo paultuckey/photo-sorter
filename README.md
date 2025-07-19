@@ -25,26 +25,6 @@ In detail:
 - Sync photos/videos into existing directories without clobbering if the same file exists already
   - Additive only nothing will be deleted or overwritten
 
-## FAQ
-
-> Why use date based file and directory names? Why include the checksum in the file name?
-
-Time is the most important factor in archiving, it enables you to take different actions with different year 
-directories. 
-
-A robust failsafe solution for file naming is needed that will be durable _very_ long term. Multiple photos can be 
-taken during the same second, the checksum is used to differentiate them (date-based EXIF tags do not provide sub-second accuracy).
-
-> Why use markdown files?
-
-Markdown is widely supported and human readable without any special software. Just as with
-[Obsidian](https://obsidian.md/), you can edit the Markdown files with any text editor, or backup the directoryies to 
-any storage solution.
-
-> What format is the short checksum?
-
-It's the first 7 characters of a SHA256 hash over the bytes of the file. As with a git short hash it's a good trade-off
-between uniqueness and length.
 
 ## Installation
 
@@ -76,6 +56,27 @@ photo-sorter \
 ```shell
 photo-sorter sync --debug --input "input/Takeout-small" --output "output/archive-small"
 ```
+
+## FAQ
+
+> Why use date based file and directory names? Why include the checksum in the file name?
+
+Time is the most important factor in archiving, it enables you to take different actions with different year
+directories.
+
+A robust failsafe solution for file naming is needed that will be durable _very_ long term. Multiple photos can be
+taken during the same second, the checksum is used to differentiate them (date-based EXIF tags do not provide sub-second accuracy).
+
+> Why use markdown files?
+
+Markdown is widely supported and human readable without any special software. Just as with
+[Obsidian](https://obsidian.md/), you can edit the Markdown files with any text editor, or backup the directoryies to
+any storage solution.
+
+> What format is the short checksum?
+
+It's the first 7 characters of a SHA256 hash over the bytes of the file. As with a git short hash it's a good trade-off
+between uniqueness and length.
 
 
 ---

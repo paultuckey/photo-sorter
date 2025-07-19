@@ -45,6 +45,17 @@ Test a single album file:
 cargo run -- markdown --debug --root "test/takeout1" --input "Google Photos/album1/metadata.json"
 ```
 
+Check the index:
+
+```shell
+cargo run -- index --debug --input "input/Takeout"
+```
+
+```shell
+cargo run -- index --debug --input "input/iCloud Photos"
+```
+
+
 Dry run a sync operation:
 
 ```shell
