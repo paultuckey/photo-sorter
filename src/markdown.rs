@@ -309,16 +309,16 @@ fn merge_yaml(s: &Option<String>, fm: &PhotoSorterFrontMatter) -> String {
     if let Some(s) = s {
         let yaml_docs_r = YamlLoader::load_from_str(s);
         let Ok(yaml_docs) = yaml_docs_r else {
-            warn!("Could not parse YAML: {}", s);
+            warn!("Could not parse YAML: {s}");
             return s.to_string();
         };
         let yaml_doc_o = yaml_docs.get(0);
         let Some(yaml_doc) = yaml_doc_o else {
-            warn!("No YAML document found in: {}", s);
+            warn!("No YAML document found in: {s}");
             return s.to_string();
         };
         let Yaml::Hash(hash) = &yaml_doc else {
-            warn!("Root YAML is not a hash {:?}", yaml_doc);
+            warn!("Root YAML is not a hash {yaml_doc:?}");
             return s.to_string();
         };
         root = hash.clone();
@@ -364,7 +364,7 @@ fn yaml_array_merge(root: &mut Hash, key: &String, arr: &Vec<String>) {
                 // fall through as current value is empty/unknown
             }
             _ => {
-                warn!("Expected {key} to be an array, found: {:?}", value_o);
+                warn!("Expected {key} to be an array, found: {value_o:?}");
                 return;
             }
         }

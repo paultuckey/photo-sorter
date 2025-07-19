@@ -1,62 +1,29 @@
-
 use crate::util::{PsContainer, PsDirectoryContainer, PsZipContainer};
 use anyhow::anyhow;
-use log::{debug, info};
-use regex::Regex;
-use std::collections::HashMap;
+use log::{debug, info, warn};
+use regex::{Regex};
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
+use std::sync::LazyLock;
+use strum_macros::Display;
 
+///
+/// Do we understand all the dirs/files in a google takeout or icloud directory/zip?
+/// Naming is pretty loose, especially in google takeout os this command is not overly useful.
+/// It uses the strictest possible regex to identify dirs/files that match known patterns.
+///
+/// TODO:
+///  - relate photos/videos to corresponding metadata
+///  - how to relate albums to corresponding photos/videos
+///  - relate edits/animations/originals together
+///
 pub(crate) async fn main(input: &String) -> anyhow::Result<()> {
-    // todo: specify as glob patterns or regex?
-    //   how to relate photos/videos to corresponding metadata?
-    //   how to relate albums to corresponding photos/videos?
-    //   do we care about edits to originals? yes ideally we would have one md with multiple
-    //   what do we do about extra files that are not in the metadata? (eg, stuff that is in other users takeout but not ours)
-
-    // strictest possible regex to identify a file
-
-    // IC
-    // albums
-    // let ic_root = "Albums/*.csv";
-    // let ic_root = "Memories/**/*.csv";
-    //
-    // // photos
-    // let ic_root = "Photos/*.[HEIC|MOV|JPG|jpeg|MOV]";
-    // let ic_root = "Recently Deleted/*.[HEIC|MOV|JPG|jpeg|MOV]";
-    //
-    // // index of files with meta
-    // let ic_root = "Photos/Photo Details*.csv"; // may end with -1 -2 etc if there are many files
-    //
-    // // G
-    // // people
-    // let ic_root = "Google Photos/, */*.[HEIC|JPG|MOV]";
-    //
-    // // albums
-    // let ic_root = "Google Photos/, */*metadata.json";
-    //
-    // // photos
-    // let year_photos = "Google Photos/Photos from []/*.[HEIC|JPG|MOV]";
-    // let ic_root = "Google Photos/Photos from */*.suppl.json";
-    // let ic_root = "Google Photos/Photos from */*.supplemental-metadata.json";
-    //
-    // // regex to find year photos from google
-    // let tags = vec![
-    //     FileTag::new(
-    //         "Google Photos year photo or video",
-    //         r"Google Photos/Photos from (\d{4})/IMG_(\d+))\.(HEIC|JPG|JPEG|MOV)",
-    //     ),
-    //     FileTag::new(
-    //         "Google Photos year supplemental metadata",
-    //         r"Google Photos/Photos from (\d{4})/.suppl.json",
-    //     ),
-    // ];
-
     debug!("Inspecting: {input}");
     let path = Path::new(input);
     if !path.exists() {
         return Err(anyhow!("Input path does not exist: {}", input));
     }
-    let mut container: Box<dyn PsContainer>;
+    let container: Box<dyn PsContainer>;
     if path.is_dir() {
         info!("Input directory: {input}");
         container = Box::new(PsDirectoryContainer::new(input));
@@ -67,77 +34,322 @@ pub(crate) async fn main(input: &String) -> anyhow::Result<()> {
     }
     let idx = container.scan();
 
-    let tags = create_file_tags();
-    let mut scores: HashMap<String, i32> = HashMap::new();
-    for si in idx {
-        let matching_tags = find_matching_tags(&si.file_path, &tags);
-        for matching_tag in matching_tags {
-            if let Some(score) = scores.get_mut(&matching_tag.name) {
-                *score += 1;
-            } else {
-                scores.insert(matching_tag.name.clone(), 1);
+    let mut distinct_dirs: HashSet<String> = HashSet::new();
+    for si in &idx {
+        let p = Path::new(&si.file_path);
+        if let Some(parent_path) = p.parent() {
+            if let Some(pp_s) = parent_path.to_str() {
+                if pp_s.is_empty() {
+                    continue;
+                }
+                distinct_dirs.insert(pp_s.to_string());
             }
         }
     }
-    for (tag, count) in scores.iter() {
-        info!("  {tag}: {count}");
+
+    let mut dir_matches: HashMap<String, i32> = HashMap::new();
+    let mut unmatched_dirs = vec![];
+    for dd in &distinct_dirs {
+        let known_dirs = find_known_dirs(dd);
+        if known_dirs.is_empty() {
+            unmatched_dirs.push(dd);
+        }
+        for known_dir in known_dirs {
+            if let Some(score) = dir_matches.get_mut(&known_dir.to_string()) {
+                *score += 1;
+            } else {
+                dir_matches.insert(known_dir.to_string().clone(), 1);
+            }
+        }
     }
 
+    let mut file_matches: HashMap<String, i32> = HashMap::new();
+    let mut unmatched_files = vec![];
+    for si in &idx {
+        let known_files = find_known_files(&si.file_path);
+        if known_files.is_empty() {
+            unmatched_files.push(si);
+        }
+        for known_file in known_files {
+            if let Some(score) = file_matches.get_mut(&known_file.to_string()) {
+                *score += 1;
+            } else {
+                file_matches.insert(known_file.to_string().clone(), 1);
+            }
+        }
+    }
+    info!("Matched dirs:");
+    for (known_dir, count) in dir_matches.iter() {
+        info!("  {known_dir}: {count}");
+    }
+    info!("Unmatched dirs: {}", unmatched_dirs.len());
+    for d in &unmatched_dirs {
+        debug!("unmatches dir: {d}");
+    }
+
+    info!("Matched files:");
+    for (known_file_type, count) in file_matches.iter() {
+        info!("  {known_file_type}: {count}");
+    }
+    info!("Unmatched files: {}", unmatched_files.len());
+    for si in &unmatched_files {
+        debug!("unmatched file: {}", si.file_path);
+    }
     Ok(())
 }
 
-#[derive(Debug, Clone)]
-struct FileTag {
-    provider: String,
-    name: String,
-    regex: Regex,
+#[derive(Debug, Clone, Display, PartialEq)]
+enum KnownDir {
+    // todo: do dirs change names for other languages? eg, es:fotos zh:照片?
+    GtpNonAlbumForYear(String),
+    GtpArchive,
+    GtpBin,
+
+    IcpNonAlbum,
+    IcpAlbums,
+    IcpMemories,
+    IcpRecentlyDeleted,
 }
 
-impl FileTag {
-    fn new(provider: &str, name: &str, pattern: &str) -> Result<FileTag, regex::Error> {
-        Ok(FileTag {
-            provider: provider.to_string(),
-            name: name.to_string(),
-            regex: Regex::new(pattern)?,
-        })
-    }
+#[derive(Debug, Clone, Display, PartialEq)]
+enum KnownFileType {
+    // todo: do file prefixes change for other languages?
 
-    fn matches(&self, input: &str) -> bool {
-        self.regex.is_match(input)
-    }
+    // can be in either provider
+    Photo(String),
+    Ignored, // any file we know it's file pattern but we don't need it
 
-    fn captures(&self, _input: &str) -> Option<regex::Captures> {
-        //self.regex.clone().captures(input.clone())
-        None
-    }
+    // typically in google photos
+    GtpMetadataJson(String),
+    GtpPicasaSyncMetadataJson(String),
+    GtpAlbumJson,
+    PhotoWithGuid(String),
+    GtpCollage(String),
+    GtpAnimation(String),
+    GtpPrintSubscription,
+    GtpSharedAlbumComments,
+    GtpUserGeneratedMemoryTitles,
+    GtpArchiveBrowser,
+
+    // typically in icloud photos
+    IcpAlbumCsv(String),
+    IcpSharedAlbumsZip,
 }
 
-fn create_file_tags() -> Vec<FileTag> {
-    let patterns = vec![
+fn match_re(haystack: &str, re: &Regex) -> Option<PatternMatch> {
+    let haystack_lc = haystack.to_lowercase();
+    //debug!("haystack: {haystack_lc} needle: {re}");
+    let caps_o = re.captures(&haystack_lc);
+    if let Some(caps) = caps_o {
+        //debug!("Matched: {caps:?}");
+        return Some(PatternMatch {
+            g1: caps
+                .get(1)
+                .map_or("".to_string(), |m| m.as_str().to_string()),
+        });
+    }
+    None
+}
+
+struct PatternMatch {
+    g1: String,
+}
+
+fn make_file_patterns() -> Vec<(Vec<Regex>, MatchingFilePatternFn)> {
+    let patterns: Vec<(&[&str], MatchingFilePatternFn)> = vec![
         (
-            "Google Photos",
-            "year photo",
-            r"Google Photos/Photos from (\d{4})/IMG_(\d+)\.(HEIC|JPG|JPEG|MOV)",
+            &[
+                r"^img_([\d_]+)\.(heic|jpg|jpeg|mov|png)$",
+                r"^([\d_]+)\.(heic|jpg|jpeg|mov|png)$",
+                r"^img_([\d_]+)-edited\.(heic|jpg|jpeg|mov|png)$",
+                r"^image_([\d_]+)\.(heic|jpg|jpeg|mov|png)$",
+            ],
+            |m| KnownFileType::Photo(m.g1),
         ),
         (
-            "Google Photos",
-            "supplemental metadata",
-            r"Google Photos/Photos from (\d{4})/.*\.json",
+            &[
+                r"^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.(heic|jpg|jpeg|mov|png)$",
+                r"^([0-9]{11}__[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{9})\.(heic|jpg|jpeg|mov|png)$",
+                r"^image_([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.(heic|jpg|jpeg|mov|png)$",
+            ],
+            |m| KnownFileType::PhotoWithGuid(m.g1),
         ),
-        ("iCloud Photos", "iCloud Photos", r"Photos/.*\.(HEIC|MOV|JPG|jpeg)"),
-        ("iCloud Photos", "iCloud Albums", r"Albums/.*\.csv"),
-        // Add your other 17 patterns here
+        (
+            &[
+                r"^image_([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.(heic|jpg|jpeg|mov|png)\.json$",
+                r"^(.+)\.(heic|jpg|jpeg|mov|png|gif)\.suppl\.json$",
+                r"^(.+)\.(heic|jpg|jpeg|mov|png|gif)\.supplemental-meta\.json$",
+                r"^(.+)\.(heic|jpg|jpeg|mov|png|gif)\.supplemental-metadata\([0-9]+\)\.json$",
+                r"^(.+)\.(heic|jpg|jpeg|mov|png|gif)\.supplemental-metadata.json$",
+            ],
+            |m| KnownFileType::GtpMetadataJson(m.g1),
+        ),
+        (
+            &[r"^picasasync\.supplemental-metadata\([0-9]+\).json$"],
+            |m| KnownFileType::GtpPicasaSyncMetadataJson(m.g1),
+        ),
+        (&[r"^shared_album_comments.json$"], |_| {
+            KnownFileType::GtpSharedAlbumComments
+        }),
+        (&[r"^archive_browser.html$"], |_| {
+            KnownFileType::GtpArchiveBrowser
+        }),
+        (&[r"^user-generated-memory-titles.json$"], |_| {
+            KnownFileType::GtpUserGeneratedMemoryTitles
+        }),
+        (
+            &[r"^([\d_]+)-animation.gif$", r"^img_([\d_]+)-animation.gif$"],
+            |m| KnownFileType::GtpAnimation(m.g1),
+        ),
+        (&[r"^([\d_]+)-collage.jpg$"], |m| {
+            KnownFileType::GtpCollage(m.g1)
+        }),
+        (&[r"^print-subscriptions.json$"], |_| {
+            KnownFileType::GtpPrintSubscription
+        }),
+        (&[r"^metadata.json$"], |_| KnownFileType::GtpAlbumJson),
+        (&[r"^(.+)\.csv$"], |m| KnownFileType::IcpAlbumCsv(m.g1)),
+        (&[r"^icloud shared albums.zip$"], |_| {
+            KnownFileType::IcpSharedAlbumsZip
+        }),
+        (&[r"^\.ds_store$"], |_| KnownFileType::Ignored),
     ];
-
     patterns
-        .into_iter()
-        .filter_map(|(provider, name, pattern)| FileTag::new(provider, name, pattern).ok())
-        .collect::<Vec<FileTag>>()
+        .iter()
+        .filter_map(|(patterns, match_fn)| {
+            let mut regexes: Vec<Regex> = vec![];
+            for p in patterns.iter() {
+                match Regex::new(p) {
+                    Ok(re) => regexes.push(re),
+                    Err(re_err) => {
+                        warn!("Error while parsing: {re_err}");
+                    }
+                }
+            }
+            Some((regexes, *match_fn))
+        })
+        .collect::<Vec<(Vec<Regex>, MatchingFilePatternFn)>>()
 }
 
-fn find_matching_tags(file_path: &str, tags: &Vec<FileTag>) -> Vec<FileTag> {
-    tags.iter()
-        .filter(|tag| tag.matches(file_path))
-        .map(|tag| tag.clone())
-        .collect::<Vec<FileTag>>()
+fn make_dir_patterns() -> Vec<(Vec<Regex>, MatchingDirPatternFn)> {
+    let patterns: Vec<(&[&str], MatchingDirPatternFn)> = vec![
+        (&[r"^google photos/photos from (\d{4})$"], |m| {
+            KnownDir::GtpNonAlbumForYear(m.g1)
+        }),
+        (&[r"^photos$"], |_| KnownDir::IcpNonAlbum),
+        (&[r"^albums$"], |_| KnownDir::IcpAlbums),
+        (&[r"^memories$"], |_| KnownDir::IcpMemories),
+        (&[r"^archive"], |_| KnownDir::GtpArchive),
+        (&[r"^bin"], |_| KnownDir::GtpBin),
+        (&[r"^memories/(.+)$"], |_| KnownDir::IcpMemories),
+        (&[r"^recently deleted"], |_| KnownDir::IcpRecentlyDeleted),
+    ];
+    patterns
+        .iter()
+        .filter_map(|(patterns, match_fn)| {
+            let mut regexes: Vec<Regex> = vec![];
+            for p in patterns.iter() {
+                match Regex::new(p) {
+                    Ok(re) => regexes.push(re),
+                    Err(re_err) => {
+                        warn!("Error while parsing: {re_err}");
+                    }
+                }
+            }
+            Some((regexes, *match_fn))
+        })
+        .collect::<Vec<(Vec<Regex>, MatchingDirPatternFn)>>()
+}
+
+type MatchingFilePatternFn = fn(PatternMatch) -> KnownFileType;
+type MatchingDirPatternFn = fn(PatternMatch) -> KnownDir;
+
+static FILE_PATTERNS: LazyLock<Vec<(Vec<Regex>, MatchingFilePatternFn)>> =
+    LazyLock::new(make_file_patterns);
+static DIR_PATTERNS: LazyLock<Vec<(Vec<Regex>, MatchingDirPatternFn)>> =
+    LazyLock::new(make_dir_patterns);
+
+fn find_known_files(file_path: &str) -> Vec<KnownFileType> {
+    let p = Path::new(file_path);
+    match p.file_name() {
+        None => {
+            vec![]
+        }
+        Some(file_name) => match file_name.to_str() {
+            None => {
+                vec![]
+            }
+            Some(fn2) => {
+                let known_files = FILE_PATTERNS
+                    .iter()
+                    .flat_map(|(patterns, match_fn)| {
+                        let mut matches = vec![];
+                        for p in patterns.iter() {
+                            if let Some(matched) = match_re(fn2, p) {
+                                matches.push(match_fn(matched))
+                            }
+                        }
+                        matches
+                    })
+                    .collect::<Vec<KnownFileType>>();
+                if known_files.len() > 1 {
+                    warn!(
+                        "File {fn2} had {} matches, this indicated overlapping regexes",
+                        known_files.len()
+                    )
+                }
+                known_files
+            }
+        },
+    }
+}
+
+fn find_known_dirs(dir_path: &str) -> Vec<KnownDir> {
+    let known_dirs = DIR_PATTERNS
+        .iter()
+        .flat_map(|(patterns, match_fn)| {
+            let mut matches = vec![];
+            for p in patterns.iter() {
+                if let Some(matched) = match_re(dir_path, p) {
+                    matches.push(match_fn(matched))
+                }
+            }
+            matches
+        })
+        .collect::<Vec<KnownDir>>();
+    if known_dirs.len() > 1 {
+        warn!(
+            "File {dir_path} had {} matches, this indicated overlapping regexes",
+            known_dirs.len()
+        )
+    }
+    known_dirs
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test()]
+    async fn test_no_match() {
+        crate::test_util::setup_log().await;
+        assert_eq!(find_known_files("/hello"), vec![]);
+        assert_eq!(
+            find_known_files("Google Photos/Photos from 2012/IMG_1234.jpg"),
+            vec![KnownFileType::Photo(String::from("1234"))]
+        );
+        assert_eq!(
+            find_known_files("Google Photos/2016-book/IMG_1316.JPG.supplemental-metadata.json"),
+            vec![KnownFileType::GtpMetadataJson(String::from("img_1316"))]
+        );
+    }
+
+    #[tokio::test()]
+    async fn test_enum_to_string() {
+        crate::test_util::setup_log().await;
+        assert_eq!(
+            KnownFileType::IcpAlbumCsv("something".to_string()).to_string(),
+            "IcpAlbumCsv".to_string()
+        );
+    }
 }

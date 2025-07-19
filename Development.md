@@ -51,6 +51,10 @@ Check the index:
 cargo run -- index --debug --input "input/Takeout"
 ```
 
+```shell
+cargo run -- index --debug --input "input/iCloud Photos"
+```
+
 
 Dry run a sync operation:
 
