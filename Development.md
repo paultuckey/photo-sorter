@@ -9,6 +9,7 @@ Let's use the most basic rust we can to make the code as approachable as possibl
 - Don't use `unsafe` or `expect()`
 - Only use `unwrap()` in tests
 - Use `.clone()` to avoid hard things
+- Don't use `async`/`await` (this type of I/O heavy work may not benefit that much)
 
 
 ```shell

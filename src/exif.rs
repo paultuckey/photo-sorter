@@ -207,31 +207,31 @@ fn parse_exif_date(d: &Option<String>) -> Option<String> {
 mod tests {
     use super::*;
 
-    #[tokio::test()]
-    async fn test_dt() {
-        crate::test_util::setup_log().await;
+    #[test]
+    fn test_dt() {
+        crate::test_util::setup_log();
         let dt = parse_exif_datetime(&Some("2017:08:19 10:21:59".to_string()));
         assert_eq!(dt, Some("2017-08-19T10:21:59Z".to_string()));
         let dt = parse_exif_datetime(&Some("2017:08:19".to_string()));
         assert_eq!(dt, Some("2017-08-19T00:00:00Z".to_string()));
     }
 
-    #[tokio::test()]
-    async fn test_dt2() {
-        crate::test_util::setup_log().await;
+    #[test]
+    fn test_dt2() {
+        crate::test_util::setup_log();
         let dt = parse_exif_datetime(&Some("2019:04:04 18:04:98".to_string()));
         assert_eq!(dt, Some("2019-04-04T18:05:38Z".to_string()));
     }
 
-    #[tokio::test()]
-    async fn test_d1() {
-        crate::test_util::setup_log().await;
+    #[test]
+    fn test_d1() {
+        crate::test_util::setup_log();
         let d = parse_exif_date(&Some("2019:04:04".to_string()));
         assert_eq!(d, Some("2019-04-04".to_string()));
     }
 
-    #[tokio::test()]
-    async fn test_parse_exif_created() {
+    #[test]
+    fn test_parse_exif_created() {
         use crate::util::PsContainer;
         use crate::util::PsDirectoryContainer;
         let mut c = PsDirectoryContainer::new(&"test".to_string());
@@ -243,15 +243,15 @@ mod tests {
         );
     }
 
-    #[tokio::test()]
-    async fn test_exif_date_epoch_ms() {
+    #[test]
+    fn test_exif_date_epoch_ms() {
         assert_eq!(exif_dt_as_epoch_ms("2008-05-30T15:56:01Z".to_string()), Some(1212162961000));
         assert_eq!(exif_d_as_epoch_ms("2008-05-30".to_string()), Some(1212105600000));
     }
 
-    #[tokio::test()]
-    async fn test_parse_exif_all_tags() {
-        crate::test_util::setup_log().await;
+    #[test]
+    fn test_parse_exif_all_tags() {
+        crate::test_util::setup_log();
         let p = Path::new("test/Canon_40D.jpg").to_path_buf();
         let t = all_tags(&p).unwrap();
         assert_eq!(t.len(), 10);

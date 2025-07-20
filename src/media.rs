@@ -103,9 +103,9 @@ pub(crate) fn get_desired_media_path(
 mod tests {
     use super::*;
 
-    #[tokio::test()]
-    async fn test_desired_md_path() {
-        crate::test_util::setup_log().await;
+    #[test]
+    fn test_desired_md_path() {
+        crate::test_util::setup_log();
         assert_eq!(get_desired_markdown_path(None), None);
         assert_eq!(
             get_desired_markdown_path(Some("abc.jpg".to_string())),
@@ -118,9 +118,9 @@ mod tests {
         );
     }
 
-    #[tokio::test()]
-    async fn test_desired_path() -> anyhow::Result<()> {
-        crate::test_util::setup_log().await;
+    #[test]
+    fn test_desired_path() -> anyhow::Result<()> {
+        crate::test_util::setup_log();
         use crate::util::PsDirectoryContainer;
         use crate::util::PsContainer;
         use crate::util::{checksum_bytes};

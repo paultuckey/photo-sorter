@@ -9,7 +9,7 @@ use log::{debug, info, warn};
 use crate::markdown::sync_markdown;
 use crate::supplemental_info::{detect_supplemental_info, load_supplemental_info, SupplementalInfo};
 
-pub(crate) async fn main(
+pub(crate) fn main(
     dry_run: bool,
     input: &String,
     output_directory: &Option<String>,

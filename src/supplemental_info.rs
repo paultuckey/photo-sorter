@@ -88,9 +88,9 @@ fn lat_long_from_geo_data(geo_data: SupplementalInfoGeoData) -> Option<String> {
 mod tests {
     use super::*;
 
-    #[tokio::test()]
-    async fn test_parse_supp() -> anyhow::Result<()> {
-        crate::test_util::setup_log().await;
+    #[test]
+    fn test_parse_supp() -> anyhow::Result<()> {
+        crate::test_util::setup_log();
         use std::path::Path;
         let json = Path::new("test/test1.jpeg.supplemental-metadata.json");
         let json_s = std::fs::read_to_string(json)?;

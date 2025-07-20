@@ -332,29 +332,30 @@ impl Display for Progress {
 
 #[cfg(test)]
 mod tests {
+    use std::{thread, time};
     use super::*;
 
     /// Progress example (not really a test)
     /// increase delay to make it more visible as progress bar has a frame rate
-    #[tokio::test()]
-    async fn test_progress() -> anyhow::Result<()> {
-        crate::test_util::setup_log().await;
-        let delay = tokio::time::Duration::from_millis(1);
+    #[test]
+    fn test_progress() -> anyhow::Result<()> {
+        crate::test_util::setup_log();
+        let delay = Duration::from_millis(1);
         let prog = Progress::new(10);
-        tokio::time::sleep(delay).await;
+        thread::sleep(delay);
         for i in 0..10 {
             prog.inc();
             if i % 2 == 0 {
                 debug!("Even {i}");
             }
-            tokio::time::sleep(delay).await;
+            thread::sleep(delay);
         }
         Ok(())
     }
 
-    #[tokio::test()]
-    async fn test_zip() -> anyhow::Result<()> {
-        crate::test_util::setup_log().await;
+    #[test]
+    fn test_zip() -> anyhow::Result<()> {
+        crate::test_util::setup_log();
         let tz = chrono::FixedOffset::east_opt(0).unwrap();
         let c = PsZipContainer::new(&"test/Canon_40D.jpg.zip".to_string(), tz);
         let index = c.scan();

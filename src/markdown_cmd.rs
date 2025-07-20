@@ -9,7 +9,7 @@ use crate::markdown::{assemble_markdown, mfm_from_media_file_info};
 use crate::supplemental_info::{detect_supplemental_info, load_supplemental_info};
 use crate::sync_cmd::inspect_media;
 
-pub(crate) async fn main(input: &String, root_s: &String) -> anyhow::Result<()> {
+pub(crate) fn main(input: &String, root_s: &String) -> anyhow::Result<()> {
     debug!("Inspecting: {input}");
     let mut root: Box<dyn PsContainer> = Box::new(PsDirectoryContainer::new(root_s));
     let si = ScanInfo::new(input.clone(), None);
@@ -19,15 +19,15 @@ pub(crate) async fn main(input: &String, root_s: &String) -> anyhow::Result<()> 
             Ok(())
         }
         QuickFileType::AlbumCsv | QuickFileType::AlbumJson => {
-            album(&si, &mut root).await
+            album(&si, &mut root)
         }
         QuickFileType::Media => {
-            media(&si, &mut root).await
+            media(&si, &mut root)
         }
     }
 }
 
-pub(crate) async fn media(si: &ScanInfo, root: &mut Box<dyn PsContainer>) -> anyhow::Result<()> {
+pub(crate) fn media(si: &ScanInfo, root: &mut Box<dyn PsContainer>) -> anyhow::Result<()> {
     let bytes = root
         .file_bytes(&si.file_path.to_string()) //
         .with_context(|| "Error reading media file")?;
@@ -55,7 +55,7 @@ pub(crate) async fn media(si: &ScanInfo, root: &mut Box<dyn PsContainer>) -> any
 }
 
 
-pub(crate) async fn album(si: &ScanInfo, root: &mut Box<dyn PsContainer>) -> anyhow::Result<()> {
+pub(crate) fn album(si: &ScanInfo, root: &mut Box<dyn PsContainer>) -> anyhow::Result<()> {
     let files = root.scan();
     let album_o = parse_album(root, si, &files);
     let Some(album) = album_o else {
