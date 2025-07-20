@@ -1,15 +1,12 @@
-use std::fs;
-use std::path::Path;
-use anyhow::{anyhow, Context};
+use anyhow::{anyhow};
 use log::{debug, warn};
 use crate::media::MediaFileInfo;
-use crate::util::{checksum_file, checksum_string, PsContainer, PsDirectoryContainer};
+use crate::util::{PsContainer, PsDirectoryContainer};
 use yaml_rust2::{YamlLoader, YamlEmitter, Yaml};
 use yaml_rust2::yaml::Hash;
 
 pub(crate) fn mfm_from_media_file_info(media_file_info: &MediaFileInfo) -> PhotoSorterFrontMatter {
     let mut mfm = PhotoSorterFrontMatter {
-        path: media_file_info.desired_media_path.clone(),
         path_original: media_file_info.original_path.clone(),
         datetime_original: None,
         datetime: None,
@@ -33,40 +30,7 @@ pub(crate) fn mfm_from_media_file_info(media_file_info: &MediaFileInfo) -> Photo
     mfm
 }
 
-fn save_markdown(
-    mfm: &PhotoSorterFrontMatter,
-    markdown: &String,
-    base_dir: &String,
-) -> anyhow::Result<()> {
-    let media_path = mfm.path.clone().with_context(|| "Missing path")?;
-    let path = format!("{media_path}.md");
-    let file_path = Path::new(&base_dir).join(&path);
-    let file_path = file_path.as_path();
-    if file_path.exists() {
-        debug!("md file exists");
-        let checksum_of_string = checksum_string(markdown)?;
-        let checksum_of_file = checksum_file(Path::new(&file_path))?;
-        if checksum_of_file == checksum_of_string {
-            debug!("checksums match");
-            return Ok(());
-        }
-    }
-
-    let prefix = file_path.parent().with_context(|| "No parent")?;
-    fs::create_dir_all(prefix).with_context(|| "Unable to create dirs")?;
-
-    debug!("writing md");
-    // let mut file = fs::File::create(file_path) //
-    //     .with_context(|| format!("Unable to create file: {:?}", file_path))?;
-    // file.write_all(markdown.as_bytes()) //
-    //     .with_context(|| format!("Unable to write to file: {:?}", file_path))?;
-    Ok(())
-}
-
-//#[derive(Serialize, Deserialize, PartialEq, Debug)]
-//#[serde(rename_all(deserialize = "kebab-case", serialize = "kebab-case"))]
 pub(crate) struct PhotoSorterFrontMatter {
-    pub(crate) path: Option<String>,
     pub(crate) path_original: Vec<String>,
     pub(crate) datetime_original: Option<String>,
     pub(crate) datetime: Option<String>,
@@ -74,12 +38,6 @@ pub(crate) struct PhotoSorterFrontMatter {
     pub(crate) unique_id: Option<String>,
     // todo: add supplemental fields?
 }
-
-// #[derive(Serialize, Deserialize, PartialEq, Debug)]
-// #[serde(rename_all(deserialize = "kebab-case", serialize = "kebab-case"))]
-// pub(crate) struct MediaFrontMatter {
-//     pub(crate) photo_sorter: Option<PhotoSorterFrontMatter>,
-// }
 
 pub(crate) fn sync_markdown(dry_run: bool, media_file: &MediaFileInfo, output_c: &mut PsDirectoryContainer) -> anyhow::Result<()> {
     let Some(output_path) = media_file.desired_markdown_path.clone() else {
@@ -107,72 +65,6 @@ pub(crate) fn sync_markdown(dry_run: bool, media_file: &MediaFileInfo, output_c:
     Ok(())
 }
 
-// pub(crate) fn parse_frontmatter(file_contents: &str, path: &str) -> (Option<PhotoSorterFrontMatter>, String) {
-//     let (fm, md) = split_frontmatter(file_contents);
-//     let mfm_r = parse_yaml(&fm);
-//     match mfm_r {
-//         Ok(mfm) => {
-//             (Some(mfm), md)
-//         }
-//         Err(_) => {
-//             warn!("Could not parse frontmatter at {path:?}, treating as empty");
-//             (None, md)
-//         }
-//     }
-// }
-
-/// We write yaml manually so we have _exact_ control over output.
-/// We want to write plain style yaml, not the more complex
-/// https://yaml.org/spec/1.2-old/spec.html#id2788859
-// fn generate_yaml(mfm: &PhotoSorterFrontMatter) -> anyhow::Result<String> {
-//     let mut yaml = String::new();
-//     yaml.push_str("photo-sorter:\n");
-//     if let Some(s) = mfm.path.clone() {
-//         yaml.push_str(&format!("  path: {s}\n"));
-//     }
-//     if !mfm.path_original.is_empty() {
-//         yaml.push_str("  path-original:\n");
-//         for po in mfm.path_original.clone() {
-//             yaml.push_str(&format!("    - {po}\n"));
-//         }
-//     }
-//
-//     // todo: add longitude, latitude and people
-//
-//     if let Some(s) = mfm.datetime.clone() {
-//         yaml.push_str(&format!("  datetime: {s}\n"));
-//     }
-//     if let Some(s) = mfm.datetime_original.clone() {
-//         // If datetime and original datetime are the same, skip writing original datetime
-//         if s != mfm.datetime.clone().unwrap_or_default() {
-//             yaml.push_str(&format!("  original-datetime: {s}\n"));
-//         }
-//     }
-//     if let Some(s) = mfm.gps_date.clone() {
-//         yaml.push_str(&format!("  gps-date: {s}\n"));
-//     }
-//     Ok(yaml)
-// }
-
-// fn parse_yaml(s: &str) -> anyhow::Result<PhotoSorterFrontMatter> {
-//     let mfm: MediaFrontMatter = serde_yml::from_str(s)?;
-//     match mfm.photo_sorter {
-//         None => {
-//             Ok(PhotoSorterFrontMatter {
-//                 path: None,
-//                 path_original: vec![],
-//                 datetime_original: None,
-//                 datetime: None,
-//                 gps_date: None,
-//                 unique_id: None,
-//             })
-//         }
-//         Some(psfm) => {
-//             Ok(psfm)
-//         }
-//     }
-// }
-
 /// Grab anything between "---[\r]\n" and "---[\r]\n" and put into .0. Put everything else into .1.
 /// If any sort of invalid case is encountered, return empty frontmatter and original content.
 pub(crate) fn split_frontmatter(file_contents: &str) -> (String, String) {
@@ -185,10 +77,10 @@ pub(crate) fn split_frontmatter(file_contents: &str) -> (String, String) {
     }
 
     // Find the first newline after the opening "---"
-    let (line_ending, after_first_delim) = if trimmed.starts_with("---\r\n") {
-        ("\r\n", &trimmed[5..]) // Skip "---\r\n"
-    } else if trimmed.starts_with("---\n") {
-        ("\n", &trimmed[4..]) // Skip "---\n"
+    let (line_ending, after_first_delim) = if let Some(stripped) = trimmed.strip_prefix("---\r\n") {
+        ("\r\n", stripped) // Skip "---\r\n"
+    } else if let Some(stripped) = trimmed.strip_prefix("---\n") {
+        ("\n", stripped) // Skip "---\n"
     } else {
         // No newline after opening "---", treat as invalid
         return ("".to_string(), file_contents.to_string());
@@ -200,8 +92,7 @@ pub(crate) fn split_frontmatter(file_contents: &str) -> (String, String) {
         let after_end_delim = &after_first_delim[end_pos..];
 
         // Check if the closing "---" is followed by a newline or is at the end
-        if after_end_delim.starts_with("---\r\n") {
-            let remaining_content = &after_end_delim[5..]; // Skip "---\r\n"
+        if let Some(remaining_content) = after_end_delim.strip_prefix("---\r\n") {
 
             // Special case: if frontmatter is empty, return original content
             if potential_frontmatter.trim().is_empty() {
@@ -216,8 +107,7 @@ pub(crate) fn split_frontmatter(file_contents: &str) -> (String, String) {
             } else {
                 return (fm, remaining_content.to_string());
             }
-        } else if after_end_delim.starts_with("---\n") {
-            let remaining_content = &after_end_delim[4..]; // Skip "---\n"
+        } else if let Some(remaining_content) = after_end_delim.strip_prefix("---\n") {
 
             // Special case: if frontmatter is empty, return original content
             if potential_frontmatter.trim().is_empty() {
@@ -232,9 +122,7 @@ pub(crate) fn split_frontmatter(file_contents: &str) -> (String, String) {
             } else {
                 return (fm, remaining_content.to_string());
             }
-        } else if after_end_delim.starts_with("---") {
-            // Check what comes after the closing "---"
-            let after_closing = &after_end_delim[3..];
+        } else if let Some(after_closing) = after_end_delim.strip_prefix("---") {
 
             // Special case: if frontmatter is empty, return original content
             if potential_frontmatter.trim().is_empty() {
@@ -285,25 +173,6 @@ pub(crate) fn assemble_markdown(
     Ok(s)
 }
 
-fn file_exists(
-    mfm: &PhotoSorterFrontMatter,
-    long_checksum: &String,
-    _: &String,
-    base_dir: &String,
-) -> anyhow::Result<()> {
-    let path = mfm.path.clone().with_context(|| "Missing path")?;
-    let file_path = Path::new(&base_dir).join(&path);
-    let file_path = file_path.as_path();
-    if file_path.exists() {
-        let (_, checksum_of_file) = checksum_file(file_path)?;
-        if checksum_of_file.eq(long_checksum) {
-            debug!("File exists and checksums match");
-            return Ok(());
-        }
-    }
-    Ok(())
-}
-
 fn merge_yaml(s: &Option<String>, fm: &PhotoSorterFrontMatter) -> String {
     let mut root: Hash;
     if let Some(s) = s {
@@ -312,7 +181,7 @@ fn merge_yaml(s: &Option<String>, fm: &PhotoSorterFrontMatter) -> String {
             warn!("Could not parse YAML: {s}");
             return s.to_string();
         };
-        let yaml_doc_o = yaml_docs.get(0);
+        let yaml_doc_o = yaml_docs.first();
         let Some(yaml_doc) = yaml_doc_o else {
             warn!("No YAML document found in: {s}");
             return s.to_string();
@@ -339,7 +208,7 @@ fn merge_yaml(s: &Option<String>, fm: &PhotoSorterFrontMatter) -> String {
     out_str = out_str.trim_start_matches("---").to_string();
     out_str = out_str.trim_start_matches("\n").to_string();
     out_str = out_str.trim_end_matches("\n").to_string();
-    out_str = out_str + "\n";
+    out_str += "\n";
     out_str
 }
 
@@ -381,7 +250,6 @@ mod tests {
 
     fn get_mfi() -> PhotoSorterFrontMatter {
         PhotoSorterFrontMatter {
-            path: None,
             path_original: vec!["p1".to_string(), "p2".to_string()],
             datetime_original: None,
             datetime: None,

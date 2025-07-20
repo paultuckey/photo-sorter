@@ -104,7 +104,7 @@ pub(crate) fn best_guess_taken_dt(pe_o: &Option<ParsedExif>, modified_datetime: 
         return Some(dt);
     }
     if let Some(dt) = modified_datetime  {
-        return Some(dt.clone());
+        return Some(*dt);
     }
     None
 }

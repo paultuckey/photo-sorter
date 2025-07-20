@@ -39,8 +39,10 @@ pub(crate) fn main(
         info!("Output directory: {output}");
         let output_container = PsDirectoryContainer::new(output);
         if !output_container.root_exists() {
-            warn!("  Output directory does not exist");
-            return Err(anyhow!("Output directory does not exist"));
+            warn!("Output directory does not exist");
+            if !dry_run {
+                return Err(anyhow!("Output directory does not exist"));
+            }
         }
         output_container_o = Some(output_container);
     }
@@ -57,7 +59,7 @@ pub(crate) fn main(
             prog.inc();
 
             let mut supp_info_o = None;
-            let supp_info_path_o = detect_supplemental_info(&media_si.file_path.clone(), &mut container);
+            let supp_info_path_o = detect_supplemental_info(&media_si.file_path.clone(), container.as_ref());
             if let Some(supp_info_path) = supp_info_path_o {
                 supp_info_o = load_supplemental_info(&supp_info_path, &mut container);
             }

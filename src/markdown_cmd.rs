@@ -37,7 +37,7 @@ pub(crate) fn media(si: &ScanInfo, root: &mut Box<dyn PsContainer>) -> anyhow::R
         return Err(anyhow!("Could not calculate checksum for file: {:?}", si.file_path));
     };
     let mut supp_info_o = None;
-    let supp_info_path_o = detect_supplemental_info(&si.file_path.clone(), root);
+    let supp_info_path_o = detect_supplemental_info(&si.file_path.clone(), root.as_ref());
     if let Some(supp_info_path) = supp_info_path_o {
         supp_info_o = load_supplemental_info(&supp_info_path, root);
     }
@@ -68,7 +68,7 @@ pub(crate) fn album(si: &ScanInfo, root: &mut Box<dyn PsContainer>) -> anyhow::R
         .filter(|f| f.quick_file_type == QuickFileType::Media)
         .for_each(|f| {
             let mut si_o = None;
-            let sp_o = detect_supplemental_info(&f.file_path.clone(), root);
+            let sp_o = detect_supplemental_info(&f.file_path.clone(), root.as_ref());
             if let Some(sp) = sp_o {
                 si_o = load_supplemental_info(&sp, root);
             }
