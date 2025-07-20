@@ -17,7 +17,7 @@ use strum_macros::Display;
 ///  - how to relate albums to corresponding photos/videos
 ///  - relate edits/animations/originals together
 ///
-pub(crate) async fn main(input: &String) -> anyhow::Result<()> {
+pub(crate) fn main(input: &String) -> anyhow::Result<()> {
     debug!("Inspecting: {input}");
     let path = Path::new(input);
     if !path.exists() {
@@ -330,9 +330,9 @@ fn find_known_dirs(dir_path: &str) -> Vec<KnownDir> {
 mod tests {
     use super::*;
 
-    #[tokio::test()]
-    async fn test_no_match() {
-        crate::test_util::setup_log().await;
+    #[test]
+    fn test_no_match() {
+        crate::test_util::setup_log();
         assert_eq!(find_known_files("/hello"), vec![]);
         assert_eq!(
             find_known_files("Google Photos/Photos from 2012/IMG_1234.jpg"),
@@ -344,9 +344,9 @@ mod tests {
         );
     }
 
-    #[tokio::test()]
-    async fn test_enum_to_string() {
-        crate::test_util::setup_log().await;
+    #[test]
+    fn test_enum_to_string() {
+        crate::test_util::setup_log();
         assert_eq!(
             KnownFileType::IcpAlbumCsv("something".to_string()).to_string(),
             "IcpAlbumCsv".to_string()

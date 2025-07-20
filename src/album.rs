@@ -247,9 +247,9 @@ pub(crate) fn build_album_md(album: &Album, all_media_o: Option<&HashMap<String,
 mod tests {
     use super::*;
 
-    #[tokio::test()]
-    async fn test_ic_sample() -> anyhow::Result<()> {
-        crate::test_util::setup_log().await;
+    #[test]
+    fn test_ic_sample() -> anyhow::Result<()> {
+        crate::test_util::setup_log();
         use crate::util::PsDirectoryContainer;
         let mut c: Box<dyn PsContainer> = Box::new(PsDirectoryContainer::new(&"test".to_string()));
         assert_eq!(c.root_exists(), true);
@@ -261,9 +261,9 @@ mod tests {
         Ok(())
     }
 
-    #[tokio::test()]
-    async fn test_g_sample() -> anyhow::Result<()> {
-        crate::test_util::setup_log().await;
+    #[test]
+    fn test_g_sample() -> anyhow::Result<()> {
+        crate::test_util::setup_log();
         use crate::util::PsDirectoryContainer;
         let mut c: Box<dyn PsContainer> = Box::new(PsDirectoryContainer::new(&"test/takeout1".to_string()));
         let qsf = ScanInfo::new("Google Photos/album1/metadata.json".to_string(), None);

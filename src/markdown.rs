@@ -33,7 +33,7 @@ pub(crate) fn mfm_from_media_file_info(media_file_info: &MediaFileInfo) -> Photo
     mfm
 }
 
-async fn save_markdown(
+fn save_markdown(
     mfm: &PhotoSorterFrontMatter,
     markdown: &String,
     base_dir: &String,
@@ -285,7 +285,7 @@ pub(crate) fn assemble_markdown(
     Ok(s)
 }
 
-async fn file_exists(
+fn file_exists(
     mfm: &PhotoSorterFrontMatter,
     long_checksum: &String,
     _: &String,
@@ -391,9 +391,9 @@ mod tests {
     }
 
 
-    #[tokio::test()]
-    async fn test_yaml_output() {
-        crate::test_util::setup_log().await;
+    #[test]
+    fn test_yaml_output() {
+        crate::test_util::setup_log();
         let s = "foo:
   - list1
 ".to_string();
@@ -406,9 +406,9 @@ original-paths:
 ");
     }
 
-    #[tokio::test()]
-    async fn test_yaml_output_existing() {
-        crate::test_util::setup_log().await;
+    #[test]
+    fn test_yaml_output_existing() {
+        crate::test_util::setup_log();
         let s = "foo:
   - list1
 original-paths:
@@ -424,9 +424,9 @@ original-paths:
 ");
     }
 
-//     #[tokio::test()]
-//     async fn test_parse_frontmatter() {
-//         crate::test_util::setup_log().await;
+//     #[test]
+//     fn test_parse_frontmatter() {
+//         crate::test_util::setup_log();
 //         let (fm_o, md) = parse_frontmatter("---
 //   photo-sorter:
 //     path: 2025/02/09/1123-23-abcdefg.jpg

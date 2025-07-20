@@ -67,9 +67,8 @@ enum Commands {
     },
 }
 
-#[tokio::main]
-async fn main() {
-    match go().await {
+fn main() {
+    match go() {
         Ok(_) => {}
         Err(e) => {
             error!("Error: {e}");
@@ -78,16 +77,16 @@ async fn main() {
     }
 }
 
-async fn go() -> anyhow::Result<()> {
+fn go() -> anyhow::Result<()> {
     let cli = Cli::parse();
     match cli.command {
         Commands::Markdown { debug, root, input } => {
             enable_debug(debug);
-            markdown_cmd::main(&input, &root).await?
+            markdown_cmd::main(&input, &root)?
         }
         Commands::Index { debug, input } => {
             enable_debug(debug);
-            index_cmd::main(&input).await?
+            index_cmd::main(&input)?
         }
         Commands::Sync {
             debug,
@@ -107,8 +106,7 @@ async fn go() -> anyhow::Result<()> {
                 skip_markdown,
                 skip_media,
                 skip_albums,
-            )
-            .await?;
+            )?;
         }
     }
     Ok(())

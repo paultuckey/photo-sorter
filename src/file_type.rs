@@ -101,9 +101,9 @@ mod tests {
     use crate::util::PsContainer;
     use super::*;
 
-    #[tokio::test()]
-    async fn test_quick_file_type() {
-        crate::test_util::setup_log().await;
+    #[test]
+    fn test_quick_file_type() {
+        crate::test_util::setup_log();
         assert_eq!(find_quick_file_type("test/test1.jpg"), QuickFileType::Media);
         assert_eq!(find_quick_file_type("test/test1.mp4"), QuickFileType::Media);
         assert_eq!(
@@ -118,9 +118,9 @@ mod tests {
         assert_eq!(find_quick_file_type("test/te.s.jpg"), QuickFileType::Media);
     }
 
-    #[tokio::test()]
-    async fn test_accurate_file_type() {
-        crate::test_util::setup_log().await;
+    #[test]
+    fn test_accurate_file_type() {
+        crate::test_util::setup_log();
         use crate::util::PsDirectoryContainer;
         let name = "Canon_40D.jpg".to_string();
         let mut root = PsDirectoryContainer::new(&"test".to_string());
