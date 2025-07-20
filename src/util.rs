@@ -30,8 +30,8 @@ pub(crate) fn checksum_bytes(bytes: &Vec<u8>) -> anyhow::Result<(String, String)
 
 pub(crate) trait PsContainer {
     fn scan(&self) -> Vec<ScanInfo>;
-    fn file_bytes(&mut self, path: &String) -> anyhow::Result<Vec<u8>>;
-    fn exists(&self, path: &String) -> bool;
+    fn file_bytes(&mut self, path: &str) -> anyhow::Result<Vec<u8>>;
+    fn exists(&self, path: &str) -> bool;
     fn root_exists(&self) -> bool;
 }
 
@@ -86,7 +86,7 @@ impl PsDirectoryContainer {
             return;
         };
         let st = SystemTime::UNIX_EPOCH
-            .checked_add(Duration::from_millis(dt.clone() as u64))
+            .checked_add(Duration::from_millis(*dt as u64))
             .unwrap_or(SystemTime::UNIX_EPOCH);
         if dry_run {
             debug!("  Dry run: would set modified datetime for file {p:?} to {dt}");
@@ -160,7 +160,7 @@ impl PsContainer for PsDirectoryContainer {
         scan_dir_recursively(&mut files, root_path, root_path);
         files
     }
-    fn file_bytes(&mut self, path: &String) -> anyhow::Result<Vec<u8>> {
+    fn file_bytes(&mut self, path: &str) -> anyhow::Result<Vec<u8>> {
         let file_path = Path::new(&self.root).join(path);
         let file_r = File::open(&file_path);
         let Ok(mut file) = file_r else {
@@ -171,7 +171,7 @@ impl PsContainer for PsDirectoryContainer {
         file.read_to_end(&mut buffer).unwrap_or(0);
         Ok(buffer)
     }
-    fn exists(&self, file: &String) -> bool {
+    fn exists(&self, file: &str) -> bool {
         Path::new(&self.root).join(file).exists()
     }
     fn root_exists(&self) -> bool {
@@ -239,7 +239,7 @@ impl PsContainer for PsZipContainer {
     fn scan(&self) -> Vec<ScanInfo> {
         self.index.clone()
     }
-    fn file_bytes(&mut self, path: &String) -> anyhow::Result<Vec<u8>> {
+    fn file_bytes(&mut self, path: &str) -> anyhow::Result<Vec<u8>> {
         let file_res = self.zip.by_name(path);
         let Some(mut file) = file_res.ok() else {
             return Err(anyhow!("Unable to find file {:?}", path));
@@ -251,7 +251,7 @@ impl PsContainer for PsZipContainer {
         file.read_to_end(&mut buffer).unwrap_or(0);
         Ok(buffer)
     }
-    fn exists(&self, path: &String) -> bool {
+    fn exists(&self, path: &str) -> bool {
         self.index.iter().any(|i| i.file_path.eq(path))
     }
     fn root_exists(&self) -> bool {

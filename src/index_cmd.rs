@@ -1,7 +1,7 @@
 use crate::util::{PsContainer, PsDirectoryContainer, PsZipContainer};
 use anyhow::anyhow;
 use log::{debug, info, warn};
-use regex::{Regex};
+use regex::Regex;
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::sync::LazyLock;
@@ -23,15 +23,14 @@ pub(crate) fn main(input: &String) -> anyhow::Result<()> {
     if !path.exists() {
         return Err(anyhow!("Input path does not exist: {}", input));
     }
-    let container: Box<dyn PsContainer>;
-    if path.is_dir() {
+    let container: Box<dyn PsContainer> = if path.is_dir() {
         info!("Input directory: {input}");
-        container = Box::new(PsDirectoryContainer::new(input));
+        Box::new(PsDirectoryContainer::new(input))
     } else {
         info!("Input zip: {input}");
         let tz = chrono::Local::now().offset().to_owned();
-        container = Box::new(PsZipContainer::new(input, tz));
-    }
+        Box::new(PsZipContainer::new(input, tz))
+    };
     let idx = container.scan();
 
     let mut distinct_dirs: HashSet<String> = HashSet::new();
@@ -216,7 +215,7 @@ fn make_file_patterns() -> Vec<(Vec<Regex>, MatchingFilePatternFn)> {
     ];
     patterns
         .iter()
-        .filter_map(|(patterns, match_fn)| {
+        .map(|(patterns, match_fn)| {
             let mut regexes: Vec<Regex> = vec![];
             for p in patterns.iter() {
                 match Regex::new(p) {
@@ -226,7 +225,7 @@ fn make_file_patterns() -> Vec<(Vec<Regex>, MatchingFilePatternFn)> {
                     }
                 }
             }
-            Some((regexes, *match_fn))
+            (regexes, *match_fn)
         })
         .collect::<Vec<(Vec<Regex>, MatchingFilePatternFn)>>()
 }
@@ -246,7 +245,7 @@ fn make_dir_patterns() -> Vec<(Vec<Regex>, MatchingDirPatternFn)> {
     ];
     patterns
         .iter()
-        .filter_map(|(patterns, match_fn)| {
+        .map(|(patterns, match_fn)| {
             let mut regexes: Vec<Regex> = vec![];
             for p in patterns.iter() {
                 match Regex::new(p) {
@@ -256,7 +255,7 @@ fn make_dir_patterns() -> Vec<(Vec<Regex>, MatchingDirPatternFn)> {
                     }
                 }
             }
-            Some((regexes, *match_fn))
+            (regexes, *match_fn)
         })
         .collect::<Vec<(Vec<Regex>, MatchingDirPatternFn)>>()
 }

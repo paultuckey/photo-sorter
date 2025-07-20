@@ -2,7 +2,7 @@ use log::{debug, warn};
 use serde::Deserialize;
 use crate::util::{PsContainer};
 
-pub(crate) fn detect_supplemental_info(path: &String, container: &Box<dyn PsContainer>) -> Option<String> {
+pub(crate) fn detect_supplemental_info(path: &String, container: &dyn PsContainer) -> Option<String> {
     let google_supp_json_exts = vec![
         ".supplemental-metadata.json",
         ".supplemental-metad.json",
@@ -18,7 +18,7 @@ pub(crate) fn detect_supplemental_info(path: &String, container: &Box<dyn PsCont
 }
 
 pub(crate) fn load_supplemental_info(path: &String, container: &mut Box<dyn PsContainer>) -> Option<SupplementalInfo> {
-    let bytes = container.file_bytes(&path);
+    let bytes = container.file_bytes(path);
     let Ok(bytes) = bytes else {
         warn!("Could not read supplemental json file: {path}");
         return None;

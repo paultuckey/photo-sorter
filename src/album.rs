@@ -10,7 +10,7 @@ use crate::media::MediaFileInfo;
 
 pub(crate) fn parse_album(container: &mut Box<dyn PsContainer>,
                           si: &ScanInfo,
-                          si_files: &Vec<ScanInfo>,
+                          si_files: &[ScanInfo],
 ) -> Option<Album> {
     match si.quick_file_type {
         QuickFileType::AlbumCsv => {
@@ -72,7 +72,7 @@ fn parse_csv_album(
         // look for file with the original path {} + file_name
         let directory_path_str = dir_part(&qsf.file_path);
 
-        let original_file = Path::new(&directory_path_str).join(&file_name)
+        let original_file = Path::new(&directory_path_str).join(file_name)
             .to_string_lossy().to_string();
 
         files.push(original_file);
@@ -110,7 +110,7 @@ fn parse_csv_album(
     })
 }
 
-fn parse_json_album(container: &mut Box<dyn PsContainer>, qsf: &ScanInfo, all_scanned_files: &Vec<ScanInfo>) -> Option<Album> {
+fn parse_json_album(container: &mut Box<dyn PsContainer>, qsf: &ScanInfo, all_scanned_files: &[ScanInfo]) -> Option<Album> {
     let bytes_r = container.file_bytes(&qsf.file_path);
     let Ok(bytes) = bytes_r else {
         warn!("No bytes for album: {:?}", &qsf.file_path);
