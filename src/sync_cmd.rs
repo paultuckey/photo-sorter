@@ -1,13 +1,18 @@
 use crate::album::{build_album_md, parse_album};
-use crate::file_type::{QuickFileType};
-use crate::media::{media_file_info_from_readable, MediaFileInfo};
-use crate::util::{PsContainer, PsDirectoryContainer, PsZipContainer, is_existing_file_same, checksum_bytes, Progress, ScanInfo};
+use crate::file_type::QuickFileType;
+use crate::markdown::sync_markdown;
+use crate::media::{MediaFileInfo, media_file_info_from_readable};
+use crate::supplemental_info::{
+    SupplementalInfo, detect_supplemental_info, load_supplemental_info,
+};
+use crate::util::{
+    Progress, PsContainer, PsDirectoryContainer, PsZipContainer, ScanInfo, checksum_bytes,
+    is_existing_file_same,
+};
 use anyhow::anyhow;
+use log::{debug, info, warn};
 use std::collections::HashMap;
 use std::path::Path;
-use log::{debug, info, warn};
-use crate::markdown::sync_markdown;
-use crate::supplemental_info::{detect_supplemental_info, load_supplemental_info, SupplementalInfo};
 
 pub(crate) fn main(
     dry_run: bool,
@@ -39,10 +44,7 @@ pub(crate) fn main(
         info!("Output directory: {output}");
         let output_container = PsDirectoryContainer::new(output);
         if !output_container.root_exists() {
-            warn!("Output directory does not exist");
-            if !dry_run {
-                return Err(anyhow!("Output directory does not exist"));
-            }
+            warn!("Output directory does not exist {output}");
         }
         output_container_o = Some(output_container);
     }
@@ -59,7 +61,8 @@ pub(crate) fn main(
             prog.inc();
 
             let mut supp_info_o = None;
-            let supp_info_path_o = detect_supplemental_info(&media_si.file_path.clone(), container.as_ref());
+            let supp_info_path_o =
+                detect_supplemental_info(&media_si.file_path.clone(), container.as_ref());
             if let Some(supp_info_path) = supp_info_path_o {
                 supp_info_o = load_supplemental_info(&supp_info_path, &mut container);
             }
@@ -78,8 +81,18 @@ pub(crate) fn main(
             for media in all_media.values() {
                 prog.inc();
                 let write_r = write_media(media, dry_run, &mut container, output_container);
-                if write_r.is_ok() && !skip_markdown {
-                    let _ = sync_markdown(dry_run, media, output_container);
+                match write_r {
+                    Ok(_) => {
+                        if !skip_markdown {
+                            let _ = sync_markdown(dry_run, media, output_container);
+                        }
+                    }
+                    Err(e) => {
+                        warn!(
+                            "Error writing media file: {:?}, error: {}",
+                            media.desired_media_path, e
+                        );
+                    }
                 }
             }
             drop(prog);
@@ -89,9 +102,10 @@ pub(crate) fn main(
     if !skip_albums {
         let scan_info_albums = files
             .iter()
-            .filter(|m|
+            .filter(|m| {
                 m.quick_file_type == QuickFileType::AlbumCsv
-                    || m.quick_file_type == QuickFileType::AlbumJson)
+                    || m.quick_file_type == QuickFileType::AlbumJson
+            })
             .collect::<Vec<&ScanInfo>>();
         info!("Inspecting {} album files", scan_info_albums.len());
         let mut albums = vec![];
@@ -139,15 +153,18 @@ pub(crate) fn inspect_media(
     let checksum_o = checksum_bytes(&bytes).ok();
     let Some((short_checksum, long_checksum)) = checksum_o else {
         warn!("Could not calculate checksum for: {:?}", qsf.file_path);
-        return Err(anyhow!("Could not calculate checksum for file: {:?}", qsf.file_path));
+        return Err(anyhow!(
+            "Could not calculate checksum for file: {:?}",
+            qsf.file_path
+        ));
     };
     debug!("  Checksum calculated: {long_checksum}");
     if let Some(m) = all_media.get_mut(&long_checksum) {
         m.original_path.push(qsf.file_path.clone());
         return Ok(());
     }
-    let media_file_info_res = media_file_info_from_readable(
-        qsf, &bytes, supp_info, &short_checksum, &long_checksum);
+    let media_file_info_res =
+        media_file_info_from_readable(qsf, &bytes, supp_info, &short_checksum, &long_checksum);
     let Ok(media_file) = media_file_info_res else {
         warn!("Could not calculate info for: {:?}", qsf.file_path);
         return Err(anyhow!("File type unsupported: {:?}", qsf.file_path));
@@ -168,8 +185,11 @@ pub(crate) fn write_media(
         return Err(anyhow!("No desired media path for file: {media_file:?}"));
     };
     if output_container.exists(desired_output_path) {
-        let es_o =
-            is_existing_file_same(output_container, &media_file.long_checksum, desired_output_path);
+        let es_o = is_existing_file_same(
+            output_container,
+            &media_file.long_checksum,
+            desired_output_path,
+        );
         if let Some(existing_same) = es_o {
             if !existing_same {
                 warn!("  File with different checksum already exists");
@@ -178,7 +198,7 @@ pub(crate) fn write_media(
             debug!("  No need to write, file already exists with same checksum");
         }
     } else {
-        let bytes = input_container.file_bytes(desired_output_path)?;
+        let bytes = input_container.file_bytes(&media_file.original_file_this_run)?;
         output_container.write(dry_run, &desired_output_path.clone(), &bytes);
         output_container.set_modified(dry_run, &desired_output_path.clone(), &media_file.modified);
     }

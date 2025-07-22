@@ -8,6 +8,7 @@ use crate::util::ScanInfo;
 
 #[derive(Debug, Clone)]
 pub(crate) struct MediaFileInfo {
+    pub(crate) original_file_this_run: String,
     pub(crate) original_path: Vec<String>,
     pub(crate) desired_media_path: Option<String>,
     pub(crate) desired_markdown_path: Option<String>,
@@ -46,6 +47,7 @@ pub(crate) fn media_file_info_from_readable(
     let desired_markdown_path_o = get_desired_markdown_path(desired_media_path_o.clone());
 
     let media_file_info = MediaFileInfo {
+        original_file_this_run: name.clone(),
         original_path: vec![name.clone()],
         accurate_file_type: guessed_ff.clone(),
         quick_file_type: qsf.quick_file_type.clone(),
