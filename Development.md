@@ -37,13 +37,13 @@ cargo run -- --help
 Test a single photo file:
 
 ```shell
-cargo run -- markdown --debug --root "test" --input "Canon_40D.jpg"
+cargo run -- info --debug --root "test" --input "Canon_40D.jpg"
 ```
 
 Test a single album file:
 
 ```shell
-cargo run -- markdown --debug --root "test/takeout1" --input "Google Photos/album1/metadata.json"
+cargo run -- info --debug --root "test/takeout1" --input "Google Photos/album1/metadata.json"
 ```
 
 Check the index:
@@ -70,6 +70,14 @@ Sync a directory:
 
 ```shell
 cargo run -- sync --debug --input "input/Takeout-small" --output "output/archive-small"
+```
+
+```shell
+cargo run -- sync --input "input/takeout" --output "output/archive"
+```
+
+```shell
+cargo run -- sync --input "input/icloud photos" --output "output/archive"
 ```
 
 
