@@ -3,7 +3,7 @@ mod exif;
 mod file_type;
 mod index_cmd;
 mod markdown;
-mod markdown_cmd;
+mod info_cmd;
 mod media;
 mod supplemental_info;
 mod sync_cmd;
@@ -22,14 +22,14 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    Markdown {
+    Info {
         #[arg(short, long, help = "Turn debugging information on")]
         debug: bool,
 
         #[arg(short, long, help = "The takeout or iCloud zip/directory")]
         root: String,
 
-        #[arg(short, long, help = "Photo, video or album to generate markdown for")]
+        #[arg(short, long, help = "Photo, video or album to view info for")]
         input: String,
     },
     Index {
@@ -80,9 +80,9 @@ fn main() {
 fn go() -> anyhow::Result<()> {
     let cli = Cli::parse();
     match cli.command {
-        Commands::Markdown { debug, root, input } => {
+        Commands::Info { debug, root, input } => {
             enable_debug(debug);
-            markdown_cmd::main(&input, &root)?
+            info_cmd::main(&input, &root)?
         }
         Commands::Index { debug, input } => {
             enable_debug(debug);

@@ -43,7 +43,7 @@ photo-sorter --help
 ```
 
 ```shell
-photo-sorter markdown --debug --root "test" --input "Canon_40D.jpg"
+photo-sorter info --debug --root "test" --input "Canon_40D.jpg"
 ```
 
 ```shell
