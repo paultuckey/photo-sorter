@@ -264,7 +264,7 @@ fn parse_exif_datetime_with_ms(exif: &Exif, dt_tag: Tag, sub_second_tag: Tag) ->
 /// Sometimes exif dates can be invalid(ish)
 ///  eg, 2019:04:04 18:04:98 (invalid seconds)
 ///  eg, 2019:04:04 (missing time)
-fn parse_exif_datetime(d: &Option<String>, ms: Option<u32>) -> Option<String> {
+fn parse_exif_datetime(d: &Option<String>, ms_o: Option<u32>) -> Option<String> {
     let Some(d) = d else { return None };
     // 2017:08:19 10:21:59
     let s = d.split(' ').collect::<Vec<&str>>();
@@ -293,7 +293,7 @@ fn parse_exif_datetime(d: &Option<String>, ms: Option<u32>) -> Option<String> {
         mm += 1;
     }
     let mut ont = NaiveTime::from_hms_opt(hh, mm, ss);
-    if let Some(ms) = ms {
+    if let Some(ms) = ms_o {
         if ms < 1000 {
             ont = NaiveTime::from_hms_milli_opt(hh, mm, ss, ms);
         } else {
@@ -306,7 +306,11 @@ fn parse_exif_datetime(d: &Option<String>, ms: Option<u32>) -> Option<String> {
     };
     let ndt = NaiveDateTime::new(nd, nt);
     let utc_dt = ndt.and_utc();
-    Some(utc_dt.to_rfc3339_opts(SecondsFormat::Millis, true))
+    if ms_o.is_some() {
+        Some(utc_dt.to_rfc3339_opts(SecondsFormat::Millis, true))
+    } else {
+        Some(utc_dt.to_rfc3339_opts(SecondsFormat::Secs, true))
+    }
 }
 
 fn parse_exif_date(d: &Option<String>) -> Option<String> {
@@ -360,7 +364,7 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_exif_created() {
+    fn test_parse_exif_dt() {
         let mut c = PsDirectoryContainer::new(&"test".to_string());
         let bytes = c.file_bytes(&"Canon_40D.jpg".to_string()).unwrap();
         let p = parse_exif(&bytes, &"test".to_string(), &AccurateFileType::Jpg).unwrap();
@@ -383,12 +387,67 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_exif_all_tags() {
+    fn test_parse_exif_all_tags() -> anyhow::Result<()> {
         crate::test_util::setup_log();
         let mut c = PsDirectoryContainer::new(&"test".to_string());
-        let bytes = c.file_bytes(&"Canon_40D.jpg".to_string()).unwrap();
+        let bytes = c.file_bytes(&"Canon_40D.jpg".to_string())?;
         let t = all_tags(&bytes);
         assert_eq!(t.len(), 47);
+
+        let tag_names: Vec<String> = t.iter().map(|tag| tag.tag_code.clone()).collect();
+        assert_eq!(
+            tag_names,
+            vec![
+                "Make",
+                "Model",
+                "Orientation",
+                "XResolution",
+                "YResolution",
+                "ResolutionUnit",
+                "Software",
+                "DateTime",
+                "YCbCrPositioning",
+                "ExposureTime",
+                "FNumber",
+                "ExposureProgram",
+                "PhotographicSensitivity",
+                "ExifVersion",
+                "DateTimeOriginal",
+                "DateTimeDigitized",
+                "ComponentsConfiguration",
+                "ShutterSpeedValue",
+                "ApertureValue",
+                "ExposureBiasValue",
+                "MeteringMode",
+                "Flash",
+                "FocalLength",
+                "UserComment",
+                "SubSecTime",
+                "SubSecTimeOriginal",
+                "SubSecTimeDigitized",
+                "FlashpixVersion",
+                "ColorSpace",
+                "PixelXDimension",
+                "PixelYDimension",
+                "InteroperabilityIndex",
+                "InteroperabilityVersion",
+                "FocalPlaneXResolution",
+                "FocalPlaneYResolution",
+                "FocalPlaneResolutionUnit",
+                "CustomRendered",
+                "ExposureMode",
+                "WhiteBalance",
+                "SceneCaptureType",
+                "GPSVersionID",
+                "Compression",
+                "XResolution",
+                "YResolution",
+                "ResolutionUnit",
+                "JPEGInterchangeFormat",
+                "JPEGInterchangeFormatLength"
+            ]
+        );
+
         let first_tag = t.first().unwrap();
         assert_eq!(first_tag.tag_code, "Make".to_string());
         assert_eq!(
@@ -396,5 +455,16 @@ mod tests {
             Some("Manufacturer of image input equipment".to_string())
         );
         assert_eq!(first_tag.tag_value, Some("Canon".to_string()));
+
+        // SubSecTimeOriginal
+        let sub_sec_time_original = t
+            .iter()
+            .find(|tag| tag.tag_code == "SubSecTimeOriginal")
+            .unwrap();
+        assert_eq!(
+            sub_sec_time_original.tag_value.clone().unwrap(),
+            "00".to_string()
+        );
+        Ok(())
     }
 }

@@ -1,15 +1,15 @@
 mod album;
+mod db_cmd;
 mod exif;
 mod file_type;
 mod index_cmd;
-mod markdown;
 mod info_cmd;
+mod markdown;
 mod media;
 mod supplemental_info;
 mod sync_cmd;
 mod test_util;
 mod util;
-mod db_cmd;
 
 use clap::{Parser, Subcommand};
 use log::{LevelFilter, debug, error, info};
@@ -23,54 +23,68 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
+    /// Show info for an individual photo or video
     Info {
-        #[arg(short, long, help = "Turn debugging information on")]
+        /// Turn debugging information on
+        #[arg(short, long)]
         debug: bool,
 
-        #[arg(short, long, help = "The takeout or iCloud zip/directory")]
+        /// The takeout or iCloud zip/directory
+        #[arg(short, long)]
         root: String,
 
-        #[arg(short, long, help = "Photo, video or album to view info for")]
+        /// Photo, video or album to view info for
+        #[arg(short, long)]
         input: String,
     },
+    /// Scan files in an archive or directory and output known patterns
     Index {
-        #[arg(short, long, help = "Turn debugging information on")]
+        /// Turn debugging information on
+        #[arg(short, long)]
         debug: bool,
 
-        #[arg(short, long, help = "The takeout or iCloud zip/directory")]
+        /// The takeout or iCloud zip/directory
+        #[arg(short, long)]
         input: String,
     },
+    /// Scan files in an archive or directory and collect meta info into a sqlite database
     Db {
-        #[arg(short, long, help = "Turn debugging information on")]
+        /// Turn debugging information on
+        #[arg(short, long)]
         debug: bool,
 
-        #[arg(short, long, help = "The takeout or iCloud zip/directory")]
+        /// The takeout or iCloud zip/directory
+        #[arg(short, long)]
         input: String,
     },
+    /// Sync files in an archive or directory into a standardised directory structure
     Sync {
-        #[arg(short, long, help = "Turn debugging information on")]
+        /// Turn debugging information on
+        #[arg(short, long)]
         debug: bool,
 
-        #[arg(
-            short = 'n',
-            long,
-            help = "If set, don't do anything, just print what would be done."
-        )]
+        /// If set, don't do anything, just print what would be done.
+        #[arg(short = 'n', long)]
         dry_run: bool,
 
-        #[arg(long, help = "Google Takeout or iCloud input directory or zip file")]
+        /// Google Takeout or iCloud input directory or zip file
+        #[arg(long)]
         input: String,
 
-        #[arg(short, long, help = "Directory to sync photos and videos into")]
+        /// Directory to sync photos and videos into
+        #[arg(short, long)]
         output: Option<String>,
 
-        #[arg(long, help = "Skip generating markdown files")]
+        /// Skip generating markdown files
+        #[arg(long)]
         skip_markdown: bool,
 
-        #[arg(long, help = "Skip inspecting and copying photo and video files")]
+        /// Skip inspecting and copying photo and video files
+        #[arg(long)]
         skip_media: bool,
 
-        #[arg(long, help = "Skip inspecting and copying albums")]
+        /// Skip inspecting and copying albums
+        #[arg(long)]
         skip_albums: bool,
     },
 }
