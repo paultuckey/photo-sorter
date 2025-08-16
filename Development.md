@@ -56,6 +56,12 @@ cargo run -- index --debug --input "input/Takeout"
 cargo run -- index --debug --input "input/iCloud Photos"
 ```
 
+Make a database:
+
+```shell
+cargo run -- db --debug --input "input/Takeout"
+```
+
 
 Dry run a sync operation:
 
@@ -96,6 +102,20 @@ rsync --dry-run -a --verbose ../input/takeout-small/ ../output/takeout-small/
 zipinfo -m input/takeout-20250614T030613Z-1-001.zip > output/takeout-list.txt
 ```
 
+## Exif debugging
+
+```shell
+brew install exiftool
+```
+
+```shell
+exiftool "input/iCloud Photos/Photos/IMG_5071.HEIC"
+```
+
+```shell
+exiftool "input/Takeout/Google Photos/Photos from 2024/IMG_3986.HEIC" > a.txt
+exiftool "input/iCloud Photos/Photos/IMG_3986.HEIC" > b.txt
+```
 
 ## Notes
 

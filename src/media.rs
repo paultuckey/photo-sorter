@@ -20,6 +20,7 @@ pub(crate) struct MediaFileInfo {
     pub(crate) supp_info: Option<SupplementalInfo>,
     // Modified date in RFC3339 format
     pub(crate) modified: Option<i64>,
+    pub(crate) guessed_datetime: Option<i64>,
 }
 
 pub(crate) fn media_file_info_from_readable(
@@ -58,6 +59,7 @@ pub(crate) fn media_file_info_from_readable(
         desired_markdown_path: desired_markdown_path_o.clone(),
         supp_info: supp_info.clone(),
         modified: qsf.modified_datetime,
+        guessed_datetime
     };
     Ok(media_file_info)
 }

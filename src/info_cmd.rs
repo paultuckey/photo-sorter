@@ -97,7 +97,7 @@ pub(crate) fn album(si: &ScanInfo, root: &mut Box<dyn PsContainer>) -> anyhow::R
                 warn!("Could not read file: {}", si.file_path);
                 return;
             };
-            let _ = inspect_media(bytes, f, &mut all_media, &si_o);
+            let _ = inspect_media(&bytes, f, &mut all_media, &si_o);
         });
 
     debug!("Markdown:");

@@ -9,6 +9,7 @@ mod supplemental_info;
 mod sync_cmd;
 mod test_util;
 mod util;
+mod db_cmd;
 
 use clap::{Parser, Subcommand};
 use log::{LevelFilter, debug, error, info};
@@ -33,6 +34,13 @@ enum Commands {
         input: String,
     },
     Index {
+        #[arg(short, long, help = "Turn debugging information on")]
+        debug: bool,
+
+        #[arg(short, long, help = "The takeout or iCloud zip/directory")]
+        input: String,
+    },
+    Db {
         #[arg(short, long, help = "Turn debugging information on")]
         debug: bool,
 
@@ -87,6 +95,10 @@ fn go() -> anyhow::Result<()> {
         Commands::Index { debug, input } => {
             enable_debug(debug);
             index_cmd::main(&input)?
+        }
+        Commands::Db { debug, input } => {
+            enable_debug(debug);
+            db_cmd::main(&input)?
         }
         Commands::Sync {
             debug,

@@ -1,7 +1,8 @@
 use std::path::Path;
 use log::{debug, warn};
+use strum_macros::Display;
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Display)]
 pub(crate) enum QuickFileType {
     Media,
     AlbumCsv,
@@ -29,7 +30,7 @@ pub(crate) fn find_quick_file_type(file_path: &str) -> QuickFileType {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Display)]
 pub(crate) enum AccurateFileType {
     Jpg,
     Png,

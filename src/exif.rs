@@ -139,6 +139,7 @@ pub(crate) struct ExifTag {
     pub(crate) tag_code: String,
     pub(crate) tag_desc: Option<String>,
     pub(crate) tag_value: Option<String>,
+    pub(crate) tag_type: Option<String>,
 }
 
 pub(crate) fn all_tags(bytes: &Vec<u8>) -> Vec<ExifTag> {
@@ -157,6 +158,21 @@ pub(crate) fn all_tags(bytes: &Vec<u8>) -> Vec<ExifTag> {
                     tag_code: field.tag.to_string(),
                     tag_desc: field.tag.description().map(|s| s.to_string()),
                     tag_value: s_o,
+                    tag_type: match &field.value {
+                        Value::Byte(_) => Some("Byte".to_string()),
+                        Value::Ascii(_) => Some("Ascii".to_string()),
+                        Value::Short(_) => Some("Short".to_string()),
+                        Value::Long(_) => Some("Long".to_string()),
+                        Value::Rational(_) => Some("Rational".to_string()),
+                        Value::SByte(_) => Some("SByte".to_string()),
+                        Value::Undefined(_, _) => Some("Undefined".to_string()),
+                        Value::SShort(_) => Some("SShort".to_string()),
+                        Value::SLong(_) => Some("SLong".to_string()),
+                        Value::SRational(_) => Some("SRational".to_string()),
+                        Value::Float(_) => Some("Float".to_string()),
+                        Value::Double(_) => Some("Double".to_string()),
+                        Value::Unknown(_, _, _) => Some("Unknown".to_string()),
+                    },
                 });
             }
         }
