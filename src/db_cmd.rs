@@ -160,7 +160,7 @@ struct DbArchiveItem {
     media_item_id: i32,
     path: String,
 }
-// todo: make desired, hashes unique
+// todo: make path unique
 const DB_ARCHIVE_ITEM_CREATE: &str = "
     CREATE TABLE IF NOT EXISTS archive_item (
         archive_item_id INTEGER PRIMARY KEY AUTOINCREMENT,
