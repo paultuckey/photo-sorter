@@ -16,3 +16,4 @@ target/
 .idea/
 output/
 input/
+db.sqlite

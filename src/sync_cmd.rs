@@ -71,7 +71,7 @@ pub(crate) fn main(
                 warn!("Could not read file: {}", media_si.file_path);
                 return Err(anyhow!("Could not read file: {}", media_si.file_path));
             };
-            let _ = inspect_media(bytes, media_si, &mut all_media, &supp_info_o);
+            let _ = inspect_media(&bytes, media_si, &mut all_media, &supp_info_o);
         }
         drop(prog);
 
@@ -144,13 +144,13 @@ pub(crate) fn main(
 /// - capture extra_info
 /// - populate exif data
 pub(crate) fn inspect_media(
-    bytes: Vec<u8>,
+    bytes: &Vec<u8>,
     qsf: &ScanInfo,
     all_media: &mut HashMap<String, MediaFileInfo>,
     supp_info: &Option<SupplementalInfo>,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<MediaFileInfo> {
     info!("Inspect: {}", qsf.file_path);
-    let checksum_o = checksum_bytes(&bytes).ok();
+    let checksum_o = checksum_bytes(bytes).ok();
     let Some((short_checksum, long_checksum)) = checksum_o else {
         warn!("Could not calculate checksum for: {:?}", qsf.file_path);
         return Err(anyhow!(
@@ -161,16 +161,16 @@ pub(crate) fn inspect_media(
     debug!("  Checksum calculated: {long_checksum}");
     if let Some(m) = all_media.get_mut(&long_checksum) {
         m.original_path.push(qsf.file_path.clone());
-        return Ok(());
+        return Ok(m.clone());
     }
     let media_file_info_res =
-        media_file_info_from_readable(qsf, &bytes, supp_info, &short_checksum, &long_checksum);
+        media_file_info_from_readable(qsf, bytes, supp_info, &short_checksum, &long_checksum);
     let Ok(media_file) = media_file_info_res else {
         warn!("Could not calculate info for: {:?}", qsf.file_path);
         return Err(anyhow!("File type unsupported: {:?}", qsf.file_path));
     };
     all_media.insert(media_file.long_checksum.clone(), media_file.clone());
-    Ok(())
+    Ok(media_file)
 }
 
 pub(crate) fn write_media(
