@@ -87,7 +87,10 @@ pub(crate) fn get_desired_media_path(
         match dt {
             Some(dt) => {
                 date_dir = format!("{}/{:0>2}/{:0>2}", dt.year(), dt.month(), dt.day());
-                let time_name = format!("{:0>2}{:0>2}-{:0>2}", dt.hour(), dt.minute(), dt.second());
+                let mut time_name = format!("{:0>2}{:0>2}-{:0>2}", dt.hour(), dt.minute(), dt.second());
+                if dt.timestamp_subsec_millis() > 0 {
+                    time_name = format!("{time_name}-{:0>3}", dt.timestamp_subsec_millis());
+                }
                 name = format!("{time_name}-{short_checksum}");
             }
             None => {
@@ -137,6 +140,8 @@ mod tests {
                    "undated/6bfdabd.jpeg".to_string());
         assert_eq!(get_desired_media_path(&short_checksum, &Some(1212162961000), &"jpeg".to_string()),
                    "2008/05/30/1556-01-6bfdabd.jpeg".to_string());
+        assert_eq!(get_desired_media_path(&short_checksum, &Some(1212162961009), &"jpeg".to_string()),
+                   "2008/05/30/1556-01-009-6bfdabd.jpeg".to_string());
         Ok(())
     }
 }
