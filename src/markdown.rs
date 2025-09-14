@@ -1,9 +1,9 @@
-use anyhow::{anyhow};
-use log::{debug, warn};
 use crate::media::MediaFileInfo;
 use crate::util::{PsContainer, PsDirectoryContainer};
-use yaml_rust2::{YamlLoader, YamlEmitter, Yaml};
+use anyhow::anyhow;
+use log::{debug, warn};
 use yaml_rust2::yaml::Hash;
+use yaml_rust2::{Yaml, YamlEmitter, YamlLoader};
 
 pub(crate) fn mfm_from_media_file_info(media_file_info: &MediaFileInfo) -> PhotoSorterFrontMatter {
     let mut mfm = PhotoSorterFrontMatter {
@@ -39,9 +39,16 @@ pub(crate) struct PhotoSorterFrontMatter {
     // todo: add supplemental fields?
 }
 
-pub(crate) fn sync_markdown(dry_run: bool, media_file: &MediaFileInfo, output_c: &mut PsDirectoryContainer) -> anyhow::Result<()> {
+pub(crate) fn sync_markdown(
+    dry_run: bool,
+    media_file: &MediaFileInfo,
+    output_c: &mut PsDirectoryContainer,
+) -> anyhow::Result<()> {
     let Some(output_path) = media_file.desired_markdown_path.clone() else {
-        warn!("No desired markdown path for media file: {:?}", media_file.original_path);
+        warn!(
+            "No desired markdown path for media file: {:?}",
+            media_file.original_path
+        );
         return Ok(());
     };
     let mfm = mfm_from_media_file_info(media_file);
@@ -52,7 +59,9 @@ pub(crate) fn sync_markdown(dry_run: bool, media_file: &MediaFileInfo, output_c:
         let existing_md_bytes_r = output_c.file_bytes(&output_path);
         let Ok(existing_md_bytes) = existing_md_bytes_r else {
             warn!("Could not read existing markdown file at {output_path:?}");
-            return Err(anyhow!("Could not read existing markdown file at {output_path:?}"));
+            return Err(anyhow!(
+                "Could not read existing markdown file at {output_path:?}"
+            ));
         };
         let existing_full_md = String::from_utf8_lossy(&existing_md_bytes);
         let (e_yaml_i, e_md_i) = split_frontmatter(&existing_full_md);
@@ -93,14 +102,15 @@ pub(crate) fn split_frontmatter(file_contents: &str) -> (String, String) {
 
         // Check if the closing "---" is followed by a newline or is at the end
         if let Some(remaining_content) = after_end_delim.strip_prefix("---\r\n") {
-
             // Special case: if frontmatter is empty, return original content
             if potential_frontmatter.trim().is_empty() {
                 return ("".to_string(), file_contents.to_string());
             }
 
             // Remove trailing newline from frontmatter if present
-            let fm = potential_frontmatter.trim_end_matches(['\n', '\r']).to_string();
+            let fm = potential_frontmatter
+                .trim_end_matches(['\n', '\r'])
+                .to_string();
             // If remaining content is empty, but we had a newline after ---, include it
             if remaining_content.is_empty() {
                 return (fm, "\r\n".to_string());
@@ -108,14 +118,15 @@ pub(crate) fn split_frontmatter(file_contents: &str) -> (String, String) {
                 return (fm, remaining_content.to_string());
             }
         } else if let Some(remaining_content) = after_end_delim.strip_prefix("---\n") {
-
             // Special case: if frontmatter is empty, return original content
             if potential_frontmatter.trim().is_empty() {
                 return ("".to_string(), file_contents.to_string());
             }
 
             // Remove trailing newline from frontmatter if present
-            let fm = potential_frontmatter.trim_end_matches(['\n', '\r']).to_string();
+            let fm = potential_frontmatter
+                .trim_end_matches(['\n', '\r'])
+                .to_string();
             // If remaining content is empty, but we had a newline after ---, include it
             if remaining_content.is_empty() {
                 return (fm, "\n".to_string());
@@ -123,14 +134,15 @@ pub(crate) fn split_frontmatter(file_contents: &str) -> (String, String) {
                 return (fm, remaining_content.to_string());
             }
         } else if let Some(after_closing) = after_end_delim.strip_prefix("---") {
-
             // Special case: if frontmatter is empty, return original content
             if potential_frontmatter.trim().is_empty() {
                 return ("".to_string(), file_contents.to_string());
             }
 
             // Remove trailing newline from frontmatter if present
-            let fm = potential_frontmatter.trim_end_matches(['\n', '\r']).to_string();
+            let fm = potential_frontmatter
+                .trim_end_matches(['\n', '\r'])
+                .to_string();
 
             // If there's content after the closing ---, it should be the remaining content
             // If the original had CRLF line endings, preserve that in the remaining content
@@ -158,12 +170,12 @@ pub(crate) fn assemble_markdown(
         warn!("Generated YAML is empty, returning markdown content");
         return Ok(markdown_content.to_string());
     }
-    if let Some(existing_yaml) = existing_yaml {
-        if new_yaml.eq(existing_yaml) {
-            warn!("Generated YAML matches existing, returning original content");
-            // todo: better return type
-            return Ok(markdown_content.to_string());
-        }
+    if let Some(existing_yaml) = existing_yaml
+        && new_yaml.eq(existing_yaml)
+    {
+        warn!("Generated YAML matches existing, returning original content");
+        // todo: better return type
+        return Ok(markdown_content.to_string());
     }
     let mut s = String::new();
     s.push_str("---\n");
@@ -223,7 +235,6 @@ fn yaml_array_merge(root: &mut Hash, key: &String, arr: &Vec<String>) {
                     } else {
                         debug!("Adding {v} to {key}");
                         new_po.push(Yaml::String(v.to_string()));
-
                     }
                 }
                 root[&Yaml::String(key.to_string())] = Yaml::Array(new_po);
@@ -239,8 +250,11 @@ fn yaml_array_merge(root: &mut Hash, key: &String, arr: &Vec<String>) {
         }
     }
     debug!("Adding {key} to YAML");
-    let arr_y = arr.clone()
-        .iter().map(|x| Yaml::String(x.to_string())).collect::<Vec<Yaml>>();
+    let arr_y = arr
+        .clone()
+        .iter()
+        .map(|x| Yaml::String(x.to_string()))
+        .collect::<Vec<Yaml>>();
     root.insert(Yaml::String(key.to_string()), Yaml::Array(arr_y));
 }
 
@@ -258,20 +272,23 @@ mod tests {
         }
     }
 
-
     #[test]
     fn test_yaml_output() {
         crate::test_util::setup_log();
         let s = "foo:
   - list1
-".to_string();
+"
+        .to_string();
         let yaml = merge_yaml(&Some(s), &get_mfi());
-        assert_eq!(yaml, "foo:
+        assert_eq!(
+            yaml,
+            "foo:
   - list1
 original-paths:
   - p1
   - p2
-");
+"
+        );
     }
 
     #[test]
@@ -281,40 +298,44 @@ original-paths:
   - list1
 original-paths:
   - p0
-".to_string();
+"
+        .to_string();
         let yaml = merge_yaml(&Some(s), &get_mfi());
-        assert_eq!(yaml, "foo:
+        assert_eq!(
+            yaml,
+            "foo:
   - list1
 original-paths:
   - p0
   - p1
   - p2
-");
+"
+        );
     }
 
-//     #[test]
-//     fn test_parse_frontmatter() {
-//         crate::test_util::setup_log();
-//         let (fm_o, md) = parse_frontmatter("---
-//   photo-sorter:
-//     path: 2025/02/09/1123-23-abcdefg.jpg
-//     path-original:
-//       - Google Photos/Photos from 2025/IMG_5071.HEIC
-//     datetime: 2025-02-09T18:17:01Z
-//     gps-date: 2025-02-09
-// ---
-// x
-// last line", "test.md");
-//         assert_eq!(fm_o.unwrap(), PhotoSorterFrontMatter {
-//             path: Some("2025/02/09/1123-23-abcdefg.jpg".to_string()),
-//             path_original: vec!["Google Photos/Photos from 2025/IMG_5071.HEIC".to_string()],
-//             datetime_original: None,
-//             datetime: Some("2025-02-09T18:17:01Z".to_string()),
-//             gps_date: Some("2025-02-09".to_string()),
-//             unique_id: None,
-//         });
-//         assert_eq!(md, "x\nlast line".to_string());
-//     }
+    //     #[test]
+    //     fn test_parse_frontmatter() {
+    //         crate::test_util::setup_log();
+    //         let (fm_o, md) = parse_frontmatter("---
+    //   photo-sorter:
+    //     path: 2025/02/09/1123-23-abcdefg.jpg
+    //     path-original:
+    //       - Google Photos/Photos from 2025/IMG_5071.HEIC
+    //     datetime: 2025-02-09T18:17:01Z
+    //     gps-date: 2025-02-09
+    // ---
+    // x
+    // last line", "test.md");
+    //         assert_eq!(fm_o.unwrap(), PhotoSorterFrontMatter {
+    //             path: Some("2025/02/09/1123-23-abcdefg.jpg".to_string()),
+    //             path_original: vec!["Google Photos/Photos from 2025/IMG_5071.HEIC".to_string()],
+    //             datetime_original: None,
+    //             datetime: Some("2025-02-09T18:17:01Z".to_string()),
+    //             gps_date: Some("2025-02-09".to_string()),
+    //             unique_id: None,
+    //         });
+    //         assert_eq!(md, "x\nlast line".to_string());
+    //     }
 
     #[test]
     fn parse_with_missing_beginning_line() {
@@ -412,4 +433,3 @@ original-paths:
         assert_eq!(md, "dummy_body");
     }
 }
-

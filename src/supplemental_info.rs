@@ -1,8 +1,11 @@
+use crate::util::PsContainer;
 use log::{debug, warn};
 use serde::Deserialize;
-use crate::util::{PsContainer};
 
-pub(crate) fn detect_supplemental_info(path: &String, container: &dyn PsContainer) -> Option<String> {
+pub(crate) fn detect_supplemental_info(
+    path: &String,
+    container: &dyn PsContainer,
+) -> Option<String> {
     let google_supp_json_exts = vec![
         ".supplemental-metadata.json",
         ".supplemental-metad.json",
@@ -17,7 +20,10 @@ pub(crate) fn detect_supplemental_info(path: &String, container: &dyn PsContaine
     None
 }
 
-pub(crate) fn load_supplemental_info(path: &String, container: &mut Box<dyn PsContainer>) -> Option<SupplementalInfo> {
+pub(crate) fn load_supplemental_info(
+    path: &String,
+    container: &mut Box<dyn PsContainer>,
+) -> Option<SupplementalInfo> {
     let bytes = container.file_bytes(path);
     let Ok(bytes) = bytes else {
         warn!("Could not read supplemental json file: {path}");
@@ -48,10 +54,10 @@ pub(crate) struct SupplementalInfoDateTime {
 
 impl SupplementalInfoDateTime {
     pub(crate) fn timestamp_as_epoch_ms(&self) -> Option<i64> {
-        if let Some(ts) = &self.timestamp {
-            if let Ok(ts_i64) = ts.parse::<i64>() {
-                return Some(ts_i64);
-            }
+        if let Some(ts) = &self.timestamp
+            && let Ok(ts_i64) = ts.parse::<i64>()
+        {
+            return Some(ts_i64);
         }
         None
     }
@@ -75,11 +81,11 @@ fn parse_supplemental_info(json: String) -> Option<SupplementalInfo> {
 }
 
 fn lat_long_from_geo_data(geo_data: SupplementalInfoGeoData) -> Option<String> {
-    if let Some(lat) = geo_data.latitude {
-        if let Some(long) = geo_data.longitude {
-            // only need 5 decimal places to get 50m acuracy
-            return Some(format!("{lat:.6},{long:.6}"));
-        }
+    if let Some(lat) = geo_data.latitude
+        && let Some(long) = geo_data.longitude
+    {
+        // only need 5 decimal places to get 50m acuracy
+        return Some(format!("{lat:.6},{long:.6}"));
     }
     None
 }

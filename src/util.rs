@@ -1,3 +1,4 @@
+use crate::file_type::{QuickFileType, find_quick_file_type};
 use anyhow::anyhow;
 use log::{debug, error, warn};
 use status_line::StatusLine;
@@ -9,7 +10,6 @@ use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, SystemTime};
 use zip::ZipArchive;
-use crate::file_type::{find_quick_file_type, QuickFileType};
 
 pub(crate) fn checksum_file(path: &Path) -> anyhow::Result<(String, String)> {
     let bytes = fs::read(path)?;
@@ -49,7 +49,7 @@ impl ScanInfo {
         ScanInfo {
             file_path,
             modified_datetime,
-            quick_file_type
+            quick_file_type,
         }
     }
 }
@@ -61,12 +61,18 @@ pub(crate) struct PsDirectoryContainer {
 
 impl PsDirectoryContainer {
     pub(crate) fn new(root: &String) -> Self {
-        PsDirectoryContainer { root: root.to_string() }
+        PsDirectoryContainer {
+            root: root.to_string(),
+        }
     }
     pub(crate) fn write(&self, dry_run: bool, path: &String, bytes: &Vec<u8>) {
         let p = Path::new(&self.root).join(path);
         if dry_run {
-            debug!("Dry run: would write file {:?} with {} bytes", p, bytes.len());
+            debug!(
+                "Dry run: would write file {:?} with {} bytes",
+                p,
+                bytes.len()
+            );
             return;
         }
         if let Err(e) = fs::create_dir_all(p.parent().unwrap()) {
@@ -80,7 +86,12 @@ impl PsDirectoryContainer {
         debug!("Wrote file {p:?}");
     }
 
-    pub(crate) fn set_modified(&self, dry_run: bool, path: &String, modified_datetime: &Option<i64>) {
+    pub(crate) fn set_modified(
+        &self,
+        dry_run: bool,
+        path: &String,
+        modified_datetime: &Option<i64>,
+    ) {
         let p = Path::new(&self.root).join(path);
         let Some(dt) = modified_datetime else {
             return;
@@ -126,7 +137,10 @@ fn scan_dir_recursively(files: &mut Vec<ScanInfo>, dir_path: &Path, root_path: &
         if path.is_file() {
             // trim root path from the file path
             let relative_path = path.strip_prefix(root_path).unwrap_or(&path);
-            files.push(ScanInfo::new(relative_path.to_string_lossy().to_string(), modified_epoch_ms(&path)));
+            files.push(ScanInfo::new(
+                relative_path.to_string_lossy().to_string(),
+                modified_epoch_ms(&path),
+            ));
         } else if path.is_dir() {
             scan_dir_recursively(files, &path, root_path);
         }
@@ -134,8 +148,7 @@ fn scan_dir_recursively(files: &mut Vec<ScanInfo>, dir_path: &Path, root_path: &
 }
 
 fn modified_epoch_ms(path: &Path) -> Option<i64> {
-    path
-        .metadata()
+    path.metadata()
         .ok()
         .and_then(|m| m.modified().ok())
         .map(|dt| {
@@ -193,7 +206,7 @@ impl PsZipContainer {
             zip_file: zip_file.to_string(),
             index: vec![],
             zip: z.unwrap(),
-            tz
+            tz,
         };
         c.index();
         c
@@ -220,10 +233,14 @@ impl PsZipContainer {
             if let Some(lm) = file_in_zip.last_modified() {
                 // not zip dates are dodgy, see zip crate's docs
                 // zip times don't include tz, blindly assume they are in the local tz
-                dt_o = chrono::NaiveDate::from_ymd_opt(lm.year() as i32, lm.month() as u32, lm.day() as u32)
-                    .and_then(|date| date.and_hms_opt(lm.hour() as u32, lm.minute() as u32, 0))
-                    .and_then(|naive_dt| naive_dt.and_local_timezone(self.tz).single())
-                    .map(|dt| dt.timestamp_millis());
+                dt_o = chrono::NaiveDate::from_ymd_opt(
+                    lm.year() as i32,
+                    lm.month() as u32,
+                    lm.day() as u32,
+                )
+                .and_then(|date| date.and_hms_opt(lm.hour() as u32, lm.minute() as u32, 0))
+                .and_then(|naive_dt| naive_dt.and_local_timezone(self.tz).single())
+                .map(|dt| dt.timestamp_millis());
             }
             self.index.push(ScanInfo::new(file_name.to_string(), dt_o));
         }
@@ -295,9 +312,6 @@ pub(crate) fn name_part(file_path_s: &String) -> String {
     file_name_str.to_string_lossy().to_string()
 }
 
-
-
-
 // Make sure it is Send + Sync, so it can be read and written from different threads:
 pub(crate) struct Progress {
     total: u64,
@@ -328,12 +342,10 @@ impl Display for Progress {
     }
 }
 
-
-
 #[cfg(test)]
 mod tests {
-    use std::{thread, time};
     use super::*;
+    use std::thread;
 
     /// Progress example (not really a test)
     /// increase delay to make it more visible as progress bar has a frame rate

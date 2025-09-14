@@ -36,13 +36,13 @@ pub(crate) fn main(input: &String) -> anyhow::Result<()> {
     let mut distinct_dirs: HashSet<String> = HashSet::new();
     for si in &idx {
         let p = Path::new(&si.file_path);
-        if let Some(parent_path) = p.parent() {
-            if let Some(pp_s) = parent_path.to_str() {
-                if pp_s.is_empty() {
-                    continue;
-                }
-                distinct_dirs.insert(pp_s.to_string());
+        if let Some(parent_path) = p.parent()
+            && let Some(pp_s) = parent_path.to_str()
+        {
+            if pp_s.is_empty() {
+                continue;
             }
+            distinct_dirs.insert(pp_s.to_string());
         }
     }
 
