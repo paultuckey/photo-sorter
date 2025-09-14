@@ -50,10 +50,10 @@ pub(crate) fn media(si: &ScanInfo, root: &mut Box<dyn PsContainer>) -> anyhow::R
 
     println!("Media info:");
     println!(" checksum: {}", media_file_info.long_checksum);
-    if let Some(pe) = &media_file_info.parsed_exif {
-        if let Some(dt) = &pe.datetime_original {
-            println!(" datetime_original: {dt}");
-        }
+    if let Some(pe) = &media_file_info.parsed_exif
+        && let Some(dt) = &pe.datetime_original
+    {
+        println!(" datetime_original: {dt}");
     }
 
     println!("Markdown:");

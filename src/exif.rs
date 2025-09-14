@@ -127,10 +127,10 @@ pub(crate) fn best_guess_taken_dt(
 
 fn parse_ascii_tag(e: &Exif, t: Tag) -> Option<String> {
     let field = e.get_field(t, In::PRIMARY)?;
-    if let Value::Ascii(v) = &field.value {
-        if !v.is_empty() {
-            return String::from_utf8(v[0].to_owned()).ok();
-        }
+    if let Value::Ascii(v) = &field.value
+        && !v.is_empty()
+    {
+        return String::from_utf8(v[0].to_owned()).ok();
     }
     None
 }

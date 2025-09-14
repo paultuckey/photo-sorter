@@ -1,10 +1,12 @@
 use crate::exif::{ParsedExif, best_guess_taken_dt, parse_exif};
-use crate::file_type::{AccurateFileType, determine_file_type, file_ext_from_file_type, QuickFileType};
-use anyhow::anyhow;
-use chrono::{DateTime, Datelike, Timelike};
-use log::{warn};
+use crate::file_type::{
+    AccurateFileType, QuickFileType, determine_file_type, file_ext_from_file_type,
+};
 use crate::supplemental_info::SupplementalInfo;
 use crate::util::ScanInfo;
+use anyhow::anyhow;
+use chrono::{DateTime, Datelike, Timelike};
+use log::warn;
 
 #[derive(Debug, Clone)]
 pub(crate) struct MediaFileInfo {
@@ -59,7 +61,7 @@ pub(crate) fn media_file_info_from_readable(
         desired_markdown_path: desired_markdown_path_o.clone(),
         supp_info: supp_info.clone(),
         modified: qsf.modified_datetime,
-        guessed_datetime
+        guessed_datetime,
     };
     Ok(media_file_info)
 }
@@ -87,7 +89,8 @@ pub(crate) fn get_desired_media_path(
         match dt {
             Some(dt) => {
                 date_dir = format!("{}/{:0>2}/{:0>2}", dt.year(), dt.month(), dt.day());
-                let mut time_name = format!("{:0>2}{:0>2}-{:0>2}", dt.hour(), dt.minute(), dt.second());
+                let mut time_name =
+                    format!("{:0>2}{:0>2}-{:0>2}", dt.hour(), dt.minute(), dt.second());
                 if dt.timestamp_subsec_millis() > 0 {
                     time_name = format!("{time_name}-{:0>3}", dt.timestamp_subsec_millis());
                 }
@@ -128,20 +131,26 @@ mod tests {
     #[test]
     fn test_desired_path() -> anyhow::Result<()> {
         crate::test_util::setup_log();
-        use crate::util::PsDirectoryContainer;
         use crate::util::PsContainer;
-        use crate::util::{checksum_bytes};
+        use crate::util::PsDirectoryContainer;
+        use crate::util::checksum_bytes;
 
         let mut c = PsDirectoryContainer::new(&"test".to_string());
         let bytes = c.file_bytes(&"Canon_40D.jpg".to_string()).unwrap();
         let short_checksum = checksum_bytes(&bytes)?.0;
 
-        assert_eq!(get_desired_media_path(&short_checksum, &None, &"jpeg".to_string()),
-                   "undated/6bfdabd.jpeg".to_string());
-        assert_eq!(get_desired_media_path(&short_checksum, &Some(1212162961000), &"jpeg".to_string()),
-                   "2008/05/30/1556-01-6bfdabd.jpeg".to_string());
-        assert_eq!(get_desired_media_path(&short_checksum, &Some(1212162961009), &"jpeg".to_string()),
-                   "2008/05/30/1556-01-009-6bfdabd.jpeg".to_string());
+        assert_eq!(
+            get_desired_media_path(&short_checksum, &None, &"jpeg".to_string()),
+            "undated/6bfdabd.jpeg".to_string()
+        );
+        assert_eq!(
+            get_desired_media_path(&short_checksum, &Some(1212162961000), &"jpeg".to_string()),
+            "2008/05/30/1556-01-6bfdabd.jpeg".to_string()
+        );
+        assert_eq!(
+            get_desired_media_path(&short_checksum, &Some(1212162961009), &"jpeg".to_string()),
+            "2008/05/30/1556-01-009-6bfdabd.jpeg".to_string()
+        );
         Ok(())
     }
 }
