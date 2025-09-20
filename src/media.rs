@@ -26,13 +26,13 @@ pub(crate) struct MediaFileInfo {
 }
 
 pub(crate) fn media_file_info_from_readable(
-    qsf: &ScanInfo,
+    scan_info: &ScanInfo,
     bytes: &Vec<u8>,
     supp_info: &Option<SupplementalInfo>,
     short_checksum: &str,
     long_checksum: &str,
 ) -> anyhow::Result<MediaFileInfo> {
-    let name = &qsf.file_path;
+    let name = &scan_info.file_path;
     let guessed_ff = determine_file_type(bytes, name);
     if guessed_ff == AccurateFileType::Unsupported {
         warn!("Not a valid media file {name:?}");
@@ -41,7 +41,7 @@ pub(crate) fn media_file_info_from_readable(
     let exif_o = parse_exif(bytes, name, &guessed_ff);
 
     let ext = file_ext_from_file_type(&guessed_ff);
-    let guessed_datetime = best_guess_taken_dt(&exif_o, &qsf.modified_datetime, supp_info);
+    let guessed_datetime = best_guess_taken_dt(&exif_o, &scan_info, supp_info);
     let desired_media_path_o = Some(get_desired_media_path(
         short_checksum,
         &guessed_datetime,
@@ -53,14 +53,14 @@ pub(crate) fn media_file_info_from_readable(
         original_file_this_run: name.clone(),
         original_path: vec![name.clone()],
         accurate_file_type: guessed_ff.clone(),
-        quick_file_type: qsf.quick_file_type.clone(),
+        quick_file_type: scan_info.quick_file_type.clone(),
         parsed_exif: exif_o.clone(),
         short_checksum: short_checksum.to_string(),
         long_checksum: long_checksum.to_string(),
         desired_media_path: desired_media_path_o.clone(),
         desired_markdown_path: desired_markdown_path_o.clone(),
         supp_info: supp_info.clone(),
-        modified: qsf.modified_datetime,
+        modified: scan_info.modified_datetime,
         guessed_datetime,
     };
     Ok(media_file_info)
@@ -80,7 +80,7 @@ pub(crate) fn get_desired_markdown_path(desired_media_path: Option<String>) -> O
 pub(crate) fn get_desired_media_path(
     short_checksum: &str,
     media_datetime: &Option<i64>,
-    ext: &str,
+    file_name_extension: &str,
 ) -> String {
     let date_dir;
     let name;
@@ -106,7 +106,7 @@ pub(crate) fn get_desired_media_path(
         date_dir = "undated".to_string();
         name = short_checksum.to_owned();
     }
-    format!("{date_dir}/{name}.{ext}")
+    format!("{date_dir}/{name}.{file_name_extension}")
 }
 
 #[cfg(test)]

@@ -5,6 +5,7 @@ use exif::{Exif, Field, In, Reader, Tag, Value};
 use log::{debug, warn};
 use std::fmt::Display;
 use std::io::{BufReader, Cursor};
+use crate::util::ScanInfo;
 
 #[derive(Debug, Clone)]
 pub(crate) struct ParsedExif {
@@ -78,10 +79,13 @@ pub(crate) fn parse_exif(
 /// 5. SupplementalInfo creation_time
 /// 6. File modified time
 ///   - no timezone info, unreliable in zips, somewhat unreliable in directories due to file
-///     copying / syncing not preserving, only use as a last resprt
+///     copying / syncing not preserving, only use as second to last resort
+/// 7. File creation time
+///   - no timezone info, unavailable in zips, somewhat unreliable in directories due to file
+///     copying / syncing not preserving, only use as a last resort
 pub(crate) fn best_guess_taken_dt(
     pe_o: &Option<ParsedExif>,
-    modified_datetime: &Option<i64>,
+    si: &ScanInfo,
     supp_info: &Option<SupplementalInfo>,
 ) -> Option<i64> {
     if let Some(dt) = supp_info
@@ -119,8 +123,11 @@ pub(crate) fn best_guess_taken_dt(
     {
         return Some(dt);
     }
-    if let Some(dt) = modified_datetime {
-        return Some(*dt);
+    if let Some(dt) = si.modified_datetime {
+        return Some(dt);
+    }
+    if let Some(dt) = si.created_datetime {
+        return Some(dt);
     }
     None
 }

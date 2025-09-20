@@ -192,6 +192,12 @@ pub(crate) fn write_media(
         );
         if let Some(existing_same) = es_o {
             if !existing_same {
+                // TODO: Existing files are a problem, If we exclude the short checksum in the filename
+                //  we would get more clashes. When determining duplicates we would need to check all
+                //  files that have the same hh:mm:ss.ms.  That is fine, but is it worth the tradeoff?
+                //  - Yes: cleaner files names, slightly slower write time.  Writes would never fail.
+                //    - need to match all `hhmmss-ms*` in the same folder
+                //  - No: messier file names, faster writes.  Writes might fail on duplicate with different checksum..
                 warn!("  File with different checksum already exists");
                 return Err(anyhow!("File clash: {desired_output_path:?}"));
             }

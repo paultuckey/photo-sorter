@@ -11,16 +11,6 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, SystemTime};
 use zip::ZipArchive;
 
-pub(crate) fn checksum_file(path: &Path) -> anyhow::Result<(String, String)> {
-    let bytes = fs::read(path)?;
-    checksum_bytes(&bytes)
-}
-
-pub(crate) fn checksum_string(s: &String) -> anyhow::Result<(String, String)> {
-    let bytes = &s.as_bytes().to_vec();
-    checksum_bytes(bytes)
-}
-
 /// Similar to github generate a short and long hash from the bytes
 pub(crate) fn checksum_bytes(bytes: &Vec<u8>) -> anyhow::Result<(String, String)> {
     let hash = sha256::digest(bytes);
@@ -38,17 +28,24 @@ pub(crate) trait PsContainer {
 #[derive(Debug, Clone)]
 pub(crate) struct ScanInfo {
     pub(crate) file_path: String,
-    /// rfc3339 formatted datetime of the last modification
+    /// Unix Epoch time of last file modification
     pub(crate) modified_datetime: Option<i64>,
+    /// Unix Epoch time file creation
+    pub(crate) created_datetime: Option<i64>,
     pub(crate) quick_file_type: QuickFileType,
 }
 
 impl ScanInfo {
-    pub(crate) fn new(file_path: String, modified_datetime: Option<i64>) -> Self {
+    pub(crate) fn new(
+        file_path: String,
+        modified_datetime: Option<i64>,
+        created_datetime: Option<i64>,
+    ) -> Self {
         let quick_file_type = find_quick_file_type(&file_path);
         ScanInfo {
             file_path,
             modified_datetime,
+            created_datetime,
             quick_file_type,
         }
     }
@@ -139,7 +136,8 @@ fn scan_dir_recursively(files: &mut Vec<ScanInfo>, dir_path: &Path, root_path: &
             let relative_path = path.strip_prefix(root_path).unwrap_or(&path);
             files.push(ScanInfo::new(
                 relative_path.to_string_lossy().to_string(),
-                modified_epoch_ms(&path),
+                modified_time_ms(&path),
+                created_time_ms(&path),
             ));
         } else if path.is_dir() {
             scan_dir_recursively(files, &path, root_path);
@@ -147,14 +145,25 @@ fn scan_dir_recursively(files: &mut Vec<ScanInfo>, dir_path: &Path, root_path: &
     }
 }
 
-fn modified_epoch_ms(path: &Path) -> Option<i64> {
+fn modified_time_ms(path: &Path) -> Option<i64> {
     path.metadata()
         .ok()
         .and_then(|m| m.modified().ok())
-        .map(|dt| {
+        .and_then(|dt| {
             dt.duration_since(SystemTime::UNIX_EPOCH)
+                .ok()
                 .map(|d| d.as_millis() as i64)
-                .unwrap_or(0)
+        })
+}
+
+fn created_time_ms(path: &Path) -> Option<i64> {
+    path.metadata()
+        .ok()
+        .and_then(|m| m.created().ok())
+        .and_then(|dt| {
+            dt.duration_since(SystemTime::UNIX_EPOCH)
+                .ok()
+                .map(|d| d.as_millis() as i64)
         })
 }
 
@@ -242,7 +251,8 @@ impl PsZipContainer {
                 .and_then(|naive_dt| naive_dt.and_local_timezone(self.tz).single())
                 .map(|dt| dt.timestamp_millis());
             }
-            self.index.push(ScanInfo::new(file_name.to_string(), dt_o));
+            self.index
+                .push(ScanInfo::new(file_name.to_string(), dt_o, None));
         }
         debug!(
             "Counted {} files in zip {:?}",

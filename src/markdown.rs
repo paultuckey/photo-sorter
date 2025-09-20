@@ -12,6 +12,16 @@ pub(crate) fn mfm_from_media_file_info(media_file_info: &MediaFileInfo) -> Photo
         datetime: None,
         gps_date: None,
         unique_id: None,
+        people: media_file_info
+            .supp_info
+            .as_ref()
+            .map(|s| {
+                s.people
+                    .iter()
+                    .filter_map(|p| p.name.clone())
+                    .collect::<Vec<String>>()
+            })
+            .unwrap_or_default(),
     };
     if let Some(exif) = media_file_info.parsed_exif.clone() {
         if let Some(dt) = exif.datetime_original {
@@ -36,7 +46,7 @@ pub(crate) struct PhotoSorterFrontMatter {
     pub(crate) datetime: Option<String>,
     pub(crate) gps_date: Option<String>,
     pub(crate) unique_id: Option<String>,
-    // todo: add supplemental fields?
+    pub(crate) people: Vec<String>,
 }
 
 pub(crate) fn sync_markdown(
@@ -207,9 +217,9 @@ fn merge_yaml(s: &Option<String>, fm: &PhotoSorterFrontMatter) -> String {
         root = Hash::default();
     }
     yaml_array_merge(&mut root, &"original-paths".to_string(), &fm.path_original);
+    yaml_array_merge(&mut root, &"people".to_string(), &fm.people);
 
-    // todo: add longitude, latitude and people
-    // todo: add exif datetime, gps date, unique id
+    // TODO: do we need to add longitude, latitude? they are stored in exif, but might be nice to have?
 
     let mut out_str = String::new();
     {
@@ -269,6 +279,7 @@ mod tests {
             datetime: None,
             gps_date: None,
             unique_id: None,
+            people: vec!["Nandor".to_string(), "Laszlo".to_string()]
         }
     }
 
@@ -287,6 +298,9 @@ mod tests {
 original-paths:
   - p1
   - p2
+people:
+  - Nandor
+  - Laszlo
 "
         );
     }
@@ -298,6 +312,9 @@ original-paths:
   - list1
 original-paths:
   - p0
+people:
+  - Nandor
+  - Nadja
 "
         .to_string();
         let yaml = merge_yaml(&Some(s), &get_mfi());
@@ -309,6 +326,10 @@ original-paths:
   - p0
   - p1
   - p2
+people:
+  - Nandor
+  - Nadja
+  - Laszlo
 "
         );
     }
