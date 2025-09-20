@@ -54,13 +54,14 @@ pub(crate) fn sync_markdown(
     media_file: &MediaFileInfo,
     output_c: &mut PsDirectoryContainer,
 ) -> anyhow::Result<()> {
-    let Some(output_path) = media_file.desired_markdown_path.clone() else {
+    let Some(desired_media_path) = media_file.desired_media_path.clone() else {
         warn!(
-            "No desired markdown path for media file: {:?}",
+            "No desired media path for media file: {:?}",
             media_file.original_path
         );
         return Ok(());
     };
+    let output_path = get_desired_markdown_path(desired_media_path)?;
     let mfm = mfm_from_media_file_info(media_file);
     let mut e_md = "".to_string();
     let mut e_yaml = None;
@@ -268,6 +269,16 @@ fn yaml_array_merge(root: &mut Hash, key: &String, arr: &Vec<String>) {
     root.insert(Yaml::String(key.to_string()), Yaml::Array(arr_y));
 }
 
+pub(crate) fn get_desired_markdown_path(desired_media_path: String) -> anyhow::Result<String> {
+    let md_path = desired_media_path
+        .rsplit_once('.')
+        .map(|(name, _)| name.to_string() + ".md");
+    match md_path {
+        None => Err(anyhow!("Could not determine markdown path from media path")),
+        Some(mdp) => Ok(mdp),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -452,5 +463,20 @@ people:
         let (fm, md) = split_frontmatter(text);
         assert_eq!(fm, "title: dummy_title");
         assert_eq!(md, "dummy_body");
+    }
+
+    #[test]
+    fn test_desired_md_path() {
+        crate::test_util::setup_log();
+        assert_eq!(get_desired_markdown_path("".to_string()).ok(), None);
+        assert_eq!(
+            get_desired_markdown_path("abc.jpg".to_string()).ok(),
+            Some("abc.md".to_string())
+        );
+        assert_eq!(get_desired_markdown_path("abc".to_string()).ok(), None);
+        assert_eq!(
+            get_desired_markdown_path("abc.def.ghi.jkl".to_string()).ok(),
+            Some("abc.def.ghi.md".to_string())
+        );
     }
 }

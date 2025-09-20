@@ -387,4 +387,20 @@ mod tests {
         assert_eq!(si.modified_datetime, Some(1749917340000));
         Ok(())
     }
+
+    #[test]
+    fn test_files_checksum() -> anyhow::Result<()> {
+        use crate::util::PsDirectoryContainer;
+        let mut c = PsDirectoryContainer::new(&"test".to_string());
+        let b = c.file_bytes("Canon_40D.jpg")?;
+        let csm = checksum_bytes(&b)?;
+        assert_eq!(
+            csm,
+            (
+                "6bfdabd".to_string(),
+                "6bfdabd4fc33d112283c147acccc574e770bbe6fbdbc3d4da968ba7b606ecc2f".to_string()
+            )
+        );
+        Ok(())
+    }
 }

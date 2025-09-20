@@ -5,6 +5,7 @@ use crate::media::{MediaFileInfo, media_file_info_from_readable};
 use crate::supplemental_info::{
     SupplementalInfo, detect_supplemental_info, load_supplemental_info,
 };
+use crate::sync_cmd::DeDuplicationResult::{SkipWrite, WritePath};
 use crate::util::{
     Progress, PsContainer, PsDirectoryContainer, PsZipContainer, ScanInfo, checksum_bytes,
     is_existing_file_same,
@@ -13,6 +14,8 @@ use anyhow::anyhow;
 use log::{debug, info, warn};
 use std::collections::HashMap;
 use std::path::Path;
+
+const MAX_DUPLICATE_CHECK_ATTEMPTS: i32 = 5;
 
 pub(crate) fn main(
     dry_run: bool,
@@ -180,33 +183,113 @@ pub(crate) fn write_media(
     output_container: &mut PsDirectoryContainer,
 ) -> anyhow::Result<()> {
     info!("Output {:?}", media_file.desired_media_path);
+
+    let desired_output_path_with_ext = match get_de_duplicated_path(media_file, output_container)?
+    {
+        SkipWrite => return Ok(()),
+        WritePath(path) => path,
+    };
+    let bytes = input_container.file_bytes(&media_file.original_file_this_run)?;
+    output_container.write(dry_run, &desired_output_path_with_ext.clone(), &bytes);
+    output_container.set_modified(
+        dry_run,
+        &desired_output_path_with_ext.clone(),
+        &media_file.modified,
+    );
+    Ok(())
+}
+
+#[derive(Debug, PartialEq)]
+enum DeDuplicationResult {
+    WritePath(String),
+    SkipWrite,
+}
+
+fn get_de_duplicated_path(
+    media_file: &MediaFileInfo,
+    output_container: &mut PsDirectoryContainer,
+) -> anyhow::Result<DeDuplicationResult> {
     let Some(desired_output_path) = &media_file.desired_media_path else {
         debug!("  No desired media path for file: {media_file:?}");
         return Err(anyhow!("No desired media path for file: {media_file:?}"));
     };
-    if output_container.exists(desired_output_path) {
+    for attempt in 0..MAX_DUPLICATE_CHECK_ATTEMPTS {
+        let suffix = match attempt {
+            0 => String::new(),
+            // second to last attempt, use short checksum as suffix, should be mostly unique
+            n if n == MAX_DUPLICATE_CHECK_ATTEMPTS - 2 => format!("-{}", media_file.short_checksum),
+            // last attempt, use long checksum as suffix, should be guaranteed unique
+            n if n == MAX_DUPLICATE_CHECK_ATTEMPTS - 1 => format!("-{}", media_file.long_checksum),
+            // on first retry add -1, then -2, etc
+            n => format!("-{n}"),
+        };
+        let desired_output_path_with_ext = format!(
+            "{}{}.{}",
+            desired_output_path, suffix, media_file.desired_media_extension
+        );
+        if !output_container.exists(&desired_output_path_with_ext) {
+            return Ok(WritePath(desired_output_path_with_ext));
+        }
         let es_o = is_existing_file_same(
             output_container,
             &media_file.long_checksum,
-            desired_output_path,
+            &desired_output_path_with_ext,
         );
-        if let Some(existing_same) = es_o {
-            if !existing_same {
-                // TODO: Existing files are a problem, If we exclude the short checksum in the filename
-                //  we would get more clashes. When determining duplicates we would need to check all
-                //  files that have the same hh:mm:ss.ms.  That is fine, but is it worth the tradeoff?
-                //  - Yes: cleaner files names, slightly slower write time.  Writes would never fail.
-                //    - need to match all `hhmmss-ms*` in the same folder
-                //  - No: messier file names, faster writes.  Writes might fail on duplicate with different checksum..
-                warn!("  File with different checksum already exists");
-                return Err(anyhow!("File clash: {desired_output_path:?}"));
+        match es_o {
+            Some(true) => {
+                debug!("  No need to write, file already exists with same checksum");
+                return Ok(SkipWrite);
             }
-            debug!("  No need to write, file already exists with same checksum");
+            Some(false) => {
+                warn!(
+                    "  Existing file is different at {desired_output_path_with_ext}, attempting with different suffix"
+                );
+                // continue with next attempt
+            }
+            None => {
+                warn!(
+                    "  Could not determine if existing file is same or different {desired_output_path_with_ext}",
+                );
+                return Err(anyhow!(
+                    "Could not determine if existing file is same or different: {desired_output_path:?}"
+                ));
+            }
         }
-    } else {
-        let bytes = input_container.file_bytes(&media_file.original_file_this_run)?;
-        output_container.write(dry_run, &desired_output_path.clone(), &bytes);
-        output_container.set_modified(dry_run, &desired_output_path.clone(), &media_file.modified);
     }
-    Ok(())
+    Err(anyhow!(format!(
+        "Attempts to find a unique filename failed: {desired_output_path:?}"
+    )))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::util::PsDirectoryContainer;
+
+    #[test]
+    fn test_dedupe_one() -> anyhow::Result<()> {
+        let mut c = PsDirectoryContainer::new(&"test".to_string());
+        let mfi = MediaFileInfo::new_for_test(Some("duplicates/one".to_string()), "txt");
+        let res = get_de_duplicated_path(&mfi, &mut c)?;
+        assert_eq!(res, WritePath("duplicates/one-1.txt".to_string()));
+        Ok(())
+    }
+
+    #[test]
+    fn test_dedupe_many() -> anyhow::Result<()> {
+        let mut c = PsDirectoryContainer::new(&"test".to_string());
+        let mfi = MediaFileInfo::new_for_test(Some("duplicates/many".to_string()), "txt");
+        let res = get_de_duplicated_path(&mfi, &mut c)?;
+        assert_eq!(res, WritePath("duplicates/many-tsc.txt".to_string()));
+        Ok(())
+    }
+
+    #[test]
+    fn test_dedupe_too_many() -> anyhow::Result<()> {
+        let mut c = PsDirectoryContainer::new(&"test".to_string());
+        let mfi = MediaFileInfo::new_for_test(Some("duplicates/too-many".to_string()), "txt");
+        let res = get_de_duplicated_path(&mfi, &mut c);
+        assert_eq!(res.ok(), None);
+        Ok(())
+    }
 }
