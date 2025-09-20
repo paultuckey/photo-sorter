@@ -1,11 +1,11 @@
 use crate::file_type::AccurateFileType;
 use crate::supplemental_info::SupplementalInfo;
+use crate::util::ScanInfo;
 use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, SecondsFormat};
 use exif::{Exif, Field, In, Reader, Tag, Value};
 use log::{debug, warn};
 use std::fmt::Display;
 use std::io::{BufReader, Cursor};
-use crate::util::ScanInfo;
 
 #[derive(Debug, Clone)]
 pub(crate) struct ParsedExif {

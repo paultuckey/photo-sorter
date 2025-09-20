@@ -279,7 +279,7 @@ mod tests {
             datetime: None,
             gps_date: None,
             unique_id: None,
-            people: vec!["Nandor".to_string(), "Laszlo".to_string()]
+            people: vec!["Nandor".to_string(), "Laszlo".to_string()],
         }
     }
 

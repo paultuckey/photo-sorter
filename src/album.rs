@@ -3,7 +3,7 @@ use crate::media::MediaFileInfo;
 use crate::util::{PsContainer, ScanInfo, dir_part, name_part};
 use log::{debug, info, warn};
 use serde_json::Value;
-use std::collections::{HashMap};
+use std::collections::HashMap;
 use std::io;
 use std::path::Path;
 
