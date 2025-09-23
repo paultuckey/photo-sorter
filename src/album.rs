@@ -150,36 +150,6 @@ fn parse_json_album(
     })
 }
 
-// pub(crate) fn de_duplicate_albums(albums: &Vec<Album>) -> Vec<Album> {
-//     let mut clean_albums: Vec<Album> = vec![];
-//     let mut used_names = HashSet::new();
-//     for album in albums {
-//         let mut name = album.title.clone();
-//         let mut attempt = 0;
-//         loop {
-//             attempt += 1;
-//             if !used_names.contains(&name) {
-//                 clean_albums.push(Album {
-//                     title: name.clone(),
-//                     desired_album_md_path: album.desired_album_md_path.clone(),
-//                     files: album.files.clone(),
-//                 });
-//                 used_names.insert(name);
-//                 break;
-//             }
-//             name = format!("{name}-{attempt}");
-//             if attempt > 100 {
-//                 warn!(
-//                     "Too many attempts to find unique name for album: {:?}",
-//                     &album.title
-//                 );
-//                 break;
-//             }
-//         }
-//     }
-//     clean_albums
-// }
-
 pub(crate) struct Album {
     pub(crate) desired_album_md_path: String,
     pub(crate) title: String,

@@ -184,8 +184,7 @@ pub(crate) fn write_media(
 ) -> anyhow::Result<()> {
     info!("Output {:?}", media_file.desired_media_path);
 
-    let desired_output_path_with_ext = match get_de_duplicated_path(media_file, output_container)?
-    {
+    let desired_output_path_with_ext = match get_de_duplicated_path(media_file, output_container)? {
         SkipWrite => return Ok(()),
         WritePath(path) => path,
     };
