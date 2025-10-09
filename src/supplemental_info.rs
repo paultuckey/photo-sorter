@@ -43,7 +43,7 @@ pub(crate) struct SupplementalInfoGeoData {
 #[derive(Deserialize, Debug, Clone)]
 #[serde(rename_all(deserialize = "camelCase", serialize = "camelCase"))]
 pub(crate) struct SupplementalInfoPerson {
-    name: Option<String>,
+    pub(crate) name: Option<String>,
 }
 #[derive(Deserialize, Debug, Clone)]
 #[serde(rename_all(deserialize = "camelCase", serialize = "camelCase"))]

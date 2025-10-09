@@ -12,8 +12,10 @@ use log::warn;
 pub(crate) struct MediaFileInfo {
     pub(crate) original_file_this_run: String,
     pub(crate) original_path: Vec<String>,
+    /// Desired path relative to output directory, minus the dot and file extension (eg, 2025/09/10/1234-56-789)
     pub(crate) desired_media_path: Option<String>,
-    pub(crate) desired_markdown_path: Option<String>,
+    /// Desired file extension (eg, jpg, mp4)
+    pub(crate) desired_media_extension: String,
     pub(crate) quick_file_type: QuickFileType,
     pub(crate) parsed_exif: Option<ParsedExif>,
     pub(crate) accurate_file_type: AccurateFileType,
@@ -26,13 +28,13 @@ pub(crate) struct MediaFileInfo {
 }
 
 pub(crate) fn media_file_info_from_readable(
-    qsf: &ScanInfo,
+    scan_info: &ScanInfo,
     bytes: &Vec<u8>,
     supp_info: &Option<SupplementalInfo>,
     short_checksum: &str,
     long_checksum: &str,
 ) -> anyhow::Result<MediaFileInfo> {
-    let name = &qsf.file_path;
+    let name = &scan_info.file_path;
     let guessed_ff = determine_file_type(bytes, name);
     if guessed_ff == AccurateFileType::Unsupported {
         warn!("Not a valid media file {name:?}");
@@ -41,47 +43,28 @@ pub(crate) fn media_file_info_from_readable(
     let exif_o = parse_exif(bytes, name, &guessed_ff);
 
     let ext = file_ext_from_file_type(&guessed_ff);
-    let guessed_datetime = best_guess_taken_dt(&exif_o, &qsf.modified_datetime, supp_info);
-    let desired_media_path_o = Some(get_desired_media_path(
-        short_checksum,
-        &guessed_datetime,
-        &ext,
-    ));
-    let desired_markdown_path_o = get_desired_markdown_path(desired_media_path_o.clone());
-
+    let guessed_datetime = best_guess_taken_dt(&exif_o, scan_info, supp_info);
+    let desired_media_path_o = Some(get_desired_media_path(short_checksum, &guessed_datetime));
     let media_file_info = MediaFileInfo {
         original_file_this_run: name.clone(),
         original_path: vec![name.clone()],
         accurate_file_type: guessed_ff.clone(),
-        quick_file_type: qsf.quick_file_type.clone(),
+        quick_file_type: scan_info.quick_file_type.clone(),
         parsed_exif: exif_o.clone(),
         short_checksum: short_checksum.to_string(),
         long_checksum: long_checksum.to_string(),
         desired_media_path: desired_media_path_o.clone(),
-        desired_markdown_path: desired_markdown_path_o.clone(),
+        desired_media_extension: ext,
         supp_info: supp_info.clone(),
-        modified: qsf.modified_datetime,
+        modified: scan_info.modified_datetime,
         guessed_datetime,
     };
     Ok(media_file_info)
 }
 
-pub(crate) fn get_desired_markdown_path(desired_media_path: Option<String>) -> Option<String> {
-    match desired_media_path {
-        None => None,
-        Some(dmp) => dmp
-            .rsplit_once('.')
-            .map(|(name, _)| name.to_string() + ".md"),
-    }
-}
-
-/// `yyyy/mm/dd/hhmm-ss[-i].ext`
-/// OR `undated/checksum.ext`
-pub(crate) fn get_desired_media_path(
-    short_checksum: &str,
-    media_datetime: &Option<i64>,
-    ext: &str,
-) -> String {
+/// `yyyy/mm/dd/hhmm-ssms`
+/// OR `undated/checksum`
+pub(crate) fn get_desired_media_path(short_checksum: &str, media_datetime: &Option<i64>) -> String {
     let date_dir;
     let name;
     if let Some(dt_ms) = media_datetime {
@@ -89,12 +72,13 @@ pub(crate) fn get_desired_media_path(
         match dt {
             Some(dt) => {
                 date_dir = format!("{}/{:0>2}/{:0>2}", dt.year(), dt.month(), dt.day());
-                let mut time_name =
-                    format!("{:0>2}{:0>2}-{:0>2}", dt.hour(), dt.minute(), dt.second());
-                if dt.timestamp_subsec_millis() > 0 {
-                    time_name = format!("{time_name}-{:0>3}", dt.timestamp_subsec_millis());
-                }
-                name = format!("{time_name}-{short_checksum}");
+                name = format!(
+                    "{:0>2}{:0>2}-{:0>2}{:0>3}",
+                    dt.hour(),
+                    dt.minute(),
+                    dt.second(),
+                    dt.timestamp_subsec_millis()
+                );
             }
             None => {
                 warn!("Could not parse datetime: {dt_ms:?}");
@@ -106,7 +90,7 @@ pub(crate) fn get_desired_media_path(
         date_dir = "undated".to_string();
         name = short_checksum.to_owned();
     }
-    format!("{date_dir}/{name}.{ext}")
+    format!("{date_dir}/{name}")
 }
 
 #[cfg(test)]
@@ -114,22 +98,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_desired_md_path() {
-        crate::test_util::setup_log();
-        assert_eq!(get_desired_markdown_path(None), None);
-        assert_eq!(
-            get_desired_markdown_path(Some("abc.jpg".to_string())),
-            Some("abc.md".to_string())
-        );
-        assert_eq!(get_desired_markdown_path(Some("abc".to_string())), None);
-        assert_eq!(
-            get_desired_markdown_path(Some("abc.def.ghi.jkl".to_string())),
-            Some("abc.def.ghi.md".to_string())
-        );
-    }
-
-    #[test]
-    fn test_desired_path() -> anyhow::Result<()> {
+    fn test_desired_media_path() -> anyhow::Result<()> {
         crate::test_util::setup_log();
         use crate::util::PsContainer;
         use crate::util::PsDirectoryContainer;
@@ -140,17 +109,40 @@ mod tests {
         let short_checksum = checksum_bytes(&bytes)?.0;
 
         assert_eq!(
-            get_desired_media_path(&short_checksum, &None, &"jpeg".to_string()),
-            "undated/6bfdabd.jpeg".to_string()
+            get_desired_media_path(&short_checksum, &None),
+            "undated/6bfdabd".to_string()
         );
         assert_eq!(
-            get_desired_media_path(&short_checksum, &Some(1212162961000), &"jpeg".to_string()),
-            "2008/05/30/1556-01-6bfdabd.jpeg".to_string()
+            get_desired_media_path(&short_checksum, &Some(1212162961000)),
+            "2008/05/30/1556-01000".to_string()
         );
         assert_eq!(
-            get_desired_media_path(&short_checksum, &Some(1212162961009), &"jpeg".to_string()),
-            "2008/05/30/1556-01-009-6bfdabd.jpeg".to_string()
+            get_desired_media_path(&short_checksum, &Some(1212162961009)),
+            "2008/05/30/1556-01009".to_string()
         );
         Ok(())
+    }
+}
+
+#[cfg(test)]
+impl MediaFileInfo {
+    pub(crate) fn new_for_test(
+        desired_media_path: Option<String>,
+        desired_media_extension: &str,
+    ) -> Self {
+        MediaFileInfo {
+            original_file_this_run: "".to_string(),
+            original_path: vec![],
+            desired_media_path,
+            desired_media_extension: desired_media_extension.to_string(),
+            quick_file_type: QuickFileType::Media,
+            parsed_exif: None,
+            accurate_file_type: AccurateFileType::Jpg,
+            short_checksum: "tsc".to_string(),
+            long_checksum: "tlc".to_string(),
+            supp_info: None,
+            modified: None,
+            guessed_datetime: None,
+        }
     }
 }

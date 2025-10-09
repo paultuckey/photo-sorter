@@ -3,7 +3,7 @@ use crate::media::MediaFileInfo;
 use crate::util::{PsContainer, ScanInfo, dir_part, name_part};
 use log::{debug, info, warn};
 use serde_json::Value;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::io;
 use std::path::Path;
 
@@ -150,58 +150,10 @@ fn parse_json_album(
     })
 }
 
-pub(crate) fn de_duplicate_albums(albums: &Vec<Album>) -> Vec<Album> {
-    let mut clean_albums: Vec<Album> = vec![];
-    let mut used_names = HashSet::new();
-    for album in albums {
-        let mut name = album.title.clone();
-        let mut attempt = 0;
-        loop {
-            attempt += 1;
-            if !used_names.contains(&name) {
-                clean_albums.push(Album {
-                    title: name.clone(),
-                    desired_album_md_path: album.desired_album_md_path.clone(),
-                    files: album.files.clone(),
-                });
-                used_names.insert(name);
-                break;
-            }
-            name = format!("{name}-{attempt}");
-            if attempt > 100 {
-                warn!(
-                    "Too many attempts to find unique name for album: {:?}",
-                    &album.title
-                );
-                break;
-            }
-        }
-    }
-    clean_albums
-}
-
 pub(crate) struct Album {
     pub(crate) desired_album_md_path: String,
     pub(crate) title: String,
     files: Vec<String>,
-}
-
-/// albums to maps of media files with a vec of album names
-pub(crate) fn albums_to_files_map(albums: &[Album]) -> HashMap<String, Vec<String>> {
-    let mut m = HashMap::<String, Vec<String>>::new();
-    for album in albums {
-        for f in album.files.clone() {
-            match m.get_mut(&f) {
-                Some(v) => {
-                    v.push(album.title.clone());
-                }
-                None => {
-                    m.insert(f.clone(), vec![album.title.clone()]);
-                }
-            }
-        }
-    }
-    m
 }
 
 pub(crate) fn build_album_md(
@@ -253,7 +205,7 @@ mod tests {
         use crate::util::PsDirectoryContainer;
         let mut c: Box<dyn PsContainer> = Box::new(PsDirectoryContainer::new(&"test".to_string()));
         assert_eq!(c.root_exists(), true);
-        let qsf = ScanInfo::new("ic-album-sample.csv".to_string(), None);
+        let qsf = ScanInfo::new("ic-album-sample.csv".to_string(), None, None);
         let a = parse_album(&mut c, &qsf, &vec![]).unwrap();
         assert_eq!(a.title, "ic-album-sample".to_string());
         assert_eq!(a.files.len(), 5);
@@ -270,9 +222,9 @@ mod tests {
         use crate::util::PsDirectoryContainer;
         let mut c: Box<dyn PsContainer> =
             Box::new(PsDirectoryContainer::new(&"test/takeout1".to_string()));
-        let qsf = ScanInfo::new("Google Photos/album1/metadata.json".to_string(), None);
-        let si1 = ScanInfo::new("Google Photos/album1/test1.jpg".to_string(), None);
-        let si2 = ScanInfo::new("different/test2.jpg".to_string(), None);
+        let qsf = ScanInfo::new("Google Photos/album1/metadata.json".to_string(), None, None);
+        let si1 = ScanInfo::new("Google Photos/album1/test1.jpg".to_string(), None, None);
+        let si2 = ScanInfo::new("different/test2.jpg".to_string(), None, None);
         let a = parse_album(&mut c, &qsf, &vec![si1, si2]).unwrap();
         assert_eq!(a.title, "Some album title".to_string());
         assert_eq!(a.files.len(), 1);

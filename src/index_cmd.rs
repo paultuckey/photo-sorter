@@ -9,13 +9,16 @@ use strum_macros::Display;
 
 ///
 /// Do we understand all the dirs/files in a google takeout or icloud directory/zip?
-/// Naming is pretty loose, especially in google takeout os this command is not overly useful.
+/// Naming is pretty loose, especially in google takeout where this command is not overly useful.
 /// It uses the strictest possible regex to identify dirs/files that match known patterns.
 ///
 /// TODO:
-///  - relate photos/videos to corresponding metadata
 ///  - how to relate albums to corresponding photos/videos
+///  - relating photos/videos to corresponding metadata
+///
+/// Out of scope:
 ///  - relate edits/animations/originals together
+///    - this requires too much knowledge of icloud and google takeout structure
 ///
 pub(crate) fn main(input: &String) -> anyhow::Result<()> {
     debug!("Inspecting: {input}");
@@ -100,11 +103,11 @@ pub(crate) fn main(input: &String) -> anyhow::Result<()> {
 #[derive(Debug, Clone, Display, PartialEq)]
 enum KnownDir {
     // todo: do dirs change names for other languages? eg, es:fotos zh:照片?
-    GtpNonAlbumForYear(String),
-    GtpArchive,
-    GtpBin,
+    GpPhotosFromYear(String),
+    GpArchive,
+    GpBin,
 
-    IcpNonAlbum,
+    IcpPhotos,
     IcpAlbums,
     IcpMemories,
     IcpRecentlyDeleted,
@@ -116,19 +119,19 @@ enum KnownFileType {
 
     // can be in either provider
     Photo(String),
-    Ignored, // any file we know it's file pattern but we don't need it
+    Ignored, // any file where we know it's file pattern and we know we don't need it
 
     // typically in google photos
-    GtpMetadataJson(String),
-    GtpPicasaSyncMetadataJson(String),
-    GtpAlbumJson,
+    GpMetadataJson(String),
+    GpPicasaSyncMetadataJson(String),
+    GpAlbumJson,
     PhotoWithGuid(String),
-    GtpCollage(String),
-    GtpAnimation(String),
-    GtpPrintSubscription,
-    GtpSharedAlbumComments,
-    GtpUserGeneratedMemoryTitles,
-    GtpArchiveBrowser,
+    GpCollage(String),
+    GpAnimation(String),
+    GpPrintSubscription,
+    GpSharedAlbumComments,
+    GpUserGeneratedMemoryTitles,
+    GpArchiveBrowser,
 
     // typically in icloud photos
     IcpAlbumCsv(String),
@@ -181,32 +184,32 @@ fn make_file_patterns() -> Vec<(Vec<Regex>, MatchingFilePatternFn)> {
                 r"^(.+)\.(heic|jpg|jpeg|mov|png|gif)\.supplemental-metadata\([0-9]+\)\.json$",
                 r"^(.+)\.(heic|jpg|jpeg|mov|png|gif)\.supplemental-metadata.json$",
             ],
-            |m| KnownFileType::GtpMetadataJson(m.g1),
+            |m| KnownFileType::GpMetadataJson(m.g1),
         ),
         (
             &[r"^picasasync\.supplemental-metadata\([0-9]+\).json$"],
-            |m| KnownFileType::GtpPicasaSyncMetadataJson(m.g1),
+            |m| KnownFileType::GpPicasaSyncMetadataJson(m.g1),
         ),
         (&[r"^shared_album_comments.json$"], |_| {
-            KnownFileType::GtpSharedAlbumComments
+            KnownFileType::GpSharedAlbumComments
         }),
         (&[r"^archive_browser.html$"], |_| {
-            KnownFileType::GtpArchiveBrowser
+            KnownFileType::GpArchiveBrowser
         }),
         (&[r"^user-generated-memory-titles.json$"], |_| {
-            KnownFileType::GtpUserGeneratedMemoryTitles
+            KnownFileType::GpUserGeneratedMemoryTitles
         }),
         (
             &[r"^([\d_]+)-animation.gif$", r"^img_([\d_]+)-animation.gif$"],
-            |m| KnownFileType::GtpAnimation(m.g1),
+            |m| KnownFileType::GpAnimation(m.g1),
         ),
         (&[r"^([\d_]+)-collage.jpg$"], |m| {
-            KnownFileType::GtpCollage(m.g1)
+            KnownFileType::GpCollage(m.g1)
         }),
         (&[r"^print-subscriptions.json$"], |_| {
-            KnownFileType::GtpPrintSubscription
+            KnownFileType::GpPrintSubscription
         }),
-        (&[r"^metadata.json$"], |_| KnownFileType::GtpAlbumJson),
+        (&[r"^metadata.json$"], |_| KnownFileType::GpAlbumJson),
         (&[r"^(.+)\.csv$"], |m| KnownFileType::IcpAlbumCsv(m.g1)),
         (&[r"^icloud shared albums.zip$"], |_| {
             KnownFileType::IcpSharedAlbumsZip
@@ -233,13 +236,13 @@ fn make_file_patterns() -> Vec<(Vec<Regex>, MatchingFilePatternFn)> {
 fn make_dir_patterns() -> Vec<(Vec<Regex>, MatchingDirPatternFn)> {
     let patterns: Vec<(&[&str], MatchingDirPatternFn)> = vec![
         (&[r"^google photos/photos from (\d{4})$"], |m| {
-            KnownDir::GtpNonAlbumForYear(m.g1)
+            KnownDir::GpPhotosFromYear(m.g1)
         }),
-        (&[r"^photos$"], |_| KnownDir::IcpNonAlbum),
+        (&[r"^photos$"], |_| KnownDir::IcpPhotos),
         (&[r"^albums$"], |_| KnownDir::IcpAlbums),
         (&[r"^memories$"], |_| KnownDir::IcpMemories),
-        (&[r"^archive"], |_| KnownDir::GtpArchive),
-        (&[r"^bin"], |_| KnownDir::GtpBin),
+        (&[r"^archive"], |_| KnownDir::GpArchive),
+        (&[r"^bin"], |_| KnownDir::GpBin),
         (&[r"^memories/(.+)$"], |_| KnownDir::IcpMemories),
         (&[r"^recently deleted"], |_| KnownDir::IcpRecentlyDeleted),
     ];
@@ -339,7 +342,7 @@ mod tests {
         );
         assert_eq!(
             find_known_files("Google Photos/2016-book/IMG_1316.JPG.supplemental-metadata.json"),
-            vec![KnownFileType::GtpMetadataJson(String::from("img_1316"))]
+            vec![KnownFileType::GpMetadataJson(String::from("img_1316"))]
         );
     }
 

@@ -12,6 +12,16 @@ pub(crate) fn mfm_from_media_file_info(media_file_info: &MediaFileInfo) -> Photo
         datetime: None,
         gps_date: None,
         unique_id: None,
+        people: media_file_info
+            .supp_info
+            .as_ref()
+            .map(|s| {
+                s.people
+                    .iter()
+                    .filter_map(|p| p.name.clone())
+                    .collect::<Vec<String>>()
+            })
+            .unwrap_or_default(),
     };
     if let Some(exif) = media_file_info.parsed_exif.clone() {
         if let Some(dt) = exif.datetime_original {
@@ -36,7 +46,7 @@ pub(crate) struct PhotoSorterFrontMatter {
     pub(crate) datetime: Option<String>,
     pub(crate) gps_date: Option<String>,
     pub(crate) unique_id: Option<String>,
-    // todo: add supplemental fields?
+    pub(crate) people: Vec<String>,
 }
 
 pub(crate) fn sync_markdown(
@@ -44,13 +54,14 @@ pub(crate) fn sync_markdown(
     media_file: &MediaFileInfo,
     output_c: &mut PsDirectoryContainer,
 ) -> anyhow::Result<()> {
-    let Some(output_path) = media_file.desired_markdown_path.clone() else {
+    let Some(desired_media_path) = media_file.desired_media_path.clone() else {
         warn!(
-            "No desired markdown path for media file: {:?}",
+            "No desired media path for media file: {:?}",
             media_file.original_path
         );
         return Ok(());
     };
+    let output_path = get_desired_markdown_path(desired_media_path)?;
     let mfm = mfm_from_media_file_info(media_file);
     let mut e_md = "".to_string();
     let mut e_yaml = None;
@@ -207,9 +218,9 @@ fn merge_yaml(s: &Option<String>, fm: &PhotoSorterFrontMatter) -> String {
         root = Hash::default();
     }
     yaml_array_merge(&mut root, &"original-paths".to_string(), &fm.path_original);
+    yaml_array_merge(&mut root, &"people".to_string(), &fm.people);
 
-    // todo: add longitude, latitude and people
-    // todo: add exif datetime, gps date, unique id
+    // TODO: do we need to add longitude, latitude? they are stored in exif, but might be nice to have?
 
     let mut out_str = String::new();
     {
@@ -258,6 +269,16 @@ fn yaml_array_merge(root: &mut Hash, key: &String, arr: &Vec<String>) {
     root.insert(Yaml::String(key.to_string()), Yaml::Array(arr_y));
 }
 
+pub(crate) fn get_desired_markdown_path(desired_media_path: String) -> anyhow::Result<String> {
+    let md_path = desired_media_path
+        .rsplit_once('.')
+        .map(|(name, _)| name.to_string() + ".md");
+    match md_path {
+        None => Err(anyhow!("Could not determine markdown path from media path")),
+        Some(mdp) => Ok(mdp),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -269,6 +290,7 @@ mod tests {
             datetime: None,
             gps_date: None,
             unique_id: None,
+            people: vec!["Nandor".to_string(), "Laszlo".to_string()],
         }
     }
 
@@ -287,6 +309,9 @@ mod tests {
 original-paths:
   - p1
   - p2
+people:
+  - Nandor
+  - Laszlo
 "
         );
     }
@@ -298,6 +323,9 @@ original-paths:
   - list1
 original-paths:
   - p0
+people:
+  - Nandor
+  - Nadja
 "
         .to_string();
         let yaml = merge_yaml(&Some(s), &get_mfi());
@@ -309,6 +337,10 @@ original-paths:
   - p0
   - p1
   - p2
+people:
+  - Nandor
+  - Nadja
+  - Laszlo
 "
         );
     }
@@ -431,5 +463,20 @@ original-paths:
         let (fm, md) = split_frontmatter(text);
         assert_eq!(fm, "title: dummy_title");
         assert_eq!(md, "dummy_body");
+    }
+
+    #[test]
+    fn test_desired_md_path() {
+        crate::test_util::setup_log();
+        assert_eq!(get_desired_markdown_path("".to_string()).ok(), None);
+        assert_eq!(
+            get_desired_markdown_path("abc.jpg".to_string()).ok(),
+            Some("abc.md".to_string())
+        );
+        assert_eq!(get_desired_markdown_path("abc".to_string()).ok(), None);
+        assert_eq!(
+            get_desired_markdown_path("abc.def.ghi.jkl".to_string()).ok(),
+            Some("abc.def.ghi.md".to_string())
+        );
     }
 }

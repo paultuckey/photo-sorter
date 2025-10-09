@@ -13,7 +13,7 @@ use std::collections::HashMap;
 pub(crate) fn main(input: &String, root_s: &String) -> anyhow::Result<()> {
     debug!("Inspecting: {input}");
     let mut root: Box<dyn PsContainer> = Box::new(PsDirectoryContainer::new(root_s));
-    let si = ScanInfo::new(input.clone(), None);
+    let si = ScanInfo::new(input.clone(), None, None);
     match si.quick_file_type {
         QuickFileType::Unknown => {
             warn!("File type is unknown, skipping: {input}");

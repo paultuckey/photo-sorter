@@ -13,6 +13,10 @@ Let's use the most basic rust we can to make the code as approachable as possibl
 
 
 ```shell
+cargo fmt
+```
+
+```shell
 cargo clippy
 ```
 
