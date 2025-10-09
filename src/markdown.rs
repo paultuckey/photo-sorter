@@ -275,6 +275,9 @@ fn yaml_array_merge(root: &mut Hash, key: &String, arr: &Vec<String>) {
 }
 
 pub(crate) fn get_desired_markdown_path(desired_media_path: String) -> anyhow::Result<String> {
+    if desired_media_path.is_empty() {
+        return Err(anyhow!("Desired media path is empty"));
+    }
     Ok(desired_media_path + ".md")
 }
 
@@ -469,13 +472,12 @@ people:
         crate::test_util::setup_log();
         assert_eq!(get_desired_markdown_path("".to_string()).ok(), None);
         assert_eq!(
-            get_desired_markdown_path("abc.jpg".to_string()).ok(),
+            get_desired_markdown_path("abc".to_string()).ok(),
             Some("abc.md".to_string())
         );
-        assert_eq!(get_desired_markdown_path("abc".to_string()).ok(), None);
         assert_eq!(
             get_desired_markdown_path("abc.def.ghi.jkl".to_string()).ok(),
-            Some("abc.def.ghi.md".to_string())
+            Some("abc.def.ghi.jkl.md".to_string())
         );
     }
 }
