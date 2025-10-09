@@ -9,11 +9,15 @@ Problem: Google Takeout and iCloud archives of photos and videos:
 - do _not_ allow for duplicates to be merged
 
 Solution: A CLI tool that syncs photos, videos and albums from Google Takeout and iCloud archives
-into a standard directory structure that standardizes file names, albums and makes long-term archiving easy.
+into a standard directory structure that:
+- separates photos by year to makes long-term archiving by year possible
+- checksums files to avoid storing duplicates
+- standardizes file names based on EXIF tags
+- Standardises albums as Markdown files
 
 In detail:
 - EXIF metadata and supplemental is extracted from photos and videos and used to determine the date and time of the file
-- Files are put into directories with the following format: `yyyy/mm/dd/hhmm-ss-ms-{short checksum}.ext`
+- Files are put into directories with the following format: `yyyy/mm/dd/hhmmss-ms{-duplicate}.ext`
 - For each photo or video file:
   - A matching Markdown file is written at the same path with the extension `md`
   - This contains [YAML](https://en.wikipedia.org/wiki/YAML) frontmatter (the part between `---`'s) with metadata
