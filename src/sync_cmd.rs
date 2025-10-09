@@ -87,7 +87,10 @@ pub(crate) fn main(
                 match write_r {
                     Ok(_) => {
                         if !skip_markdown {
-                            let _ = sync_markdown(dry_run, media, output_container);
+                            let sync_md_r = sync_markdown(dry_run, media, output_container);
+                            if let Err(e) = sync_md_r {
+                                warn!("Error writing markdown file: {:?}, error: {}", media.desired_media_path, e);
+                            }
                         }
                     }
                     Err(e) => {
