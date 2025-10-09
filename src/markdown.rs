@@ -248,11 +248,14 @@ fn yaml_array_merge(root: &mut Hash, key: &String, arr: &Vec<String>) {
                         new_po.push(Yaml::String(v.to_string()));
                     }
                 }
-                root[&Yaml::String(key.to_string())] = Yaml::Array(new_po);
+                if !new_po.is_empty() {
+                    root[&Yaml::String(key.to_string())] = Yaml::Array(new_po);
+                }
                 return;
             }
             Yaml::BadValue => {
                 // fall through as current value is empty/unknown
+                warn!("Expected {key} to be an array, but it was a bad value");
             }
             _ => {
                 warn!("Expected {key} to be an array, found: {value_o:?}");
@@ -266,17 +269,13 @@ fn yaml_array_merge(root: &mut Hash, key: &String, arr: &Vec<String>) {
         .iter()
         .map(|x| Yaml::String(x.to_string()))
         .collect::<Vec<Yaml>>();
-    root.insert(Yaml::String(key.to_string()), Yaml::Array(arr_y));
+    if !arr_y.is_empty() {
+        root.insert(Yaml::String(key.to_string()), Yaml::Array(arr_y));
+    }
 }
 
 pub(crate) fn get_desired_markdown_path(desired_media_path: String) -> anyhow::Result<String> {
-    let md_path = desired_media_path
-        .rsplit_once('.')
-        .map(|(name, _)| name.to_string() + ".md");
-    match md_path {
-        None => Err(anyhow!("Could not determine markdown path from media path")),
-        Some(mdp) => Ok(mdp),
-    }
+    Ok(desired_media_path + ".md")
 }
 
 #[cfg(test)]
