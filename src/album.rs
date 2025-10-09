@@ -19,14 +19,14 @@ pub(crate) fn parse_album(
     }
 }
 
-fn parse_csv_album(container: &mut Box<dyn PsContainer>, qsf: &ScanInfo) -> Option<Album> {
-    info!("Parse CSV album: {:?}", &qsf.file_path);
-    let bytes_r = container.file_bytes(&qsf.file_path);
+fn parse_csv_album(container: &mut Box<dyn PsContainer>, si: &ScanInfo) -> Option<Album> {
+    info!("Parse CSV album: {:?}", &si.file_path);
+    let bytes_r = container.file_bytes(&si.file_path);
     let Ok(bytes) = bytes_r else {
-        warn!("No bytes for album: {:?}", &qsf.file_path);
+        warn!("No bytes for album: {:?}", &si.file_path);
         return None;
     };
-    let name = &qsf.file_path;
+    let name = &si.file_path;
     let cursor = io::Cursor::new(bytes);
     let mut rdr = csv::Reader::from_reader(cursor);
     let Ok(s) = rdr.headers() else {
@@ -61,7 +61,7 @@ fn parse_csv_album(container: &mut Box<dyn PsContainer>, qsf: &ScanInfo) -> Opti
         };
 
         // look for file with the original path {} + file_name
-        let directory_path_str = dir_part(&qsf.file_path);
+        let directory_path_str = dir_part(&si.file_path);
 
         let original_file = Path::new(&directory_path_str)
             .join(file_name)
@@ -105,12 +105,12 @@ fn parse_csv_album(container: &mut Box<dyn PsContainer>, qsf: &ScanInfo) -> Opti
 
 fn parse_json_album(
     container: &mut Box<dyn PsContainer>,
-    qsf: &ScanInfo,
+    si: &ScanInfo,
     all_scanned_files: &[ScanInfo],
 ) -> Option<Album> {
-    let bytes_r = container.file_bytes(&qsf.file_path);
+    let bytes_r = container.file_bytes(&si.file_path);
     let Ok(bytes) = bytes_r else {
-        warn!("No bytes for album: {:?}", &qsf.file_path);
+        warn!("No bytes for album: {:?}", &si.file_path);
         return None;
     };
     let j: Result<Value, _> = serde_json::from_slice(&bytes);
@@ -121,15 +121,15 @@ fn parse_json_album(
             debug!("  Found album title: {title_value}");
             title = Some(title_value.as_str().unwrap_or("").to_string());
         } else {
-            warn!("Title not found in JSON, skipping {:?}", &qsf.file_path);
+            warn!("Title not found in JSON, skipping {:?}", &si.file_path);
             return None;
         }
     } else {
-        warn!("Unable to decode album JSON: {:?}", &qsf.file_path);
+        warn!("Unable to decode album JSON: {:?}", &si.file_path);
         return None;
     }
     // all files in this directory are in the album
-    let directory_path_str = dir_part(&qsf.file_path);
+    let directory_path_str = dir_part(&si.file_path);
     // look up the media path in the media_path_map
     let same_dir_files = all_scanned_files
         .iter()
@@ -137,7 +137,7 @@ fn parse_json_album(
             let q_dir_part = &dir_part(&si.file_path);
             si.quick_file_type == QuickFileType::Media && directory_path_str.eq(q_dir_part)
         })
-        .map(|m| m.file_path.clone())
+        .map(|si| si.file_path.clone())
         .collect::<Vec<String>>();
 
     let directory_path_name_str = name_part(&directory_path_str);
@@ -160,24 +160,26 @@ pub(crate) fn build_album_md(
     album: &Album,
     all_media_o: Option<&HashMap<String, MediaFileInfo>>,
     media_relative_path: &str,
+    final_path_by_checksum: Option<&HashMap<String, String>>,
 ) -> String {
     let mut md = String::new();
     let generated_warning =
         "\n\n\n[ This file is a GENERATED album, do NOT edit it directly ]: #\n\n\n";
-    // todo: in yaml front matter link back to original album
+    // todo: in yaml front matter for media link back to album
     md.push_str(generated_warning);
     md.push_str(&format!("# {}", &album.title));
     md.push_str("\n\n");
     for f in album.files.clone() {
-        let alt_text = "Photo";
-        let mut target_path_o = None;
+        let target_path_o : Option<String>;
         if let Some(all_media) = all_media_o {
-            let media_file_info_o = all_media.values().find(|m| {
+            target_path_o = all_media.values().find(|m| {
                 m.accurate_file_type != AccurateFileType::Unsupported
                     && m.quick_file_type == QuickFileType::Media
                     && m.original_path.iter().any(|p| p.eq(&f))
+            }).and_then(|m| {
+                let cs = m.long_checksum.clone();
+                final_path_by_checksum.and_then(|fp_map| fp_map.get(&cs).cloned())
             });
-            let target_path_o = media_file_info_o.and_then(|m| m.desired_media_path.clone());
             if target_path_o.is_none() {
                 warn!("No media file desired path found for: {f}");
                 continue;
@@ -186,9 +188,12 @@ pub(crate) fn build_album_md(
             // intentionally use the original path
             target_path_o = Some(f.clone());
         }
-        if let Some(target_path) = target_path_o {
+        if let Some(target_path) = target_path_o.clone() {
+            let alt_text = "Photo";
             let path = format!("{media_relative_path}{target_path}");
             md.push_str(&format!("\n![{alt_text}]({path})"));
+        } else {
+            warn!("Target path empty: {f}");
         }
     }
     md.push_str("\n\n");
