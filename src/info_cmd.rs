@@ -101,7 +101,7 @@ pub(crate) fn album(si: &ScanInfo, root: &mut Box<dyn PsContainer>) -> anyhow::R
         });
 
     debug!("Markdown:");
-    let md = build_album_md(&album, None, "");
+    let md = build_album_md(&album, None, "", None);
     println!("{md}");
 
     Ok(())

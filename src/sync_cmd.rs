@@ -52,6 +52,7 @@ pub(crate) fn main(
         output_container_o = Some(output_container);
     }
     let mut all_media = HashMap::<String, MediaFileInfo>::new();
+    let mut final_path_by_original_path = HashMap::<String, String>::new();
 
     if !skip_media {
         let media_si_files = files
@@ -85,11 +86,15 @@ pub(crate) fn main(
                 prog.inc();
                 let write_r = write_media(media, dry_run, &mut container, output_container);
                 match write_r {
-                    Ok(_) => {
+                    Ok(final_path) => {
+                        final_path_by_original_path.insert(media.long_checksum.clone(), final_path.clone());
                         if !skip_markdown {
                             let sync_md_r = sync_markdown(dry_run, media, output_container);
                             if let Err(e) = sync_md_r {
-                                warn!("Error writing markdown file: {:?}, error: {}", media.desired_media_path, e);
+                                warn!(
+                                    "Error writing markdown file: {:?}, error: {}",
+                                    media.desired_media_path, e
+                                );
                             }
                         }
                     }
@@ -128,7 +133,12 @@ pub(crate) fn main(
 
         info!("Outputting {} albums", albums.len());
         for album in albums {
-            let a_s = build_album_md(&album, Some(&all_media), "../");
+            let a_s = build_album_md(
+                &album,
+                Some(&all_media),
+                "../",
+                Some(&final_path_by_original_path),
+            );
             let Some(output_c) = &output_container_o else {
                 continue;
             };
@@ -151,29 +161,29 @@ pub(crate) fn main(
 /// - populate exif data
 pub(crate) fn inspect_media(
     bytes: &Vec<u8>,
-    qsf: &ScanInfo,
+    si: &ScanInfo,
     all_media: &mut HashMap<String, MediaFileInfo>,
     supp_info: &Option<SupplementalInfo>,
 ) -> anyhow::Result<MediaFileInfo> {
-    info!("Inspect: {}", qsf.file_path);
+    info!("Inspect: {}", si.file_path);
     let checksum_o = checksum_bytes(bytes).ok();
     let Some((short_checksum, long_checksum)) = checksum_o else {
-        warn!("Could not calculate checksum for: {:?}", qsf.file_path);
+        warn!("Could not calculate checksum for: {:?}", si.file_path);
         return Err(anyhow!(
             "Could not calculate checksum for file: {:?}",
-            qsf.file_path
+            si.file_path
         ));
     };
     debug!("  Checksum calculated: {long_checksum}");
     if let Some(m) = all_media.get_mut(&long_checksum) {
-        m.original_path.push(qsf.file_path.clone());
+        m.original_path.push(si.file_path.clone());
         return Ok(m.clone());
     }
     let media_file_info_res =
-        media_file_info_from_readable(qsf, bytes, supp_info, &short_checksum, &long_checksum);
+        media_file_info_from_readable(si, bytes, supp_info, &short_checksum, &long_checksum);
     let Ok(media_file) = media_file_info_res else {
-        warn!("Could not calculate info for: {:?}", qsf.file_path);
-        return Err(anyhow!("File type unsupported: {:?}", qsf.file_path));
+        warn!("Could not calculate info for: {:?}", si.file_path);
+        return Err(anyhow!("File type unsupported: {:?}", si.file_path));
     };
     all_media.insert(media_file.long_checksum.clone(), media_file.clone());
     Ok(media_file)
@@ -184,11 +194,11 @@ pub(crate) fn write_media(
     dry_run: bool,
     input_container: &mut Box<dyn PsContainer>,
     output_container: &mut PsDirectoryContainer,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<String> {
     info!("Output {:?}", media_file.desired_media_path);
 
     let desired_output_path_with_ext = match get_de_duplicated_path(media_file, output_container)? {
-        SkipWrite => return Ok(()),
+        SkipWrite(path) => return Ok(path),
         WritePath(path) => path,
     };
     let bytes = input_container.file_bytes(&media_file.original_file_this_run)?;
@@ -198,13 +208,13 @@ pub(crate) fn write_media(
         &desired_output_path_with_ext.clone(),
         &media_file.modified,
     );
-    Ok(())
+    Ok(desired_output_path_with_ext)
 }
 
 #[derive(Debug, PartialEq)]
 enum DeDuplicationResult {
     WritePath(String),
-    SkipWrite,
+    SkipWrite(String),
 }
 
 fn get_de_duplicated_path(
@@ -239,12 +249,14 @@ fn get_de_duplicated_path(
         );
         match es_o {
             Some(true) => {
-                debug!("  No need to write, file already exists with same checksum");
-                return Ok(SkipWrite);
+                debug!(
+                    "  No need to write, file already exists with same checksum: {desired_output_path_with_ext}"
+                );
+                return Ok(SkipWrite(desired_output_path_with_ext));
             }
             Some(false) => {
                 warn!(
-                    "  Existing file is different at {desired_output_path_with_ext}, attempting with different suffix"
+                    "  Existing file is different at, attempting with different suffix: {desired_output_path_with_ext}"
                 );
                 // continue with next attempt
             }
