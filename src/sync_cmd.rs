@@ -87,7 +87,8 @@ pub(crate) fn main(
                 let write_r = write_media(media, dry_run, &mut container, output_container);
                 match write_r {
                     Ok(final_path) => {
-                        final_path_by_original_path.insert(media.long_checksum.clone(), final_path.clone());
+                        final_path_by_original_path
+                            .insert(media.long_checksum.clone(), final_path.clone());
                         if !skip_markdown {
                             let sync_md_r = sync_markdown(dry_run, media, output_container);
                             if let Err(e) = sync_md_r {
