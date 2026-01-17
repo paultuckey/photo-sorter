@@ -29,6 +29,10 @@ cargo test
 ```
 
 ```shell
+cargo update
+```
+
+```shell
 cargo build
 ```
 
