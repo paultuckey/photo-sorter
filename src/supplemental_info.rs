@@ -1,6 +1,6 @@
 use crate::util::PsContainer;
 use log::{debug, warn};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 pub(crate) fn detect_supplemental_info(
     path: &String,
@@ -34,18 +34,18 @@ pub(crate) fn load_supplemental_info(
     parse_supplemental_info(s)
 }
 
-#[derive(Deserialize, Debug, Clone)]
+#[derive(Deserialize, Serialize, Debug, Clone)]
 #[serde(rename_all(deserialize = "camelCase", serialize = "camelCase"))]
 pub(crate) struct SupplementalInfoGeoData {
     latitude: Option<f64>,
     longitude: Option<f64>,
 }
-#[derive(Deserialize, Debug, Clone)]
+#[derive(Deserialize, Serialize, Debug, Clone)]
 #[serde(rename_all(deserialize = "camelCase", serialize = "camelCase"))]
 pub(crate) struct SupplementalInfoPerson {
     pub(crate) name: Option<String>,
 }
-#[derive(Deserialize, Debug, Clone)]
+#[derive(Deserialize, Serialize, Debug, Clone)]
 #[serde(rename_all(deserialize = "camelCase", serialize = "camelCase"))]
 pub(crate) struct SupplementalInfoDateTime {
     timestamp: Option<String>, // actually a unix timestamp in seconds eg, 1716539968
@@ -57,12 +57,16 @@ impl SupplementalInfoDateTime {
         if let Some(ts) = &self.timestamp
             && let Ok(ts_i64) = ts.parse::<i64>()
         {
+            if ts.len() == 10 {
+                // seconds to milliseconds
+                return Some(ts_i64 * 1000);
+            }
             return Some(ts_i64);
         }
         None
     }
 }
-#[derive(Deserialize, Debug, Clone)]
+#[derive(Deserialize, Serialize, Debug, Clone)]
 #[serde(rename_all(deserialize = "camelCase", serialize = "camelCase"))]
 pub(crate) struct SupplementalInfo {
     pub(crate) geo_data: Option<SupplementalInfoGeoData>,

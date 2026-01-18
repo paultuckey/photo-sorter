@@ -1,7 +1,10 @@
 use crate::album::{build_album_md, parse_album};
 use crate::file_type::QuickFileType;
 use crate::markdown::sync_markdown;
-use crate::media::{MediaFileInfo, media_file_info_from_readable};
+use crate::media::{
+    MediaFileDerivedInfo, MediaFileInfo, media_file_derived_from_media_info,
+    media_file_info_from_readable,
+};
 use crate::supplemental_info::{
     SupplementalInfo, detect_supplemental_info, load_supplemental_info,
 };
@@ -84,16 +87,20 @@ pub(crate) fn main(
             let prog = Progress::new(all_media.len() as u64);
             for media in all_media.values() {
                 prog.inc();
-                let write_r = write_media(media, dry_run, &mut container, output_container);
+                let derived = media_file_derived_from_media_info(media)?;
+                let write_r =
+                    write_media(media, &derived, dry_run, &mut container, output_container);
                 match write_r {
                     Ok(final_path) => {
-                        final_path_by_original_path.insert(media.long_checksum.clone(), final_path.clone());
+                        final_path_by_original_path
+                            .insert(media.long_checksum.clone(), final_path.clone());
                         if !skip_markdown {
-                            let sync_md_r = sync_markdown(dry_run, media, output_container);
+                            let sync_md_r =
+                                sync_markdown(dry_run, media, &derived, output_container);
                             if let Err(e) = sync_md_r {
                                 warn!(
                                     "Error writing markdown file: {:?}, error: {}",
-                                    media.desired_media_path, e
+                                    derived.desired_media_path, e
                                 );
                             }
                         }
@@ -101,7 +108,7 @@ pub(crate) fn main(
                     Err(e) => {
                         warn!(
                             "Error writing media file: {:?}, error: {}",
-                            media.desired_media_path, e
+                            derived.desired_media_path, e
                         );
                     }
                 }
@@ -191,16 +198,18 @@ pub(crate) fn inspect_media(
 
 pub(crate) fn write_media(
     media_file: &MediaFileInfo,
+    derived: &MediaFileDerivedInfo,
     dry_run: bool,
     input_container: &mut Box<dyn PsContainer>,
     output_container: &mut PsDirectoryContainer,
 ) -> anyhow::Result<String> {
-    info!("Output {:?}", media_file.desired_media_path);
+    info!("Output {:?}", derived.desired_media_path);
 
-    let desired_output_path_with_ext = match get_de_duplicated_path(media_file, output_container)? {
-        SkipWrite(path) => return Ok(path),
-        WritePath(path) => path,
-    };
+    let desired_output_path_with_ext =
+        match get_de_duplicated_path(media_file, derived, output_container)? {
+            SkipWrite(path) => return Ok(path),
+            WritePath(path) => path,
+        };
     let bytes = input_container.file_bytes(&media_file.original_file_this_run)?;
     output_container.write(dry_run, &desired_output_path_with_ext.clone(), &bytes);
     output_container.set_modified(
@@ -219,9 +228,10 @@ enum DeDuplicationResult {
 
 fn get_de_duplicated_path(
     media_file: &MediaFileInfo,
+    derived: &MediaFileDerivedInfo,
     output_container: &mut PsDirectoryContainer,
 ) -> anyhow::Result<DeDuplicationResult> {
-    let Some(desired_output_path) = &media_file.desired_media_path else {
+    let Some(desired_output_path) = &derived.desired_media_path else {
         debug!("  No desired media path for file: {media_file:?}");
         return Err(anyhow!("No desired media path for file: {media_file:?}"));
     };
@@ -237,7 +247,7 @@ fn get_de_duplicated_path(
         };
         let desired_output_path_with_ext = format!(
             "{}{}.{}",
-            desired_output_path, suffix, media_file.desired_media_extension
+            desired_output_path, suffix, derived.desired_media_extension
         );
         if !output_container.exists(&desired_output_path_with_ext) {
             return Ok(WritePath(desired_output_path_with_ext));
@@ -283,8 +293,9 @@ mod tests {
     #[test]
     fn test_dedupe_one() -> anyhow::Result<()> {
         let mut c = PsDirectoryContainer::new(&"test".to_string());
-        let mfi = MediaFileInfo::new_for_test(Some("duplicates/one".to_string()), "txt");
-        let res = get_de_duplicated_path(&mfi, &mut c)?;
+        let mfi = MediaFileInfo::new_for_test();
+        let derived = MediaFileDerivedInfo::new_for_test(Some("duplicates/one".to_string()), "txt");
+        let res = get_de_duplicated_path(&mfi, &derived, &mut c)?;
         assert_eq!(res, WritePath("duplicates/one-1.txt".to_string()));
         Ok(())
     }
@@ -292,8 +303,10 @@ mod tests {
     #[test]
     fn test_dedupe_many() -> anyhow::Result<()> {
         let mut c = PsDirectoryContainer::new(&"test".to_string());
-        let mfi = MediaFileInfo::new_for_test(Some("duplicates/many".to_string()), "txt");
-        let res = get_de_duplicated_path(&mfi, &mut c)?;
+        let mfi = MediaFileInfo::new_for_test();
+        let derived =
+            MediaFileDerivedInfo::new_for_test(Some("duplicates/many".to_string()), "txt");
+        let res = get_de_duplicated_path(&mfi, &derived, &mut c)?;
         assert_eq!(res, WritePath("duplicates/many-tsc.txt".to_string()));
         Ok(())
     }
@@ -301,8 +314,10 @@ mod tests {
     #[test]
     fn test_dedupe_too_many() -> anyhow::Result<()> {
         let mut c = PsDirectoryContainer::new(&"test".to_string());
-        let mfi = MediaFileInfo::new_for_test(Some("duplicates/too-many".to_string()), "txt");
-        let res = get_de_duplicated_path(&mfi, &mut c);
+        let mfi = MediaFileInfo::new_for_test();
+        let derived =
+            MediaFileDerivedInfo::new_for_test(Some("duplicates/too-many".to_string()), "txt");
+        let res = get_de_duplicated_path(&mfi, &derived, &mut c);
         assert_eq!(res.ok(), None);
         Ok(())
     }

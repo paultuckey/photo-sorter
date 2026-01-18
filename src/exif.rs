@@ -1,9 +1,9 @@
 use crate::file_type::AccurateFileType;
 use crate::supplemental_info::SupplementalInfo;
-use crate::util::ScanInfo;
 use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, SecondsFormat};
 use exif::{Exif, Field, In, Reader, Tag, Value};
 use log::{debug, warn};
+use serde::{Deserialize, Serialize};
 use std::fmt::Display;
 use std::io::{BufReader, Cursor};
 
@@ -85,14 +85,18 @@ pub(crate) fn parse_exif(
 ///     copying / syncing not preserving, only use as a last resort
 pub(crate) fn best_guess_taken_dt(
     pe_o: &Option<ParsedExif>,
-    si: &ScanInfo,
     supp_info: &Option<SupplementalInfo>,
+    modified_datetime: Option<i64>,
+    created_datetime: Option<i64>,
 ) -> Option<i64> {
     if let Some(dt) = supp_info
         .as_ref()
         .and_then(|si| si.photo_taken_time.as_ref())
         .and_then(|si_dt| si_dt.timestamp_as_epoch_ms())
     {
+        if dt.to_string().len() <= 11 {
+            warn!("File modified datetime {:?}", dt);
+        }
         return Some(dt);
     }
     if let Some(dt) = pe_o
@@ -100,6 +104,9 @@ pub(crate) fn best_guess_taken_dt(
         .and_then(|pe| pe.datetime_original.clone())
         .and_then(exif_dt_as_epoch_ms)
     {
+        if dt.to_string().len() <= 11 {
+            warn!("File modified datetime {:?}", dt);
+        }
         return Some(dt);
     }
     if let Some(dt) = pe_o
@@ -107,6 +114,9 @@ pub(crate) fn best_guess_taken_dt(
         .and_then(|pe| pe.datetime.clone())
         .and_then(exif_dt_as_epoch_ms)
     {
+        if dt.to_string().len() <= 11 {
+            warn!("File modified datetime {:?}", dt);
+        }
         return Some(dt);
     }
     if let Some(dt) = pe_o
@@ -114,6 +124,9 @@ pub(crate) fn best_guess_taken_dt(
         .and_then(|pe| pe.gps_date.clone())
         .and_then(exif_d_as_epoch_ms)
     {
+        if dt.to_string().len() <= 11 {
+            warn!("File modified datetime {:?}", dt);
+        }
         return Some(dt);
     }
     if let Some(dt) = supp_info
@@ -121,12 +134,15 @@ pub(crate) fn best_guess_taken_dt(
         .and_then(|si| si.creation_time.as_ref())
         .and_then(|si_dt| si_dt.timestamp_as_epoch_ms())
     {
+        if dt.to_string().len() <= 11 {
+            warn!("File modified datetime {:?}", dt);
+        }
         return Some(dt);
     }
-    if let Some(dt) = si.modified_datetime {
+    if let Some(dt) = modified_datetime {
         return Some(dt);
     }
-    if let Some(dt) = si.created_datetime {
+    if let Some(dt) = created_datetime {
         return Some(dt);
     }
     None
@@ -142,11 +158,25 @@ fn parse_ascii_tag(e: &Exif, t: Tag) -> Option<String> {
     None
 }
 
+#[derive(Deserialize, Serialize, Debug, Clone)]
+#[serde(rename_all(deserialize = "camelCase", serialize = "camelCase"))]
+pub(crate) struct ExifInfo {
+    pub(crate) tags: Vec<ExifTag>,
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+#[serde(rename_all(deserialize = "camelCase", serialize = "camelCase"))]
 pub(crate) struct ExifTag {
     pub(crate) tag_code: String,
     pub(crate) tag_desc: Option<String>,
     pub(crate) tag_value: Option<String>,
     pub(crate) tag_type: Option<String>,
+}
+
+pub(crate) fn exif_info(bytes: &Vec<u8>) -> ExifInfo {
+    ExifInfo {
+        tags: all_tags(bytes),
+    }
 }
 
 pub(crate) fn all_tags(bytes: &Vec<u8>) -> Vec<ExifTag> {
@@ -257,21 +287,21 @@ fn vec_to_string<T: Display>(v: &[T]) -> Option<String> {
 
 fn parse_exif_datetime_with_ms(exif: &Exif, dt_tag: Tag, sub_second_tag: Tag) -> Option<String> {
     let dt_tag = &parse_ascii_tag(exif, dt_tag);
-    let mut ms = None;
-    let ss_o = &parse_ascii_tag(exif, sub_second_tag);
-    if let Some(ss) = ss_o {
-        let ms_r = ss.parse::<u32>();
-        if let Ok(ms2) = ms_r {
-            ms = Some(ms2)
+    let mut sub_second_val = None;
+    let sub_second_o = &parse_ascii_tag(exif, sub_second_tag);
+    if let Some(sub_second_s) = sub_second_o {
+        let sub_second_u_r = sub_second_s.parse::<u32>();
+        if let Ok(sub_second_u) = sub_second_u_r {
+            sub_second_val = Some(sub_second_u)
         }
     }
-    parse_exif_datetime(dt_tag, ms)
+    parse_exif_datetime(dt_tag, sub_second_val)
 }
 
 /// Sometimes exif dates can be invalid(ish)
 ///  eg, 2019:04:04 18:04:98 (invalid seconds)
 ///  eg, 2019:04:04 (missing time)
-fn parse_exif_datetime(d: &Option<String>, ms_o: Option<u32>) -> Option<String> {
+fn parse_exif_datetime(d: &Option<String>, sub_second_o: Option<u32>) -> Option<String> {
     let Some(d) = d else { return None };
     // 2017:08:19 10:21:59
     let s = d.split(' ').collect::<Vec<&str>>();
@@ -300,12 +330,9 @@ fn parse_exif_datetime(d: &Option<String>, ms_o: Option<u32>) -> Option<String> 
         mm += 1;
     }
     let mut ont = NaiveTime::from_hms_opt(hh, mm, ss);
-    if let Some(ms) = ms_o {
-        if ms < 1000 {
-            ont = NaiveTime::from_hms_milli_opt(hh, mm, ss, ms);
-        } else {
-            warn!("MS invalid for: {d:?} + {ms}");
-        }
+    if let Some(sub_second) = sub_second_o {
+        let sub_second_ms = sub_second_time_to_ms(sub_second);
+        ont = NaiveTime::from_hms_milli_opt(hh, mm, ss, sub_second_ms);
     }
     let Some(nt) = ont else {
         warn!("Could not parse EXIF time: {d:?}");
@@ -313,11 +340,25 @@ fn parse_exif_datetime(d: &Option<String>, ms_o: Option<u32>) -> Option<String> 
     };
     let ndt = NaiveDateTime::new(nd, nt);
     let utc_dt = ndt.and_utc();
-    if ms_o.is_some() {
+    if sub_second_o.is_some() {
         Some(utc_dt.to_rfc3339_opts(SecondsFormat::Millis, true))
     } else {
         Some(utc_dt.to_rfc3339_opts(SecondsFormat::Secs, true))
     }
+}
+
+/// SubSecTime = 2 means .2 seconds (200ms).
+/// SubSecTime = 23 means .23 seconds (230ms).
+/// SubSecTime = 234 means .234 seconds (234ms).
+/// SubSecTime = 2345 means .2345 seconds.
+fn sub_second_time_to_ms(sub_second_val: u32) -> u32 {
+    if sub_second_val == 0 {
+        return 0;
+    }
+    let digits = (sub_second_val as f64).log10().floor() as u32 + 1;
+    let scale = 10f64.powi(digits as i32);
+    let ms = (sub_second_val as f64 / scale) * 1000.0;
+    ms.round() as u32
 }
 
 fn parse_exif_date(d: &Option<String>) -> Option<String> {
@@ -360,7 +401,7 @@ mod tests {
     fn test_dt2() {
         crate::test_util::setup_log();
         let dt = parse_exif_datetime(&Some("2019:04:04 18:04:98".to_string()), Some(2000));
-        assert_eq!(dt, Some("2019-04-04T18:05:38.000Z".to_string()));
+        assert_eq!(dt, Some("2019-04-04T18:05:38.200Z".to_string()));
     }
 
     #[test]
@@ -391,6 +432,14 @@ mod tests {
             exif_d_as_epoch_ms("2008-05-30".to_string()),
             Some(1212105600000)
         );
+    }
+
+    #[test]
+    fn test_subsectime_to_ms() {
+        assert_eq!(sub_second_time_to_ms(2), 200);
+        assert_eq!(sub_second_time_to_ms(23), 230);
+        assert_eq!(sub_second_time_to_ms(234), 234);
+        assert_eq!(sub_second_time_to_ms(2345), 235);
     }
 
     #[test]

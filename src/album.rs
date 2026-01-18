@@ -170,16 +170,19 @@ pub(crate) fn build_album_md(
     md.push_str(&format!("# {}", &album.title));
     md.push_str("\n\n");
     for f in album.files.clone() {
-        let target_path_o : Option<String>;
+        let target_path_o: Option<String>;
         if let Some(all_media) = all_media_o {
-            target_path_o = all_media.values().find(|m| {
-                m.accurate_file_type != AccurateFileType::Unsupported
-                    && m.quick_file_type == QuickFileType::Media
-                    && m.original_path.iter().any(|p| p.eq(&f))
-            }).and_then(|m| {
-                let cs = m.long_checksum.clone();
-                final_path_by_checksum.and_then(|fp_map| fp_map.get(&cs).cloned())
-            });
+            target_path_o = all_media
+                .values()
+                .find(|m| {
+                    m.accurate_file_type != AccurateFileType::Unsupported
+                        && m.quick_file_type == QuickFileType::Media
+                        && m.original_path.iter().any(|p| p.eq(&f))
+                })
+                .and_then(|m| {
+                    let cs = m.long_checksum.clone();
+                    final_path_by_checksum.and_then(|fp_map| fp_map.get(&cs).cloned())
+                });
             if target_path_o.is_none() {
                 warn!("No media file desired path found for: {f}");
                 continue;

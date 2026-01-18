@@ -1,4 +1,4 @@
-use crate::media::MediaFileInfo;
+use crate::media::{MediaFileDerivedInfo, MediaFileInfo};
 use crate::util::{PsContainer, PsDirectoryContainer};
 use anyhow::anyhow;
 use log::{debug, warn};
@@ -52,9 +52,10 @@ pub(crate) struct PhotoSorterFrontMatter {
 pub(crate) fn sync_markdown(
     dry_run: bool,
     media_file: &MediaFileInfo,
+    derived: &MediaFileDerivedInfo,
     output_c: &mut PsDirectoryContainer,
 ) -> anyhow::Result<()> {
-    let Some(desired_media_path) = media_file.desired_media_path.clone() else {
+    let Some(desired_media_path) = derived.desired_media_path.clone() else {
         warn!(
             "No desired media path for media file: {:?}",
             media_file.original_path

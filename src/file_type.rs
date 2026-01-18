@@ -64,6 +64,7 @@ pub(crate) fn file_type_from_content_type(ct: &str) -> AccurateFileType {
         "image/png" => AccurateFileType::Png,
         "image/heic" => AccurateFileType::Heic,
         "video/mp4" => AccurateFileType::Mp4,
+        "video/quicktime" => AccurateFileType::Mp4,
         "application/octet-stream" => AccurateFileType::Unsupported,
         "application/json" => AccurateFileType::Unsupported,
         "text/csv" => AccurateFileType::Csv,
@@ -74,9 +75,7 @@ pub(crate) fn file_type_from_content_type(ct: &str) -> AccurateFileType {
 pub(crate) fn determine_file_type(bytes: &Vec<u8>, name: &String) -> AccurateFileType {
     // take json files at face value
     if name.to_lowercase().ends_with(".json") {
-        let mt = AccurateFileType::Json;
-        debug!("  mime type:{mt:?}");
-        return mt;
+        return AccurateFileType::Json;
     }
     // Limit buffer size same as that inside `file_format` crate
     // let buffer_res = media_file_readable.take(36_870);
@@ -94,8 +93,9 @@ pub(crate) fn determine_file_type(bytes: &Vec<u8>, name: &String) -> AccurateFil
         debug!("  file appears to be empty file:{name:?}");
         return AccurateFileType::Unsupported;
     }
-    debug!("  mime type {mt:?}");
-    file_type_from_content_type(mt)
+    let ft = file_type_from_content_type(mt);
+    debug!("  file:{name:?}: mime type {mt:?}, file type {ft:?}");
+    ft
 }
 
 #[cfg(test)]

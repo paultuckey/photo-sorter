@@ -12,19 +12,23 @@ use log::warn;
 pub(crate) struct MediaFileInfo {
     pub(crate) original_file_this_run: String,
     pub(crate) original_path: Vec<String>,
-    /// Desired path relative to output directory, minus the dot and file extension (eg, 2025/09/10/1234-56-789)
-    pub(crate) desired_media_path: Option<String>,
-    /// Desired file extension (eg, jpg, mp4)
-    pub(crate) desired_media_extension: String,
     pub(crate) quick_file_type: QuickFileType,
     pub(crate) parsed_exif: Option<ParsedExif>,
     pub(crate) accurate_file_type: AccurateFileType,
     pub(crate) short_checksum: String,
     pub(crate) long_checksum: String,
     pub(crate) supp_info: Option<SupplementalInfo>,
-    // Modified date in RFC3339 format
+    // Modified time of the file
     pub(crate) modified: Option<i64>,
-    pub(crate) guessed_datetime: Option<i64>,
+    pub(crate) created: Option<i64>,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct MediaFileDerivedInfo {
+    /// Desired path relative to output directory, minus the dot and file extension (eg, 2025/09/10/1234-56-789)
+    pub(crate) desired_media_path: Option<String>,
+    /// Desired file extension (eg, jpg, mp4)
+    pub(crate) desired_media_extension: String,
 }
 
 pub(crate) fn media_file_info_from_readable(
@@ -41,10 +45,6 @@ pub(crate) fn media_file_info_from_readable(
         return Err(anyhow!("File is not a valid media file"));
     }
     let exif_o = parse_exif(bytes, name, &guessed_ff);
-
-    let ext = file_ext_from_file_type(&guessed_ff);
-    let guessed_datetime = best_guess_taken_dt(&exif_o, scan_info, supp_info);
-    let desired_media_path_o = Some(get_desired_media_path(short_checksum, &guessed_datetime));
     let media_file_info = MediaFileInfo {
         original_file_this_run: name.clone(),
         original_path: vec![name.clone()],
@@ -53,11 +53,30 @@ pub(crate) fn media_file_info_from_readable(
         parsed_exif: exif_o.clone(),
         short_checksum: short_checksum.to_string(),
         long_checksum: long_checksum.to_string(),
-        desired_media_path: desired_media_path_o.clone(),
-        desired_media_extension: ext,
         supp_info: supp_info.clone(),
         modified: scan_info.modified_datetime,
-        guessed_datetime,
+        created: scan_info.created_datetime,
+    };
+    Ok(media_file_info)
+}
+
+pub(crate) fn media_file_derived_from_media_info(
+    media_info: &MediaFileInfo,
+) -> anyhow::Result<MediaFileDerivedInfo> {
+    let ext = file_ext_from_file_type(&media_info.accurate_file_type);
+    let guessed_datetime = best_guess_taken_dt(
+        &media_info.parsed_exif,
+        &media_info.supp_info,
+        media_info.modified,
+        media_info.created,
+    );
+    let desired_media_path_o = Some(get_desired_media_path(
+        &media_info.short_checksum,
+        &guessed_datetime,
+    ));
+    let media_file_info = MediaFileDerivedInfo {
+        desired_media_path: desired_media_path_o.clone(),
+        desired_media_extension: ext,
     };
     Ok(media_file_info)
 }
@@ -126,15 +145,10 @@ mod tests {
 
 #[cfg(test)]
 impl MediaFileInfo {
-    pub(crate) fn new_for_test(
-        desired_media_path: Option<String>,
-        desired_media_extension: &str,
-    ) -> Self {
+    pub(crate) fn new_for_test() -> Self {
         MediaFileInfo {
             original_file_this_run: "".to_string(),
             original_path: vec![],
-            desired_media_path,
-            desired_media_extension: desired_media_extension.to_string(),
             quick_file_type: QuickFileType::Media,
             parsed_exif: None,
             accurate_file_type: AccurateFileType::Jpg,
@@ -142,7 +156,20 @@ impl MediaFileInfo {
             long_checksum: "tlc".to_string(),
             supp_info: None,
             modified: None,
-            guessed_datetime: None,
+            created: None,
+        }
+    }
+}
+
+#[cfg(test)]
+impl MediaFileDerivedInfo {
+    pub(crate) fn new_for_test(
+        desired_media_path: Option<String>,
+        desired_media_extension: &str,
+    ) -> Self {
+        MediaFileDerivedInfo {
+            desired_media_path,
+            desired_media_extension: desired_media_extension.to_string(),
         }
     }
 }
