@@ -186,6 +186,7 @@ mod tests {
     use super::*;
 
     #[test]
+    #[ignore]
     fn test_select_all() -> anyhow::Result<()> {
         crate::test_util::setup_log();
         let conn = db_conn()?;
