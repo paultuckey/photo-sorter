@@ -443,6 +443,17 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_exif_mp4() -> anyhow::Result<()> {
+        crate::test_util::setup_log();
+        let mut c = PsDirectoryContainer::new(&"test".to_string());
+        let bytes = c.file_bytes(&"Hello.mp4".to_string())?;
+        let t = all_tags(&bytes);
+        assert_eq!(t.len(), 0);
+        Ok(())
+    }
+
+
+    #[test]
     fn test_parse_exif_all_tags() -> anyhow::Result<()> {
         crate::test_util::setup_log();
         let mut c = PsDirectoryContainer::new(&"test".to_string());

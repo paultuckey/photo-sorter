@@ -102,8 +102,8 @@ mod tests {
     fn test_parse_supp() -> anyhow::Result<()> {
         crate::test_util::setup_log();
         use std::path::Path;
-        let json = Path::new("test/test1.jpeg.supplemental-metadata.json");
-        let json_s = std::fs::read_to_string(json)?;
+        let file = Path::new("test/test1.jpeg.supplemental-metadata.json");
+        let json_s = std::fs::read_to_string(file)?;
         let r = parse_supplemental_info(json_s).unwrap();
         // long lat limited to 6 decimal places
         let latitude = r.geo_data.clone().unwrap().latitude.unwrap();
