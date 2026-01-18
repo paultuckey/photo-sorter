@@ -1,7 +1,10 @@
 use crate::exif::{ParsedExif, best_guess_taken_dt, parse_exif};
 use crate::file_type::{
-    AccurateFileType, QuickFileType, determine_file_type, file_ext_from_file_type,
+    AccurateFileType, MetadataType, QuickFileType, determine_file_type, file_ext_from_file_type,
+    metadata_type,
 };
+use crate::mp4_util;
+use crate::mp4_util::ParsedMp4;
 use crate::supplemental_info::SupplementalInfo;
 use crate::util::ScanInfo;
 use anyhow::anyhow;
@@ -14,6 +17,7 @@ pub(crate) struct MediaFileInfo {
     pub(crate) original_path: Vec<String>,
     pub(crate) quick_file_type: QuickFileType,
     pub(crate) parsed_exif: Option<ParsedExif>,
+    pub(crate) parsed_mp4: Option<ParsedMp4>,
     pub(crate) accurate_file_type: AccurateFileType,
     pub(crate) short_checksum: String,
     pub(crate) long_checksum: String,
@@ -44,13 +48,25 @@ pub(crate) fn media_file_info_from_readable(
         warn!("Not a valid media file {name:?}");
         return Err(anyhow!("File is not a valid media file"));
     }
-    let exif_o = parse_exif(bytes, name, &guessed_ff);
+
+    let mut exif_o = None;
+    let mut mp4_o = None;
+    match metadata_type(&guessed_ff) {
+        MetadataType::Exif => {
+            exif_o = parse_exif(bytes, name, &guessed_ff);
+        }
+        MetadataType::Mp4 => {
+            mp4_o = mp4_util::extract_mp4_metadata(bytes).ok();
+        }
+        MetadataType::NoMetadata => {}
+    }
     let media_file_info = MediaFileInfo {
         original_file_this_run: name.clone(),
         original_path: vec![name.clone()],
         accurate_file_type: guessed_ff.clone(),
         quick_file_type: scan_info.quick_file_type.clone(),
         parsed_exif: exif_o.clone(),
+        parsed_mp4: mp4_o.clone(),
         short_checksum: short_checksum.to_string(),
         long_checksum: long_checksum.to_string(),
         supp_info: supp_info.clone(),
@@ -151,6 +167,7 @@ impl MediaFileInfo {
             original_path: vec![],
             quick_file_type: QuickFileType::Media,
             parsed_exif: None,
+            parsed_mp4: None,
             accurate_file_type: AccurateFileType::Jpg,
             short_checksum: "tsc".to_string(),
             long_checksum: "tlc".to_string(),

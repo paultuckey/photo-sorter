@@ -57,6 +57,25 @@ pub(crate) fn file_ext_from_file_type(ff: &AccurateFileType) -> String {
     }
 }
 
+pub(crate) enum MetadataType {
+    Exif,
+    Mp4,
+    NoMetadata,
+}
+
+pub(crate) fn metadata_type(ff: &AccurateFileType) -> MetadataType {
+    match ff {
+        AccurateFileType::Jpg
+        | AccurateFileType::Png
+        | AccurateFileType::Heic
+        | AccurateFileType::Gif => MetadataType::Exif,
+        AccurateFileType::Mp4 => MetadataType::Mp4,
+        AccurateFileType::Json | AccurateFileType::Csv | AccurateFileType::Unsupported => {
+            MetadataType::NoMetadata
+        }
+    }
+}
+
 pub(crate) fn file_type_from_content_type(ct: &str) -> AccurateFileType {
     match ct {
         "image/jpeg" => AccurateFileType::Jpg,
