@@ -66,9 +66,8 @@ pub(crate) fn media(si: &ScanInfo, root: &mut Box<dyn PsContainer>) -> anyhow::R
     let tags = all_tags(&bytes);
     for tag in tags {
         let tc = tag.tag_code;
-        let td = tag.tag_desc.map_or("".to_string(), |d| format!(" ({d})"));
         let tv = tag.tag_value.map_or("<empty>".to_string(), |v| v);
-        println!("  {tc}{td}: {tv}");
+        println!("  {tc}: {tv}");
     }
     println!();
     println!();

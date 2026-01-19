@@ -1,4 +1,4 @@
-use crate::exif::{ParsedExif, best_guess_taken_dt, parse_exif};
+use crate::exif::{ParsedExif, d_as_epoch_ms, dt_as_epoch_ms, parse_exif};
 use crate::file_type::{
     AccurateFileType, MetadataType, QuickFileType, determine_file_type, file_ext_from_file_type,
     metadata_type,
@@ -95,6 +95,83 @@ pub(crate) fn media_file_derived_from_media_info(
         desired_media_extension: ext,
     };
     Ok(media_file_info)
+}
+
+/// Best guess at the date the photo was taken from messy optional data, in the order of preference:
+/// 1. SupplementalInfo photo_taken_time
+/// 2. EXIF DateTimeOriginal
+/// 3. EXIF DateTime
+/// 4. EXIF GPSDateStamp - only accurate up to minute
+/// 5. SupplementalInfo creation_time
+/// 6. File modified time
+///   - no timezone info, unreliable in zips, somewhat unreliable in directories due to file
+///     copying / syncing not preserving, only use as second to last resort
+/// 7. File creation time
+///   - no timezone info, unavailable in zips, somewhat unreliable in directories due to file
+///     copying / syncing not preserving, only use as a last resort
+pub(crate) fn best_guess_taken_dt(
+    pe_o: &Option<ParsedExif>,
+    supp_info: &Option<SupplementalInfo>,
+    modified_datetime: Option<i64>,
+    created_datetime: Option<i64>,
+) -> Option<i64> {
+    if let Some(dt) = supp_info
+        .as_ref()
+        .and_then(|si| si.photo_taken_time.as_ref())
+        .and_then(|si_dt| si_dt.timestamp_as_epoch_ms())
+    {
+        if dt.to_string().len() <= 11 {
+            warn!("File modified datetime {:?}", dt);
+        }
+        return Some(dt);
+    }
+    if let Some(dt) = pe_o
+        .as_ref()
+        .and_then(|pe| pe.datetime_original.clone())
+        .and_then(dt_as_epoch_ms)
+    {
+        if dt.to_string().len() <= 11 {
+            warn!("File modified datetime {:?}", dt);
+        }
+        return Some(dt);
+    }
+    if let Some(dt) = pe_o
+        .as_ref()
+        .and_then(|pe| pe.datetime.clone())
+        .and_then(dt_as_epoch_ms)
+    {
+        if dt.to_string().len() <= 11 {
+            warn!("File modified datetime {:?}", dt);
+        }
+        return Some(dt);
+    }
+    if let Some(dt) = pe_o
+        .as_ref()
+        .and_then(|pe| pe.gps_date.clone())
+        .and_then(d_as_epoch_ms)
+    {
+        if dt.to_string().len() <= 11 {
+            warn!("File modified datetime {:?}", dt);
+        }
+        return Some(dt);
+    }
+    if let Some(dt) = supp_info
+        .as_ref()
+        .and_then(|si| si.creation_time.as_ref())
+        .and_then(|si_dt| si_dt.timestamp_as_epoch_ms())
+    {
+        if dt.to_string().len() <= 11 {
+            warn!("File modified datetime {:?}", dt);
+        }
+        return Some(dt);
+    }
+    if let Some(dt) = modified_datetime {
+        return Some(dt);
+    }
+    if let Some(dt) = created_datetime {
+        return Some(dt);
+    }
+    None
 }
 
 /// `yyyy/mm/dd/hhmm-ssms`

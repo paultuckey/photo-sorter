@@ -1,6 +1,6 @@
-use crate::exif::{ExifInfo, best_guess_taken_dt, exif_info};
+use crate::exif::{ExifInfo, exif_info};
 use crate::file_type::QuickFileType;
-use crate::media::{MediaFileInfo, media_file_info_from_readable};
+use crate::media::{MediaFileInfo, best_guess_taken_dt, media_file_info_from_readable};
 use crate::supplemental_info::{detect_supplemental_info, load_supplemental_info};
 use crate::util::{
     Progress, PsContainer, PsDirectoryContainer, PsZipContainer, ScanInfo, checksum_bytes,

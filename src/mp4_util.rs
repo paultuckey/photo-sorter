@@ -7,8 +7,9 @@ use std::io::Cursor;
 pub(crate) struct ParsedMp4 {
     pub width: Option<u64>,
     pub height: Option<u64>,
-    pub creation_time: Option<i64>,
-    pub duration: Option<u64>,
+    // rfc3339
+    pub creation_time: Option<String>,
+    pub duration_ms: Option<u64>,
     pub make: Option<String>,
     pub model: Option<String>,
     pub software: Option<String>,
@@ -21,22 +22,18 @@ pub fn extract_mp4_metadata(bytes: &Vec<u8>) -> anyhow::Result<ParsedMp4> {
     let ms = MediaSource::seekable(Cursor::new(bytes))?;
 
     if !ms.has_track() {
-        //info!("file does not have Track metadata.");
         return Err(anyhow::anyhow!("MP4 file does not have Track metadata."));
     }
-
     let info: nom_exif::Result<TrackInfo> = parser.parse(ms);
 
-    // Use nom-exif to parse metadata
-    // If it returns NoExifData, we just return default empty values
     match info {
         Err(e) => Err(anyhow::anyhow!("Failed to parse MP4 metadata: {:?}", e)),
         Ok(info) => {
             let pm = ParsedMp4 {
                 width: parse_to_o_u64(&info.get(TrackInfoTag::ImageWidth)),
                 height: parse_to_o_u64(&info.get(TrackInfoTag::ImageHeight)),
-                creation_time: parse_date_to_o_ms(&info.get(TrackInfoTag::CreateDate)),
-                duration: parse_to_o_u64(&info.get(TrackInfoTag::DurationMs)),
+                creation_time: parse_to_o_s(&info.get(TrackInfoTag::CreateDate)),
+                duration_ms: parse_to_o_u64(&info.get(TrackInfoTag::DurationMs)),
                 make: parse_to_o_s(&info.get(TrackInfoTag::Make)),
                 model: parse_to_o_s(&info.get(TrackInfoTag::Model)),
                 software: parse_to_o_s(&info.get(TrackInfoTag::Software)),
@@ -107,8 +104,11 @@ mod tests {
         let meta = extract_mp4_metadata(&bytes)?;
         assert_eq!(meta.width, Some(854));
         assert_eq!(meta.height, Some(480));
-        assert_eq!(meta.duration, Some(5000));
-        assert_eq!(meta.creation_time, Some(1713439466000));
+        assert_eq!(meta.duration_ms, Some(5000));
+        assert_eq!(
+            meta.creation_time,
+            Some("2024-04-18T11:24:26+00:00".to_string())
+        );
         Ok(())
     }
 

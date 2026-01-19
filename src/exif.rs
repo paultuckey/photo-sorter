@@ -1,11 +1,10 @@
 use crate::file_type::AccurateFileType;
-use crate::supplemental_info::SupplementalInfo;
-use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, SecondsFormat};
-use exif::{Exif, Field, In, Reader, Tag, Value};
+use chrono::{DateTime, Datelike, NaiveDate, NaiveDateTime, NaiveTime, SecondsFormat};
 use log::{debug, warn};
+use nom_exif::{EntryValue, Exif, ExifIter, MediaParser, MediaSource, ParsedExifEntry};
 use serde::{Deserialize, Serialize};
 use std::fmt::Display;
-use std::io::{BufReader, Cursor};
+use std::io::Cursor;
 
 #[derive(Debug, Clone)]
 pub(crate) struct ParsedExif {
@@ -15,12 +14,12 @@ pub(crate) struct ParsedExif {
     pub(crate) unique_id: Option<String>,
 }
 
-fn exif_dt_as_epoch_ms(dt: String) -> Option<i64> {
-    let dt = NaiveDateTime::parse_from_str(&dt, "%Y-%m-%dT%H:%M:%S%.fZ").ok()?;
-    Some(dt.and_utc().timestamp_millis())
+pub(crate) fn dt_as_epoch_ms(dt: String) -> Option<i64> {
+    let dt = DateTime::parse_from_rfc3339(&dt).ok()?;
+    Some(dt.timestamp_millis())
 }
 
-fn exif_d_as_epoch_ms(dt: String) -> Option<i64> {
+pub(crate) fn d_as_epoch_ms(dt: String) -> Option<i64> {
     let d = NaiveDate::parse_from_str(&dt, "%Y-%m-%d").ok()?;
     let dt = d.and_hms_milli_opt(0, 0, 0, 0)?;
     Some(dt.and_utc().timestamp_millis())
@@ -41,17 +40,38 @@ pub(crate) fn parse_exif(
     if !does_file_format_have_exif(file_format) {
         return None;
     }
-    let exif_reader = Reader::new();
-    let mut cursor = Cursor::new(bytes);
-    let mut bufread_seek = BufReader::new(&mut cursor);
-    let exif_r = exif_reader.read_from_container(&mut bufread_seek);
-    match exif_r {
-        Ok(exif) => {
-            let unique_id = parse_ascii_tag(&exif, Tag::ImageUniqueID);
-            let datetime_original =
-                parse_exif_datetime_with_ms(&exif, Tag::DateTimeOriginal, Tag::SubSecTimeOriginal);
-            let datetime = parse_exif_datetime_with_ms(&exif, Tag::DateTime, Tag::SubSecTime);
-            let gps_date = parse_exif_date(&parse_ascii_tag(&exif, Tag::GPSDateStamp));
+    let mut parser = MediaParser::new();
+    let ms = MediaSource::seekable(Cursor::new(bytes));
+    let Ok(ms) = ms else {
+        debug!(
+            "Could not create MediaSource for file: {} ({} bytes)",
+            name,
+            bytes.len()
+        );
+        return None;
+    };
+    if !ms.has_exif() {
+        debug!("File does not mave exif metadata: {}", name);
+        return None;
+    }
+    let exif_iter_r: nom_exif::Result<ExifIter> = parser.parse(ms);
+
+    match exif_iter_r {
+        Ok(exif_iter) => {
+            let exif: Exif = exif_iter.into();
+            let unique_id = parse_ascii_tag(&exif.get(nom_exif::ExifTag::ImageUniqueID));
+            let datetime_original = parse_exif_datetime_with_ms(
+                &exif,
+                nom_exif::ExifTag::DateTimeOriginal, // 0x9003
+                nom_exif::ExifTag::SubSecTimeOriginal,
+            );
+            let datetime = parse_exif_datetime_with_ms(
+                &exif,
+                nom_exif::ExifTag::ModifyDate, // DateTime (0x0132)
+                nom_exif::ExifTag::SubSecTime,
+            );
+            let gps_date =
+                parse_exif_date(&parse_ascii_tag(&exif.get(nom_exif::ExifTag::GPSDateStamp)));
             Some(ParsedExif {
                 datetime_original,
                 datetime,
@@ -71,91 +91,11 @@ pub(crate) fn parse_exif(
     }
 }
 
-/// Best guess at the date the photo was taken from messy optional data, in the order of preference:
-/// 1. SupplementalInfo photo_taken_time
-/// 2. EXIF DateTimeOriginal
-/// 3. EXIF DateTime
-/// 4. EXIF GPSDateStamp - only accurate up to minute
-/// 5. SupplementalInfo creation_time
-/// 6. File modified time
-///   - no timezone info, unreliable in zips, somewhat unreliable in directories due to file
-///     copying / syncing not preserving, only use as second to last resort
-/// 7. File creation time
-///   - no timezone info, unavailable in zips, somewhat unreliable in directories due to file
-///     copying / syncing not preserving, only use as a last resort
-pub(crate) fn best_guess_taken_dt(
-    pe_o: &Option<ParsedExif>,
-    supp_info: &Option<SupplementalInfo>,
-    modified_datetime: Option<i64>,
-    created_datetime: Option<i64>,
-) -> Option<i64> {
-    if let Some(dt) = supp_info
-        .as_ref()
-        .and_then(|si| si.photo_taken_time.as_ref())
-        .and_then(|si_dt| si_dt.timestamp_as_epoch_ms())
-    {
-        if dt.to_string().len() <= 11 {
-            warn!("File modified datetime {:?}", dt);
-        }
-        return Some(dt);
-    }
-    if let Some(dt) = pe_o
-        .as_ref()
-        .and_then(|pe| pe.datetime_original.clone())
-        .and_then(exif_dt_as_epoch_ms)
-    {
-        if dt.to_string().len() <= 11 {
-            warn!("File modified datetime {:?}", dt);
-        }
-        return Some(dt);
-    }
-    if let Some(dt) = pe_o
-        .as_ref()
-        .and_then(|pe| pe.datetime.clone())
-        .and_then(exif_dt_as_epoch_ms)
-    {
-        if dt.to_string().len() <= 11 {
-            warn!("File modified datetime {:?}", dt);
-        }
-        return Some(dt);
-    }
-    if let Some(dt) = pe_o
-        .as_ref()
-        .and_then(|pe| pe.gps_date.clone())
-        .and_then(exif_d_as_epoch_ms)
-    {
-        if dt.to_string().len() <= 11 {
-            warn!("File modified datetime {:?}", dt);
-        }
-        return Some(dt);
-    }
-    if let Some(dt) = supp_info
-        .as_ref()
-        .and_then(|si| si.creation_time.as_ref())
-        .and_then(|si_dt| si_dt.timestamp_as_epoch_ms())
-    {
-        if dt.to_string().len() <= 11 {
-            warn!("File modified datetime {:?}", dt);
-        }
-        return Some(dt);
-    }
-    if let Some(dt) = modified_datetime {
-        return Some(dt);
-    }
-    if let Some(dt) = created_datetime {
-        return Some(dt);
-    }
-    None
-}
-
-fn parse_ascii_tag(e: &Exif, t: Tag) -> Option<String> {
-    let field = e.get_field(t, In::PRIMARY)?;
-    if let Value::Ascii(v) = &field.value
-        && !v.is_empty()
-    {
-        return String::from_utf8(v[0].to_owned()).ok();
-    }
-    None
+fn parse_ascii_tag(e: &Option<&EntryValue>) -> Option<String> {
+    let Some(e) = e else {
+        return None;
+    };
+    Some(e.to_string())
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
@@ -168,9 +108,7 @@ pub(crate) struct ExifInfo {
 #[serde(rename_all(deserialize = "camelCase", serialize = "camelCase"))]
 pub(crate) struct ExifTag {
     pub(crate) tag_code: String,
-    pub(crate) tag_desc: Option<String>,
     pub(crate) tag_value: Option<String>,
-    pub(crate) tag_type: Option<String>,
 }
 
 pub(crate) fn exif_info(bytes: &Vec<u8>) -> ExifInfo {
@@ -181,35 +119,27 @@ pub(crate) fn exif_info(bytes: &Vec<u8>) -> ExifInfo {
 
 pub(crate) fn all_tags(bytes: &Vec<u8>) -> Vec<ExifTag> {
     let mut tags = vec![];
-    let exif_reader = Reader::new();
-    let mut cursor = Cursor::new(bytes);
-    let mut bufread_seek = BufReader::new(&mut cursor);
-    let exif_r = exif_reader.read_from_container(&mut bufread_seek);
-    match exif_r {
-        Ok(exif) => {
-            let fields = exif.fields();
-            for field in fields {
-                let s_o = field_to_opt_string(field);
-
+    let mut parser = MediaParser::new();
+    let ms = MediaSource::seekable(Cursor::new(bytes));
+    let Ok(ms) = ms else {
+        debug!("Could not create MediaSource");
+        return vec![];
+    };
+    if !ms.has_exif() {
+        debug!("File does not mave exif metadata");
+        return vec![];
+    }
+    let exif_iter_r: nom_exif::Result<ExifIter> = parser.parse(ms);
+    match exif_iter_r {
+        Ok(exif_iter) => {
+            for entry in exif_iter {
+                let s_o = field_to_opt_string(&entry);
+                let Some(t) = entry.tag() else {
+                    continue; // only support recognised tags
+                };
                 tags.push(ExifTag {
-                    tag_code: field.tag.to_string(),
-                    tag_desc: field.tag.description().map(|s| s.to_string()),
+                    tag_code: t.to_string(),
                     tag_value: s_o,
-                    tag_type: match &field.value {
-                        Value::Byte(_) => Some("Byte".to_string()),
-                        Value::Ascii(_) => Some("Ascii".to_string()),
-                        Value::Short(_) => Some("Short".to_string()),
-                        Value::Long(_) => Some("Long".to_string()),
-                        Value::Rational(_) => Some("Rational".to_string()),
-                        Value::SByte(_) => Some("SByte".to_string()),
-                        Value::Undefined(_, _) => Some("Undefined".to_string()),
-                        Value::SShort(_) => Some("SShort".to_string()),
-                        Value::SLong(_) => Some("SLong".to_string()),
-                        Value::SRational(_) => Some("SRational".to_string()),
-                        Value::Float(_) => Some("Float".to_string()),
-                        Value::Double(_) => Some("Double".to_string()),
-                        Value::Unknown(_, _, _) => Some("Unknown".to_string()),
-                    },
                 });
             }
         }
@@ -220,75 +150,21 @@ pub(crate) fn all_tags(bytes: &Vec<u8>) -> Vec<ExifTag> {
     tags
 }
 
-fn field_to_opt_string(field: &Field) -> Option<String> {
-    match &field.value {
-        Value::Byte(v) => {
-            return vec_to_string(v);
-        }
-        Value::Ascii(v) => {
-            if !v.is_empty() {
-                // return all strings from v: Vec<Vec<u8>> concatenated with a comma
-                let s = v
-                    .iter()
-                    .map(|s| String::from_utf8_lossy(s).to_string())
-                    .collect::<Vec<String>>()
-                    .join(", ");
-                return Some(s);
-            }
-        }
-        Value::Short(v) => {
-            return vec_to_string(v);
-        }
-        Value::Long(v) => {
-            return vec_to_string(v);
-        }
-        Value::Rational(v) => {
-            return vec_to_string(v);
-        }
-        Value::SByte(v) => {
-            return vec_to_string(v);
-        }
-        Value::Undefined(_, _) => {
-            return Some("<Undefined>".to_string());
-        }
-        Value::SShort(v) => {
-            return vec_to_string(v);
-        }
-        Value::SLong(v) => {
-            return vec_to_string(v);
-        }
-        Value::SRational(v) => {
-            return vec_to_string(v);
-        }
-        Value::Float(v) => {
-            return vec_to_string(v);
-        }
-        Value::Double(v) => {
-            return vec_to_string(v);
-        }
-        Value::Unknown(_, _, _) => {
-            return Some("<Unknown>".to_string());
-        }
+fn field_to_opt_string(field: &ParsedExifEntry) -> Option<String> {
+    if let Ok(value) = field.clone().take_result() {
+        return Some(value.to_string());
     }
     None
 }
 
-fn vec_to_string<T: Display>(v: &[T]) -> Option<String> {
-    if !v.is_empty() {
-        let s = v
-            .iter()
-            .map(|s| s.to_string())
-            .collect::<Vec<String>>()
-            .join(", ");
-        return Some(s);
-    }
-    None
-}
-
-fn parse_exif_datetime_with_ms(exif: &Exif, dt_tag: Tag, sub_second_tag: Tag) -> Option<String> {
-    let dt_tag = &parse_ascii_tag(exif, dt_tag);
+fn parse_exif_datetime_with_ms(
+    exif: &Exif,
+    dt_tag: nom_exif::ExifTag,
+    sub_second_tag: nom_exif::ExifTag,
+) -> Option<String> {
+    let dt_tag = &parse_ascii_tag(&exif.get(dt_tag));
     let mut sub_second_val = None;
-    let sub_second_o = &parse_ascii_tag(exif, sub_second_tag);
+    let sub_second_o = &parse_ascii_tag(&exif.get(sub_second_tag));
     if let Some(sub_second_s) = sub_second_o {
         let sub_second_u_r = sub_second_s.parse::<u32>();
         if let Ok(sub_second_u) = sub_second_u_r {
@@ -306,7 +182,7 @@ fn parse_exif_datetime(d: &Option<String>, sub_second_o: Option<u32>) -> Option<
     // 2017:08:19 10:21:59
     let s = d.split(' ').collect::<Vec<&str>>();
     let s1 = s.first()?;
-    let nd_result = NaiveDate::parse_from_str(s1, "%Y:%m:%d");
+    let nd_result = NaiveDate::parse_from_str(s1, "%Y-%m-%d");
     let nd = match nd_result {
         Ok(nd) => nd,
         Err(e) => {
@@ -391,16 +267,16 @@ mod tests {
     #[test]
     fn test_dt() {
         crate::test_util::setup_log();
-        let dt = parse_exif_datetime(&Some("2017:08:19 10:21:59".to_string()), Some(123));
+        let dt = parse_exif_datetime(&Some("2017-08-19 10:21:59".to_string()), Some(123));
         assert_eq!(dt, Some("2017-08-19T10:21:59.123Z".to_string()));
-        let dt = parse_exif_datetime(&Some("2017:08:19".to_string()), None);
+        let dt = parse_exif_datetime(&Some("2017-08-19".to_string()), None);
         assert_eq!(dt, Some("2017-08-19T00:00:00Z".to_string()));
     }
 
     #[test]
     fn test_dt2() {
         crate::test_util::setup_log();
-        let dt = parse_exif_datetime(&Some("2019:04:04 18:04:98".to_string()), Some(2000));
+        let dt = parse_exif_datetime(&Some("2019-04-04 18:04:98".to_string()), Some(2000));
         assert_eq!(dt, Some("2019-04-04T18:05:38.200Z".to_string()));
     }
 
@@ -425,13 +301,10 @@ mod tests {
     #[test]
     fn test_exif_date_epoch_ms() {
         assert_eq!(
-            exif_dt_as_epoch_ms("2008-05-30T15:56:01Z".to_string()),
+            dt_as_epoch_ms("2008-05-30T15:56:01Z".to_string()),
             Some(1212162961000)
         );
-        assert_eq!(
-            exif_d_as_epoch_ms("2008-05-30".to_string()),
-            Some(1212105600000)
-        );
+        assert_eq!(d_as_epoch_ms("2008-05-30".to_string()), Some(1212105600000));
     }
 
     #[test]
@@ -471,15 +344,16 @@ mod tests {
                 "YResolution",
                 "ResolutionUnit",
                 "Software",
-                "DateTime",
+                "ModifyDate",
                 "YCbCrPositioning",
+                "ExifOffset",
                 "ExposureTime",
                 "FNumber",
                 "ExposureProgram",
-                "PhotographicSensitivity",
+                "ISOSpeedRatings",
                 "ExifVersion",
                 "DateTimeOriginal",
-                "DateTimeDigitized",
+                "CreateDate",
                 "ComponentsConfiguration",
                 "ShutterSpeedValue",
                 "ApertureValue",
@@ -491,35 +365,30 @@ mod tests {
                 "SubSecTime",
                 "SubSecTimeOriginal",
                 "SubSecTimeDigitized",
-                "FlashpixVersion",
+                "FlashPixVersion",
                 "ColorSpace",
-                "PixelXDimension",
-                "PixelYDimension",
-                "InteroperabilityIndex",
-                "InteroperabilityVersion",
+                "ExifImageWidth",
+                "ExifImageHeight",
+                "InteropOffset",
                 "FocalPlaneXResolution",
                 "FocalPlaneYResolution",
                 "FocalPlaneResolutionUnit",
                 "CustomRendered",
                 "ExposureMode",
-                "WhiteBalance",
+                "WhiteBalanceMode",
                 "SceneCaptureType",
-                "GPSVersionID",
+                "GPSInfo",
                 "Compression",
                 "XResolution",
                 "YResolution",
                 "ResolutionUnit",
-                "JPEGInterchangeFormat",
-                "JPEGInterchangeFormatLength"
+                "ThumbnailOffset",
+                "ThumbnailLength"
             ]
         );
 
         let first_tag = t.first().unwrap();
         assert_eq!(first_tag.tag_code, "Make".to_string());
-        assert_eq!(
-            first_tag.tag_desc,
-            Some("Manufacturer of image input equipment".to_string())
-        );
         assert_eq!(first_tag.tag_value, Some("Canon".to_string()));
 
         // SubSecTimeOriginal
