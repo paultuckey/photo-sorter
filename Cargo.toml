@@ -21,4 +21,4 @@ yaml-rust2 = "0.11.0"
 regex = "1.11.2"
 strum_macros = "0.27.2"
 rusqlite = { version = "0.38.0", features = ["bundled"] }
-re_mp4 = { version = "0.4.0" }
+nom-exif = "2.6.0"

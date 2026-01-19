@@ -452,7 +452,6 @@ mod tests {
         Ok(())
     }
 
-
     #[test]
     fn test_parse_exif_all_tags() -> anyhow::Result<()> {
         crate::test_util::setup_log();
