@@ -1,6 +1,6 @@
-use log::{debug, warn};
 use std::path::Path;
 use strum_macros::Display;
+use tracing::{debug, warn};
 
 #[derive(Clone, Debug, PartialEq, Display)]
 pub(crate) enum QuickFileType {

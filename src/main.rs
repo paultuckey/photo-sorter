@@ -1,6 +1,6 @@
 mod album;
 mod db_cmd;
-mod exif;
+mod exif_util;
 mod file_type;
 mod index_cmd;
 mod info_cmd;
@@ -13,7 +13,7 @@ mod test_util;
 mod util;
 
 use clap::{Parser, Subcommand};
-use log::{LevelFilter, debug, error, info};
+use tracing::{Level, debug, error, info};
 
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
@@ -140,16 +140,11 @@ fn go() -> anyhow::Result<()> {
 }
 
 fn enable_debug(debug: bool) {
-    let mut level = LevelFilter::Info;
+    let mut level = Level::INFO;
     if debug {
-        level = LevelFilter::Debug;
+        level = Level::DEBUG;
     }
-    env_logger::builder()
-        .filter_level(level)
-        .format_target(false)
-        .format_timestamp(None)
-        .format_level(false)
-        .init();
+    tracing_subscriber::fmt().with_max_level(level).init();
     if debug {
         debug!("Debug mode is on");
     }

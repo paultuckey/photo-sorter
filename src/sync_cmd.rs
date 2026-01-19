@@ -14,9 +14,9 @@ use crate::util::{
     is_existing_file_same,
 };
 use anyhow::anyhow;
-use log::{debug, info, warn};
 use std::collections::HashMap;
 use std::path::Path;
+use tracing::{debug, info, warn};
 
 const MAX_DUPLICATE_CHECK_ATTEMPTS: i32 = 5;
 

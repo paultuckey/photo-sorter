@@ -1,7 +1,7 @@
 use crate::media::{MediaFileDerivedInfo, MediaFileInfo};
 use crate::util::{PsContainer, PsDirectoryContainer};
 use anyhow::anyhow;
-use log::{debug, warn};
+use tracing::{debug, warn};
 use yaml_rust2::yaml::Hash;
 use yaml_rust2::{Yaml, YamlEmitter, YamlLoader};
 

@@ -1,5 +1,5 @@
 use crate::album::{build_album_md, parse_album};
-use crate::exif::all_tags;
+use crate::exif_util::all_tags;
 use crate::file_type::QuickFileType;
 use crate::markdown::{assemble_markdown, mfm_from_media_file_info};
 use crate::media::media_file_info_from_readable;
@@ -7,8 +7,8 @@ use crate::supplemental_info::{detect_supplemental_info, load_supplemental_info}
 use crate::sync_cmd::inspect_media;
 use crate::util::{PsContainer, PsDirectoryContainer, ScanInfo, checksum_bytes};
 use anyhow::{Context, anyhow};
-use log::{debug, warn};
 use std::collections::HashMap;
+use tracing::{debug, warn};
 
 pub(crate) fn main(input: &String, root_s: &String) -> anyhow::Result<()> {
     debug!("Inspecting: {input}");

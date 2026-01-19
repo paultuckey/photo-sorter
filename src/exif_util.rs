@@ -1,10 +1,9 @@
 use crate::file_type::AccurateFileType;
 use chrono::{DateTime, Datelike, NaiveDate, NaiveDateTime, NaiveTime, SecondsFormat};
-use log::{debug, warn};
 use nom_exif::{EntryValue, Exif, ExifIter, MediaParser, MediaSource, ParsedExifEntry};
 use serde::{Deserialize, Serialize};
-use std::fmt::Display;
 use std::io::Cursor;
+use tracing::{debug, warn};
 
 #[derive(Debug, Clone)]
 pub(crate) struct ParsedExif {

@@ -1,6 +1,5 @@
 use crate::file_type::{QuickFileType, find_quick_file_type};
 use anyhow::anyhow;
-use log::{debug, error, warn};
 use status_line::StatusLine;
 use std::fmt::{Display, Formatter};
 use std::fs;
@@ -9,6 +8,7 @@ use std::io::Read;
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, SystemTime};
+use tracing::{debug, error, warn};
 use zip::ZipArchive;
 
 /// Similar to github generate a short and long hash from the bytes

@@ -1,7 +1,7 @@
 use chrono::DateTime;
-use log::info;
 use nom_exif::{MediaParser, MediaSource, TrackInfo, TrackInfoTag};
 use std::io::Cursor;
+use tracing::info;
 
 #[derive(Debug, Clone)]
 pub(crate) struct ParsedMp4 {

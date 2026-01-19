@@ -1,6 +1,6 @@
 use crate::util::PsContainer;
-use log::{debug, warn};
 use serde::{Deserialize, Serialize};
+use tracing::{debug, warn};
 
 pub(crate) fn detect_supplemental_info(
     path: &String,

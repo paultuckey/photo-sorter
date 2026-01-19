@@ -1,4 +1,4 @@
-use crate::exif::{ExifInfo, exif_info};
+use crate::exif_util::{ExifInfo, exif_info};
 use crate::file_type::QuickFileType;
 use crate::media::{MediaFileInfo, best_guess_taken_dt, media_file_info_from_readable};
 use crate::supplemental_info::{detect_supplemental_info, load_supplemental_info};
@@ -6,9 +6,9 @@ use crate::util::{
     Progress, PsContainer, PsDirectoryContainer, PsZipContainer, ScanInfo, checksum_bytes,
 };
 use anyhow::anyhow;
-use log::{debug, info, warn};
 use rusqlite::Connection;
 use std::path::Path;
+use tracing::{debug, info, warn};
 
 pub(crate) fn main(input: &String) -> anyhow::Result<()> {
     debug!("Inspecting: {input}");

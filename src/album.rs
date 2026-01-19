@@ -1,11 +1,11 @@
 use crate::file_type::{AccurateFileType, QuickFileType};
 use crate::media::MediaFileInfo;
 use crate::util::{PsContainer, ScanInfo, dir_part, name_part};
-use log::{debug, info, warn};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::io;
 use std::path::Path;
+use tracing::{debug, info, warn};
 
 pub(crate) fn parse_album(
     container: &mut Box<dyn PsContainer>,
