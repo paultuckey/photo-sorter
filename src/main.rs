@@ -1,18 +1,22 @@
 mod album;
 mod db_cmd;
-mod exif;
+mod exif_util;
 mod file_type;
 mod index_cmd;
 mod info_cmd;
 mod markdown;
 mod media;
+mod progress;
 mod supplemental_info;
 mod sync_cmd;
 mod test_util;
+mod track_util;
 mod util;
 
 use clap::{Parser, Subcommand};
-use log::{LevelFilter, debug, error, info};
+use tracing::{Level, debug, error, info};
+use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::util::SubscriberInitExt;
 
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
@@ -139,16 +143,15 @@ fn go() -> anyhow::Result<()> {
 }
 
 fn enable_debug(debug: bool) {
-    let mut level = LevelFilter::Info;
-    if debug {
-        level = LevelFilter::Debug;
-    }
-    env_logger::builder()
-        .filter_level(level)
-        .format_target(false)
-        .format_timestamp(None)
-        .format_level(false)
+    let filter = tracing_subscriber::filter::Targets::new()
+        .with_default(if debug { Level::DEBUG } else { Level::INFO })
+        .with_target("nom_exif", Level::ERROR);
+    let registry_layer = tracing_subscriber::fmt::layer().with_target(false);
+    tracing_subscriber::registry()
+        .with(registry_layer)
+        .with(filter)
         .init();
+
     if debug {
         debug!("Debug mode is on");
     }

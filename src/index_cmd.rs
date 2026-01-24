@@ -1,11 +1,11 @@
 use crate::util::{PsContainer, PsDirectoryContainer, PsZipContainer};
 use anyhow::anyhow;
-use log::{debug, info, warn};
 use regex::Regex;
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::sync::LazyLock;
 use strum_macros::Display;
+use tracing::{debug, info, warn};
 
 ///
 /// Do we understand all the dirs/files in a google takeout or icloud directory/zip?

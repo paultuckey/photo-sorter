@@ -1,52 +1,24 @@
-use crate::media::{MediaFileDerivedInfo, MediaFileInfo};
+use crate::media::{MediaFileDerivedInfo, MediaFileInfo, best_guess_taken_dt};
 use crate::util::{PsContainer, PsDirectoryContainer};
 use anyhow::anyhow;
-use log::{debug, warn};
+use std::io::Cursor;
+use tracing::{debug, warn};
 use yaml_rust2::yaml::Hash;
 use yaml_rust2::{Yaml, YamlEmitter, YamlLoader};
 
-pub(crate) fn mfm_from_media_file_info(media_file_info: &MediaFileInfo) -> PhotoSorterFrontMatter {
-    let mut mfm = PhotoSorterFrontMatter {
-        path_original: media_file_info.original_path.clone(),
-        datetime_original: None,
-        datetime: None,
-        gps_date: None,
-        unique_id: None,
-        people: media_file_info
-            .supp_info
-            .as_ref()
-            .map(|s| {
-                s.people
-                    .iter()
-                    .filter_map(|p| p.name.clone())
-                    .collect::<Vec<String>>()
-            })
-            .unwrap_or_default(),
-    };
-    if let Some(exif) = media_file_info.parsed_exif.clone() {
-        if let Some(dt) = exif.datetime_original {
-            mfm.datetime_original = Some(dt);
-        }
-        if let Some(dt) = exif.datetime {
-            mfm.datetime = Some(dt);
-        }
-        if let Some(gps_date) = exif.gps_date {
-            mfm.gps_date = Some(gps_date);
-        }
-        if let Some(unique_id) = exif.unique_id {
-            mfm.unique_id = Some(unique_id);
-        }
+pub(crate) fn mfm_from_media_file_info(media_info: &MediaFileInfo) -> PhotoSorterFrontMatter {
+    let guessed_datetime = best_guess_taken_dt(media_info);
+    PhotoSorterFrontMatter {
+        path_original: media_info.original_path.clone(),
+        checksum: media_info.hash_info.long_checksum.clone(),
+        datetime: guessed_datetime,
     }
-    mfm
 }
 
 pub(crate) struct PhotoSorterFrontMatter {
     pub(crate) path_original: Vec<String>,
-    pub(crate) datetime_original: Option<String>,
+    pub(crate) checksum: String,
     pub(crate) datetime: Option<String>,
-    pub(crate) gps_date: Option<String>,
-    pub(crate) unique_id: Option<String>,
-    pub(crate) people: Vec<String>,
 }
 
 pub(crate) fn sync_markdown(
@@ -82,7 +54,7 @@ pub(crate) fn sync_markdown(
     }
     let md_str = assemble_markdown(&mfm, &e_yaml, &e_md)?;
     let md_bytes = md_str.as_bytes().to_vec();
-    output_c.write(dry_run, &output_path, &md_bytes);
+    output_c.write(dry_run, &output_path, Cursor::new(&md_bytes));
     Ok(())
 }
 
@@ -218,8 +190,17 @@ fn merge_yaml(s: &Option<String>, fm: &PhotoSorterFrontMatter) -> String {
     } else {
         root = Hash::default();
     }
+    if let Some(dt) = &fm.datetime {
+        root.insert(
+            Yaml::String("datetime".to_string()),
+            Yaml::String(dt.to_string()),
+        );
+    }
+    root.insert(
+        Yaml::String("checksum".to_string()),
+        Yaml::String(fm.checksum.to_string()),
+    );
     yaml_array_merge(&mut root, &"original-paths".to_string(), &fm.path_original);
-    yaml_array_merge(&mut root, &"people".to_string(), &fm.people);
 
     // TODO: do we need to add longitude, latitude? they are stored in exif, but might be nice to have?
 
@@ -289,11 +270,8 @@ mod tests {
     fn get_mfi() -> PhotoSorterFrontMatter {
         PhotoSorterFrontMatter {
             path_original: vec!["p1".to_string(), "p2".to_string()],
-            datetime_original: None,
             datetime: None,
-            gps_date: None,
-            unique_id: None,
-            people: vec!["Nandor".to_string(), "Laszlo".to_string()],
+            checksum: "abcdefg".to_string(),
         }
     }
 
@@ -309,12 +287,10 @@ mod tests {
             yaml,
             "foo:
   - list1
+checksum: abcdefg
 original-paths:
   - p1
   - p2
-people:
-  - Nandor
-  - Laszlo
 "
         );
     }
@@ -329,6 +305,8 @@ original-paths:
 people:
   - Nandor
   - Nadja
+  - Laszlo
+checksum: abcdefg
 "
         .to_string();
         let yaml = merge_yaml(&Some(s), &get_mfi());
@@ -344,33 +322,10 @@ people:
   - Nandor
   - Nadja
   - Laszlo
+checksum: abcdefg
 "
         );
     }
-
-    //     #[test]
-    //     fn test_parse_frontmatter() {
-    //         crate::test_util::setup_log();
-    //         let (fm_o, md) = parse_frontmatter("---
-    //   photo-sorter:
-    //     path: 2025/02/09/1123-23-abcdefg.jpg
-    //     path-original:
-    //       - Google Photos/Photos from 2025/IMG_5071.HEIC
-    //     datetime: 2025-02-09T18:17:01Z
-    //     gps-date: 2025-02-09
-    // ---
-    // x
-    // last line", "test.md");
-    //         assert_eq!(fm_o.unwrap(), PhotoSorterFrontMatter {
-    //             path: Some("2025/02/09/1123-23-abcdefg.jpg".to_string()),
-    //             path_original: vec!["Google Photos/Photos from 2025/IMG_5071.HEIC".to_string()],
-    //             datetime_original: None,
-    //             datetime: Some("2025-02-09T18:17:01Z".to_string()),
-    //             gps_date: Some("2025-02-09".to_string()),
-    //             unique_id: None,
-    //         });
-    //         assert_eq!(md, "x\nlast line".to_string());
-    //     }
 
     #[test]
     fn parse_with_missing_beginning_line() {

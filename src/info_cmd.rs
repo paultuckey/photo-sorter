@@ -1,16 +1,16 @@
 use crate::album::{build_album_md, parse_album};
-use crate::exif::all_tags;
+use crate::exif_util::parse_exif_info;
 use crate::file_type::QuickFileType;
 use crate::markdown::{assemble_markdown, mfm_from_media_file_info};
 use crate::media::media_file_info_from_readable;
 use crate::supplemental_info::{detect_supplemental_info, load_supplemental_info};
 use crate::sync_cmd::inspect_media;
 use crate::util::{PsContainer, PsDirectoryContainer, ScanInfo, checksum_bytes};
-use anyhow::{Context, anyhow};
-use log::{debug, warn};
+use anyhow::anyhow;
 use std::collections::HashMap;
+use tracing::{debug, warn};
 
-pub(crate) fn main(input: &String, root_s: &String) -> anyhow::Result<()> {
+pub(crate) fn main(input: &String, root_s: &str) -> anyhow::Result<()> {
     debug!("Inspecting: {input}");
     let mut root: Box<dyn PsContainer> = Box::new(PsDirectoryContainer::new(root_s));
     let si = ScanInfo::new(input.clone(), None, None);
@@ -25,36 +25,30 @@ pub(crate) fn main(input: &String, root_s: &String) -> anyhow::Result<()> {
 }
 
 pub(crate) fn media(si: &ScanInfo, root: &mut Box<dyn PsContainer>) -> anyhow::Result<()> {
-    let bytes = root
-        .file_bytes(&si.file_path.to_string()) //
-        .with_context(|| "Error reading media file")?;
-    let checksum_o = checksum_bytes(&bytes).ok();
-    let Some((short_checksum, long_checksum)) = checksum_o else {
+    let reader = root.file_reader(&si.file_path.to_string())?;
+    let hash_info_o = checksum_bytes(reader).ok();
+    let Some(hash_info) = hash_info_o else {
         debug!("Could not calculate checksum for file: {:?}", si.file_path);
         return Err(anyhow!(
             "Could not calculate checksum for file: {:?}",
             si.file_path
         ));
     };
+
     let mut supp_info_o = None;
-    let supp_info_path_o = detect_supplemental_info(&si.file_path.clone(), root.as_ref());
+    let supp_info_path_o = detect_supplemental_info(&si.file_path.clone(), root);
     if let Some(supp_info_path) = supp_info_path_o {
         supp_info_o = load_supplemental_info(&supp_info_path, root);
     }
-    let media_file_info_res =
-        media_file_info_from_readable(si, &bytes, &supp_info_o, &short_checksum, &long_checksum);
+    let media_file_info_res = media_file_info_from_readable(si, root, &supp_info_o, &hash_info);
     let Ok(media_file_info) = media_file_info_res else {
         debug!("Not a valid media file: {}", si.file_path);
         return Ok(());
     };
 
-    println!("Media info:");
-    println!(" checksum: {}", media_file_info.long_checksum);
-    if let Some(pe) = &media_file_info.parsed_exif
-        && let Some(dt) = &pe.datetime_original
-    {
-        println!(" datetime_original: {dt}");
-    }
+    println!("Hash info:");
+    println!(" short checksum: {}", hash_info.short_checksum);
+    println!(" long checksum: {}", hash_info.long_checksum);
 
     println!("Markdown:");
     let mfm = mfm_from_media_file_info(&media_file_info);
@@ -62,13 +56,19 @@ pub(crate) fn media(si: &ScanInfo, root: &mut Box<dyn PsContainer>) -> anyhow::R
     println!("{s}");
     println!();
 
-    debug!("EXIF:");
-    let tags = all_tags(&bytes);
-    for tag in tags {
-        let tc = tag.tag_code;
-        let td = tag.tag_desc.map_or("".to_string(), |d| format!(" ({d})"));
-        let tv = tag.tag_value.map_or("<empty>".to_string(), |v| v);
-        println!("  {tc}{td}: {tv}");
+    let reader = root.file_reader(&si.file_path.to_string())?;
+    let exif_info_o = parse_exif_info(reader);
+    if let Some(exif_info) = exif_info_o {
+        if !exif_info.tags.is_empty() {
+            println!("EXIF:");
+            for (tn, tv) in exif_info.tags {
+                println!("  {tn}: {tv}");
+            }
+        }
+        if let Some(gps) = exif_info.gps {
+            println!("EXIF:");
+            println!("  gps: {gps}");
+        }
     }
     println!();
     println!();
@@ -88,16 +88,11 @@ pub(crate) fn album(si: &ScanInfo, root: &mut Box<dyn PsContainer>) -> anyhow::R
         .filter(|f| f.quick_file_type == QuickFileType::Media)
         .for_each(|f| {
             let mut si_o = None;
-            let sp_o = detect_supplemental_info(&f.file_path.clone(), root.as_ref());
+            let sp_o = detect_supplemental_info(&f.file_path.clone(), root);
             if let Some(sp) = sp_o {
                 si_o = load_supplemental_info(&sp, root);
             }
-            let bytes = root.file_bytes(&si.file_path.clone());
-            let Ok(bytes) = bytes else {
-                warn!("Could not read file: {}", si.file_path);
-                return;
-            };
-            let _ = inspect_media(&bytes, f, &mut all_media, &si_o);
+            let _ = inspect_media(f, root, &mut all_media, &si_o);
         });
 
     debug!("Markdown:");
