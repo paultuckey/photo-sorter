@@ -4,11 +4,11 @@ use crate::file_type::{
     AccurateFileType, MetadataType, QuickFileType, determine_file_type, file_ext_from_file_type,
     metadata_type,
 };
-use crate::mp4_util::{PsMp4Info, extract_mp4_metadata};
-use crate::supplemental_info::SupplementalInfo;
+use crate::track_util::{PsTrackInfo, parse_track_info};
+use crate::supplemental_info::PsSupplementalInfo;
 use crate::util::{PsContainer, ScanInfo};
 use anyhow::anyhow;
-use chrono::{DateTime, Datelike, NaiveDateTime, Timelike};
+use chrono::{DateTime, Datelike, Timelike};
 use serde::{Deserialize, Serialize};
 use tracing::warn;
 
@@ -18,12 +18,11 @@ pub(crate) struct MediaFileInfo {
     pub(crate) original_file_this_run: String,
     pub(crate) original_path: Vec<String>,
     pub(crate) quick_file_type: QuickFileType,
-    //pub(crate) parsed_exif: Option<ParsedExif>,
     pub(crate) exif_info: Option<PsExifInfo>,
-    pub(crate) mp4_info: Option<PsMp4Info>,
+    pub(crate) track_info: Option<PsTrackInfo>,
     pub(crate) accurate_file_type: AccurateFileType,
     pub(crate) hash_info: HashInfo,
-    pub(crate) supp_info: Option<SupplementalInfo>,
+    pub(crate) supp_info: Option<PsSupplementalInfo>,
     // Modified time of the file
     pub(crate) modified: Option<i64>,
     pub(crate) created: Option<i64>,
@@ -40,7 +39,7 @@ pub(crate) struct MediaFileDerivedInfo {
 pub(crate) fn media_file_info_from_readable(
     si: &ScanInfo,
     root: &mut Box<dyn PsContainer>,
-    supp_info: &Option<SupplementalInfo>,
+    supp_info: &Option<PsSupplementalInfo>,
     hash_info: &HashInfo,
 ) -> anyhow::Result<MediaFileInfo> {
     let name = &si.file_path;
@@ -52,15 +51,15 @@ pub(crate) fn media_file_info_from_readable(
     }
 
     let mut exif_o = None;
-    let mut mp4_o = None;
+    let mut track_o = None;
     match metadata_type(&guessed_ff) {
-        MetadataType::Exif => {
+        MetadataType::ExifTags => {
             let reader = root.file_reader(&si.file_path.to_string())?;
             exif_o = parse_exif_info(reader);
         }
-        MetadataType::Mp4 => {
+        MetadataType::Track => {
             let reader = root.file_reader(&si.file_path.to_string())?;
-            mp4_o = extract_mp4_metadata(reader);
+            track_o = parse_track_info(reader);
         }
         MetadataType::NoMetadata => {}
     }
@@ -72,7 +71,7 @@ pub(crate) fn media_file_info_from_readable(
         accurate_file_type: guessed_ff.clone(),
         quick_file_type: si.quick_file_type.clone(),
         exif_info: exif_o.clone(),
-        mp4_info: mp4_o.clone(),
+        track_info: track_o.clone(),
         hash_info,
         supp_info: supp_info.clone(),
         modified: si.modified_datetime,
@@ -107,6 +106,7 @@ pub(crate) fn media_file_derived_from_media_info(
 /// 7. File creation time
 ///   - no timezone info, unavailable in zips, somewhat unreliable in directories due to file
 ///     copying / syncing not preserving, only use as a last resort
+///
 /// Result returned as ISO 8601 string
 pub(crate) fn best_guess_taken_dt(info: &MediaFileInfo) -> Option<String> {
     if let Some(dt) = info
@@ -150,7 +150,7 @@ pub(crate) fn get_desired_media_path(short_checksum: &str, media_datetime: &Opti
     let date_dir;
     let name;
     if let Some(dt_s) = media_datetime {
-        let dt_r = DateTime::parse_from_rfc3339(&dt_s);
+        let dt_r = DateTime::parse_from_rfc3339(dt_s);
         match dt_r {
             Ok(dt) => {
                 date_dir = format!("{}/{:0>2}/{:0>2}", dt.year(), dt.month(), dt.day());
@@ -214,7 +214,7 @@ impl MediaFileInfo {
             original_path: vec![],
             quick_file_type: QuickFileType::Media,
             exif_info: None,
-            mp4_info: None,
+            track_info: None,
             accurate_file_type: AccurateFileType::Jpg,
             hash_info: HashInfo {
                 short_checksum: "tsc".to_string(),

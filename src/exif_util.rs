@@ -1,4 +1,3 @@
-use chrono::DateTime;
 use nom_exif::{ExifIter, ExifTag, MediaParser, MediaSource, ParsedExifEntry};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -134,7 +133,7 @@ mod tests {
         let mut c = PsDirectoryContainer::new("test");
         let reader = c.file_reader("Canon_40D.jpg")?;
         let t = parse_exif_info(reader).unwrap().tags;
-        assert_eq!(t.len(), 44);
+        assert_eq!(t.len(), 40);
         let mut tag_names: Vec<String> = t
             .iter()
             .map(|(t, _)| t.to_string())

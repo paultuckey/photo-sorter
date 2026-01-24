@@ -43,6 +43,7 @@ pub(crate) enum AccurateFileType {
     Heic,
     Gif,
     Mp4,
+    Mov,
     Json,
     Csv,
     Unsupported,
@@ -55,6 +56,7 @@ pub(crate) fn file_ext_from_file_type(ff: &AccurateFileType) -> String {
         AccurateFileType::Png => "png".to_string(),
         AccurateFileType::Heic => "heic".to_string(),
         AccurateFileType::Mp4 => "mp4".to_string(),
+        AccurateFileType::Mov => "mov".to_string(),
         AccurateFileType::Unsupported => "bin".to_string(),
         AccurateFileType::Json => "json".to_string(),
         AccurateFileType::Csv => "csv".to_string(),
@@ -62,8 +64,8 @@ pub(crate) fn file_ext_from_file_type(ff: &AccurateFileType) -> String {
 }
 
 pub(crate) enum MetadataType {
-    Exif,
-    Mp4,
+    ExifTags,
+    Track,
     NoMetadata,
 }
 
@@ -72,8 +74,9 @@ pub(crate) fn metadata_type(ff: &AccurateFileType) -> MetadataType {
         AccurateFileType::Jpg
         | AccurateFileType::Png
         | AccurateFileType::Heic
-        | AccurateFileType::Gif => MetadataType::Exif,
-        AccurateFileType::Mp4 => MetadataType::Mp4,
+        | AccurateFileType::Gif => MetadataType::ExifTags,
+        AccurateFileType::Mp4
+        | AccurateFileType::Mov => MetadataType::Track,
         AccurateFileType::Json | AccurateFileType::Csv | AccurateFileType::Unsupported => {
             MetadataType::NoMetadata
         }
@@ -87,6 +90,7 @@ pub(crate) fn file_type_from_content_type(ct: &str) -> AccurateFileType {
         "image/png" => AccurateFileType::Png,
         "image/heic" => AccurateFileType::Heic,
         "video/mp4" => AccurateFileType::Mp4,
+        "video/mov" => AccurateFileType::Mov,
         "video/quicktime" => AccurateFileType::Mp4,
         "application/octet-stream" => AccurateFileType::Unsupported,
         "application/json" => AccurateFileType::Unsupported,

@@ -7,7 +7,7 @@ use crate::media::{
 };
 use crate::progress::Progress;
 use crate::supplemental_info::{
-    SupplementalInfo, detect_supplemental_info, load_supplemental_info,
+    PsSupplementalInfo, detect_supplemental_info, load_supplemental_info,
 };
 use crate::sync_cmd::DeDuplicationResult::{SkipWrite, WritePath};
 use crate::util::{
@@ -168,7 +168,7 @@ pub(crate) fn inspect_media(
     si: &ScanInfo,
     root: &mut Box<dyn PsContainer>,
     all_media: &mut HashMap<String, MediaFileInfo>,
-    supp_info: &Option<SupplementalInfo>,
+    supp_info: &Option<PsSupplementalInfo>,
 ) -> anyhow::Result<MediaFileInfo> {
     info!("Inspect: {}", si.file_path);
     let reader = root.file_reader(&si.file_path.to_string())?;

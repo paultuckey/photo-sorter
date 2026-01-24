@@ -6,7 +6,7 @@ mod index_cmd;
 mod info_cmd;
 mod markdown;
 mod media;
-mod mp4_util;
+mod track_util;
 mod progress;
 mod supplemental_info;
 mod sync_cmd;

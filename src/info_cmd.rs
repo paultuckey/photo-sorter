@@ -10,7 +10,7 @@ use anyhow::anyhow;
 use std::collections::HashMap;
 use tracing::{debug, warn};
 
-pub(crate) fn main(input: &String, root_s: &String) -> anyhow::Result<()> {
+pub(crate) fn main(input: &String, root_s: &str) -> anyhow::Result<()> {
     debug!("Inspecting: {input}");
     let mut root: Box<dyn PsContainer> = Box::new(PsDirectoryContainer::new(root_s));
     let si = ScanInfo::new(input.clone(), None, None);

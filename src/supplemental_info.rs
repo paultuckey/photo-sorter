@@ -25,7 +25,7 @@ pub(crate) fn detect_supplemental_info(
 pub(crate) fn load_supplemental_info(
     path: &String,
     container: &mut Box<dyn PsContainer>,
-) -> Option<SupplementalInfo> {
+) -> Option<PsSupplementalInfo> {
     let reader_r = container.file_reader(path);
     let Ok(reader) = reader_r else {
         warn!("Could not read supplemental json file: {path}");
@@ -69,7 +69,7 @@ impl SupplementalInfoDateTime {
 }
 #[derive(Deserialize, Serialize, Debug, Clone)]
 #[serde(rename_all(deserialize = "camelCase", serialize = "camelCase"))]
-pub(crate) struct SupplementalInfo {
+pub(crate) struct PsSupplementalInfo {
     pub(crate) geo_data: Option<SupplementalInfoGeoData>,
     pub(crate) geo_data_exif: Option<SupplementalInfoGeoData>,
     pub(crate) people: Vec<SupplementalInfoPerson>,
@@ -77,8 +77,8 @@ pub(crate) struct SupplementalInfo {
     pub(crate) creation_time: Option<SupplementalInfoDateTime>,
 }
 
-fn parse_supplemental_info<R: Read>(json_reader: R) -> Option<SupplementalInfo> {
-    let gs_r: Result<SupplementalInfo, _> = serde_json::from_reader(json_reader);
+fn parse_supplemental_info<R: Read>(json_reader: R) -> Option<PsSupplementalInfo> {
+    let gs_r: Result<PsSupplementalInfo, _> = serde_json::from_reader(json_reader);
     if let Ok(gs) = gs_r {
         return Some(gs);
     }

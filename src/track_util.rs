@@ -1,4 +1,3 @@
-use chrono::DateTime;
 use nom_exif::{MediaParser, MediaSource, TrackInfo, TrackInfoTag};
 use serde::{Deserialize, Serialize};
 use std::io::{Read, Seek};
@@ -6,7 +5,7 @@ use tracing::{info, warn};
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
 #[serde(rename_all(deserialize = "camelCase", serialize = "camelCase"))]
-pub(crate) struct PsMp4Info {
+pub(crate) struct PsTrackInfo {
     pub width: Option<u64>,
     pub height: Option<u64>,
     // rfc3339
@@ -19,10 +18,10 @@ pub(crate) struct PsMp4Info {
     pub gps_iso_6709: Option<String>,
 }
 
-pub fn extract_mp4_metadata<R: Read + Seek>(reader: R) -> Option<PsMp4Info> {
+pub fn parse_track_info<R: Read + Seek>(reader: R) -> Option<PsTrackInfo> {
     let ms_r = MediaSource::seekable(reader);
     let Ok(ms) = ms_r else {
-        warn!("Failed to read MP4 media source");
+        warn!("Failed to read track media source");
         return None;
     };
     if !ms.has_track() {
@@ -33,11 +32,11 @@ pub fn extract_mp4_metadata<R: Read + Seek>(reader: R) -> Option<PsMp4Info> {
 
     match info {
         Err(e) => {
-            warn!("Failed to parse MP4 metadata: {:?}", e);
+            warn!("Failed to parse track metadata: {:?}", e);
             None
         }
         Ok(info) => {
-            let pm = PsMp4Info {
+            let ti = PsTrackInfo {
                 width: parse_to_o_u64(&info.get(TrackInfoTag::ImageWidth)),
                 height: parse_to_o_u64(&info.get(TrackInfoTag::ImageHeight)),
                 creation_time: parse_to_o_s(&info.get(TrackInfoTag::CreateDate)),
@@ -65,9 +64,9 @@ pub fn extract_mp4_metadata<R: Read + Seek>(reader: R) -> Option<PsMp4Info> {
                     )
                 })
                 .for_each(|info| {
-                    info!("MP4 Additional Metadata: {} = {}", info.0, info.1);
+                    info!("Track Additional Metadata: {} = {}", info.0, info.1);
                 });
-            Some(pm)
+            Some(ti)
         }
     }
 }
@@ -88,16 +87,6 @@ fn parse_to_o_s(opt: &Option<&nom_exif::EntryValue>) -> Option<String> {
     Some(v.to_string())
 }
 
-fn parse_date_to_o_ms(opt: &Option<&nom_exif::EntryValue>) -> Option<i64> {
-    let Some(v) = opt else {
-        return None;
-    };
-    let Ok(dt) = DateTime::parse_from_rfc3339(&v.to_string()) else {
-        return None;
-    };
-    Some(dt.timestamp_millis())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -105,11 +94,11 @@ mod tests {
     use std::path::Path;
 
     #[test]
-    fn test_parse_mp4() -> anyhow::Result<()> {
+    fn test_parse_track() -> anyhow::Result<()> {
         crate::test_util::setup_log();
         let mut c = PsDirectoryContainer::new(&"test".to_string());
         let reader = c.file_reader(&"Hello.mp4".to_string())?;
-        let meta = extract_mp4_metadata(reader).unwrap();
+        let meta = parse_track_info(reader).unwrap();
         assert_eq!(meta.width, Some(854));
         assert_eq!(meta.height, Some(480));
         assert_eq!(meta.duration_ms, Some(5000));
@@ -133,7 +122,7 @@ mod tests {
                 .map_or(false, |ext| ext.eq_ignore_ascii_case("mp4"))
             {
                 let reader = c.file_reader(&path.to_string_lossy().to_string())?;
-                let _ = extract_mp4_metadata(reader);
+                let _ = parse_track_info(reader);
             }
         }
         Ok(())
