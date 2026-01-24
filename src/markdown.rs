@@ -1,17 +1,17 @@
 use crate::media::{MediaFileDerivedInfo, MediaFileInfo};
 use crate::util::{PsContainer, PsDirectoryContainer};
 use anyhow::anyhow;
+use std::io::Cursor;
 use tracing::{debug, warn};
 use yaml_rust2::yaml::Hash;
 use yaml_rust2::{Yaml, YamlEmitter, YamlLoader};
 
 pub(crate) fn mfm_from_media_file_info(media_file_info: &MediaFileInfo) -> PhotoSorterFrontMatter {
-    let mut mfm = PhotoSorterFrontMatter {
+    let mfm = PhotoSorterFrontMatter {
         path_original: media_file_info.original_path.clone(),
         datetime_original: None,
         datetime: None,
         gps_date: None,
-        unique_id: None,
         people: media_file_info
             .supp_info
             .as_ref()
@@ -23,20 +23,18 @@ pub(crate) fn mfm_from_media_file_info(media_file_info: &MediaFileInfo) -> Photo
             })
             .unwrap_or_default(),
     };
-    if let Some(exif) = media_file_info.parsed_exif.clone() {
-        if let Some(dt) = exif.datetime_original {
-            mfm.datetime_original = Some(dt);
-        }
-        if let Some(dt) = exif.datetime {
-            mfm.datetime = Some(dt);
-        }
-        if let Some(gps_date) = exif.gps_date {
-            mfm.gps_date = Some(gps_date);
-        }
-        if let Some(unique_id) = exif.unique_id {
-            mfm.unique_id = Some(unique_id);
-        }
-    }
+    // todo
+    // if let Some(exif) = media_file_info.exif_info.clone() {
+    //     if let Some(dt) = exif.datetime_original {
+    //         mfm.datetime_original = Some(dt);
+    //     }
+    //     if let Some(dt) = exif.datetime {
+    //         mfm.datetime = Some(dt);
+    //     }
+    //     if let Some(gps_date) = exif.gps_date {
+    //         mfm.gps_date = Some(gps_date);
+    //     }
+    // }
     mfm
 }
 
@@ -45,7 +43,6 @@ pub(crate) struct PhotoSorterFrontMatter {
     pub(crate) datetime_original: Option<String>,
     pub(crate) datetime: Option<String>,
     pub(crate) gps_date: Option<String>,
-    pub(crate) unique_id: Option<String>,
     pub(crate) people: Vec<String>,
 }
 
@@ -82,7 +79,7 @@ pub(crate) fn sync_markdown(
     }
     let md_str = assemble_markdown(&mfm, &e_yaml, &e_md)?;
     let md_bytes = md_str.as_bytes().to_vec();
-    output_c.write(dry_run, &output_path, &md_bytes);
+    output_c.write(dry_run, &output_path, Cursor::new(&md_bytes));
     Ok(())
 }
 
@@ -292,7 +289,6 @@ mod tests {
             datetime_original: None,
             datetime: None,
             gps_date: None,
-            unique_id: None,
             people: vec!["Nandor".to_string(), "Laszlo".to_string()],
         }
     }

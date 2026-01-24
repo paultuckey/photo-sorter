@@ -1,26 +1,42 @@
+use crate::db_cmd::HashInfo;
 use crate::file_type::{QuickFileType, find_quick_file_type};
 use anyhow::anyhow;
-use status_line::StatusLine;
-use std::fmt::{Display, Formatter};
+use sha2::{Digest, Sha256};
 use std::fs;
 use std::fs::File;
-use std::io::Read;
+use std::io::{Cursor, Read, Seek};
 use std::path::Path;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, SystemTime};
 use tracing::{debug, error, warn};
 use zip::ZipArchive;
 
 /// Similar to github generate a short and long hash from the bytes
-pub(crate) fn checksum_bytes(bytes: &Vec<u8>) -> anyhow::Result<(String, String)> {
-    let hash = sha256::digest(bytes);
-    let chars = hash.chars();
-    Ok((chars.clone().take(7).collect(), chars.take(64).collect()))
+pub(crate) fn checksum_bytes<R: Read>(mut reader: R) -> anyhow::Result<HashInfo> {
+    let mut hasher = Sha256::new();
+    let mut buffer = [0; 8192]; // Read in 8KB chunks
+    loop {
+        let count = reader.read(&mut buffer)?;
+        if count == 0 {
+            break;
+        }
+        hasher.update(&buffer[..count]);
+    }
+    let digest = hasher.finalize();
+    let hex = hex::encode(digest);
+    let chars = hex.chars();
+    Ok(HashInfo {
+        short_checksum: chars.clone().take(7).collect(),
+        long_checksum: chars.take(64).collect(),
+    })
 }
+
+pub(crate) trait ReadSeek: Read + Seek {}
+impl<T: Read + Seek> ReadSeek for T {}
 
 pub(crate) trait PsContainer {
     fn scan(&self) -> Vec<ScanInfo>;
     fn file_bytes(&mut self, path: &str) -> anyhow::Result<Vec<u8>>;
+    fn file_reader(&mut self, path: &str) -> anyhow::Result<Box<dyn ReadSeek>>;
     fn exists(&self, path: &str) -> bool;
     fn root_exists(&self) -> bool;
 }
@@ -57,26 +73,29 @@ pub(crate) struct PsDirectoryContainer {
 }
 
 impl PsDirectoryContainer {
-    pub(crate) fn new(root: &String) -> Self {
+    pub(crate) fn new(root: &str) -> Self {
         PsDirectoryContainer {
             root: root.to_string(),
         }
     }
-    pub(crate) fn write(&self, dry_run: bool, path: &String, bytes: &Vec<u8>) {
+    pub(crate) fn write<R: Read>(&self, dry_run: bool, path: &String, reader: R) {
         let p = Path::new(&self.root).join(path);
         if dry_run {
-            debug!(
-                "Dry run: would write file {:?} with {} bytes",
-                p,
-                bytes.len()
-            );
+            debug!("Dry run: would write file {:?}", p);
             return;
         }
         if let Err(e) = fs::create_dir_all(p.parent().unwrap()) {
             error!("Unable to create directory {:?}: {}", p.parent(), e);
             return;
         }
-        if let Err(e) = fs::write(&p, bytes) {
+        let mut file = match File::create(&p) {
+            Ok(f) => f,
+            Err(e) => {
+                error!("Unable to create file {p:?}: {e}");
+                return;
+            }
+        };
+        if let Err(e) = std::io::copy(&mut reader.take(u64::MAX), &mut file) {
             error!("Unable to write file {p:?}: {e}");
             return;
         }
@@ -193,6 +212,17 @@ impl PsContainer for PsDirectoryContainer {
         file.read_to_end(&mut buffer).unwrap_or(0);
         Ok(buffer)
     }
+
+    fn file_reader(&mut self, path: &str) -> anyhow::Result<Box<dyn ReadSeek>> {
+        let file_path = Path::new(&self.root).join(path);
+        let file_r = File::open(&file_path);
+        let Ok(file) = file_r else {
+            warn!("Unable to open file: {file_path:?}");
+            return Err(anyhow!("Unable to open file {file_path:?}"));
+        };
+        Ok(Box::new(file))
+    }
+
     fn exists(&self, file: &str) -> bool {
         Path::new(&self.root).join(file).exists()
     }
@@ -269,15 +299,23 @@ impl PsContainer for PsZipContainer {
     fn file_bytes(&mut self, path: &str) -> anyhow::Result<Vec<u8>> {
         let file_res = self.zip.by_name(path);
         let Some(mut file) = file_res.ok() else {
+            warn!("Unable to open file: {path:?}");
             return Err(anyhow!("Unable to find file {:?}", path));
         };
         if file.is_dir() {
+            warn!("Attempted roe read bytes from a directory: {path:?}");
             return Err(anyhow!("File is a dir {:?}", path));
         }
         let mut buffer = Vec::new();
         file.read_to_end(&mut buffer).unwrap_or(0);
         Ok(buffer)
     }
+
+    fn file_reader(&mut self, path: &str) -> anyhow::Result<Box<dyn ReadSeek>> {
+        let bytes = self.file_bytes(path)?;
+        Ok(Box::new(Cursor::new(bytes)))
+    }
+
     fn exists(&self, path: &str) -> bool {
         self.index.iter().any(|i| i.file_path.eq(path))
     }
@@ -288,19 +326,19 @@ impl PsContainer for PsZipContainer {
 
 pub(crate) fn is_existing_file_same(
     output_container: &mut PsDirectoryContainer,
-    long_checksum: &String,
+    long_checksum: &str,
     output_path: &String,
 ) -> Option<bool> {
-    let Ok(bytes) = output_container.file_bytes(output_path) else {
+    let Ok(reader) = output_container.file_reader(output_path) else {
         debug!("Could not read file bytes for checksum: {output_path:?}");
         return None;
     };
-    let existing_file_checksum_r = checksum_bytes(&bytes);
-    let Ok((_, existing_long_checksum)) = existing_file_checksum_r else {
+    let existing_file_hash_info_r = checksum_bytes(reader);
+    let Ok(existing_file_hash_info) = existing_file_hash_info_r else {
         debug!("Could not read file for checksum: {output_path:?}");
         return None;
     };
-    Some(existing_long_checksum.eq(long_checksum))
+    Some(existing_file_hash_info.long_checksum.eq(long_checksum))
 }
 
 pub(crate) fn dir_part(file_path_s: &String) -> String {
@@ -322,58 +360,9 @@ pub(crate) fn name_part(file_path_s: &String) -> String {
     file_name_str.to_string_lossy().to_string()
 }
 
-// Make sure it is Send + Sync, so it can be read and written from different threads:
-pub(crate) struct Progress {
-    total: u64,
-    current: AtomicU64,
-}
-impl Progress {
-    pub(crate) fn new(total: u64) -> StatusLine<Progress> {
-        StatusLine::new(Progress {
-            current: AtomicU64::new(0),
-            total,
-        })
-    }
-    pub(crate) fn inc(&self) {
-        self.current.fetch_add(1, Ordering::Relaxed);
-    }
-}
-
-impl Display for Progress {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        let current = self.current.load(Ordering::Relaxed);
-        let progress_bar_char_width = 19; // plus on for arrow head
-        let pos = progress_bar_char_width * current / self.total;
-        let bar_done = "=".repeat(pos as usize);
-        let bar_not_done = " ".repeat(progress_bar_char_width as usize - pos as usize);
-        let x_of_y = format!("{} of {}", current, self.total);
-        write!(f, "[{bar_done}>{bar_not_done}] {x_of_y}")?;
-        Ok(())
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::thread;
-
-    /// Progress example (not really a test)
-    /// increase delay to make it more visible as progress bar has a frame rate
-    #[test]
-    fn test_progress() -> anyhow::Result<()> {
-        crate::test_util::setup_log();
-        let delay = Duration::from_millis(1);
-        let prog = Progress::new(10);
-        thread::sleep(delay);
-        for i in 0..10 {
-            prog.inc();
-            if i % 2 == 0 {
-                debug!("Even {i}");
-            }
-            thread::sleep(delay);
-        }
-        Ok(())
-    }
 
     #[test]
     fn test_zip() -> anyhow::Result<()> {
@@ -392,14 +381,12 @@ mod tests {
     fn test_files_checksum() -> anyhow::Result<()> {
         use crate::util::PsDirectoryContainer;
         let mut c = PsDirectoryContainer::new(&"test".to_string());
-        let b = c.file_bytes("Canon_40D.jpg")?;
-        let csm = checksum_bytes(&b)?;
+        let b = c.file_reader("Canon_40D.jpg")?;
+        let csm = checksum_bytes(b)?;
+        assert_eq!(csm.short_checksum, "6bfdabd".to_string());
         assert_eq!(
-            csm,
-            (
-                "6bfdabd".to_string(),
-                "6bfdabd4fc33d112283c147acccc574e770bbe6fbdbc3d4da968ba7b606ecc2f".to_string()
-            )
+            csm.long_checksum,
+            "6bfdabd4fc33d112283c147acccc574e770bbe6fbdbc3d4da968ba7b606ecc2f".to_string()
         );
         Ok(())
     }

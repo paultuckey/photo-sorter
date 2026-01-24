@@ -5,16 +5,18 @@ use crate::media::{
     MediaFileDerivedInfo, MediaFileInfo, media_file_derived_from_media_info,
     media_file_info_from_readable,
 };
+use crate::progress::Progress;
 use crate::supplemental_info::{
     SupplementalInfo, detect_supplemental_info, load_supplemental_info,
 };
 use crate::sync_cmd::DeDuplicationResult::{SkipWrite, WritePath};
 use crate::util::{
-    Progress, PsContainer, PsDirectoryContainer, PsZipContainer, ScanInfo, checksum_bytes,
+    PsContainer, PsDirectoryContainer, PsZipContainer, ScanInfo, checksum_bytes,
     is_existing_file_same,
 };
 use anyhow::anyhow;
 use std::collections::HashMap;
+use std::io::Cursor;
 use std::path::Path;
 use tracing::{debug, info, warn};
 
@@ -69,16 +71,11 @@ pub(crate) fn main(
 
             let mut supp_info_o = None;
             let supp_info_path_o =
-                detect_supplemental_info(&media_si.file_path.clone(), container.as_ref());
+                detect_supplemental_info(&media_si.file_path.clone(), &mut container);
             if let Some(supp_info_path) = supp_info_path_o {
                 supp_info_o = load_supplemental_info(&supp_info_path, &mut container);
             }
-            let bytes = container.file_bytes(&media_si.file_path.clone());
-            let Ok(bytes) = bytes else {
-                warn!("Could not read file: {}", media_si.file_path);
-                return Err(anyhow!("Could not read file: {}", media_si.file_path));
-            };
-            let _ = inspect_media(&bytes, media_si, &mut all_media, &supp_info_o);
+            let _ = inspect_media(media_si, &mut container, &mut all_media, &supp_info_o);
         }
         drop(prog);
 
@@ -92,8 +89,9 @@ pub(crate) fn main(
                     write_media(media, &derived, dry_run, &mut container, output_container);
                 match write_r {
                     Ok(final_path) => {
+                        let long_checksum = &media.hash_info.long_checksum;
                         final_path_by_original_path
-                            .insert(media.long_checksum.clone(), final_path.clone());
+                            .insert(long_checksum.clone(), final_path.clone());
                         if !skip_markdown {
                             let sync_md_r =
                                 sync_markdown(dry_run, media, &derived, output_container);
@@ -154,7 +152,7 @@ pub(crate) fn main(
                 debug!("  Album markdown file already exists, clobbering, at {output_path:?}");
             }
             let bytes = &a_s.as_bytes().to_vec();
-            output_c.write(dry_run, output_path, bytes);
+            output_c.write(dry_run, output_path, Cursor::new(bytes));
         }
     }
 
@@ -167,32 +165,33 @@ pub(crate) fn main(
 /// - capture extra_info
 /// - populate exif data
 pub(crate) fn inspect_media(
-    bytes: &Vec<u8>,
     si: &ScanInfo,
+    root: &mut Box<dyn PsContainer>,
     all_media: &mut HashMap<String, MediaFileInfo>,
     supp_info: &Option<SupplementalInfo>,
 ) -> anyhow::Result<MediaFileInfo> {
     info!("Inspect: {}", si.file_path);
-    let checksum_o = checksum_bytes(bytes).ok();
-    let Some((short_checksum, long_checksum)) = checksum_o else {
+    let reader = root.file_reader(&si.file_path.to_string())?;
+    let hash_info_o = checksum_bytes(reader).ok();
+    let Some(hash_info) = hash_info_o else {
         warn!("Could not calculate checksum for: {:?}", si.file_path);
         return Err(anyhow!(
             "Could not calculate checksum for file: {:?}",
             si.file_path
         ));
     };
-    debug!("  Checksum calculated: {long_checksum}");
-    if let Some(m) = all_media.get_mut(&long_checksum) {
+
+    debug!("  Checksum calculated: {}", hash_info.long_checksum);
+    if let Some(m) = all_media.get_mut(&hash_info.long_checksum) {
         m.original_path.push(si.file_path.clone());
         return Ok(m.clone());
     }
-    let media_file_info_res =
-        media_file_info_from_readable(si, bytes, supp_info, &short_checksum, &long_checksum);
+    let media_file_info_res = media_file_info_from_readable(si, root, supp_info, &hash_info);
     let Ok(media_file) = media_file_info_res else {
         warn!("Could not calculate info for: {:?}", si.file_path);
         return Err(anyhow!("File type unsupported: {:?}", si.file_path));
     };
-    all_media.insert(media_file.long_checksum.clone(), media_file.clone());
+    all_media.insert(hash_info.long_checksum.clone(), media_file.clone());
     Ok(media_file)
 }
 
@@ -210,8 +209,8 @@ pub(crate) fn write_media(
             SkipWrite(path) => return Ok(path),
             WritePath(path) => path,
         };
-    let bytes = input_container.file_bytes(&media_file.original_file_this_run)?;
-    output_container.write(dry_run, &desired_output_path_with_ext.clone(), &bytes);
+    let reader = input_container.file_reader(&media_file.original_file_this_run)?;
+    output_container.write(dry_run, &desired_output_path_with_ext.clone(), reader);
     output_container.set_modified(
         dry_run,
         &desired_output_path_with_ext.clone(),
@@ -236,12 +235,14 @@ fn get_de_duplicated_path(
         return Err(anyhow!("No desired media path for file: {media_file:?}"));
     };
     for attempt in 0..MAX_DUPLICATE_CHECK_ATTEMPTS {
+        let short_checksum = &media_file.hash_info.short_checksum;
+        let long_checksum = &media_file.hash_info.long_checksum;
         let suffix = match attempt {
             0 => String::new(),
             // second to last attempt, use short checksum as suffix, should be mostly unique
-            n if n == MAX_DUPLICATE_CHECK_ATTEMPTS - 2 => format!("-{}", media_file.short_checksum),
+            n if n == MAX_DUPLICATE_CHECK_ATTEMPTS - 2 => format!("-{}", short_checksum),
             // last attempt, use long checksum as suffix, should be guaranteed unique
-            n if n == MAX_DUPLICATE_CHECK_ATTEMPTS - 1 => format!("-{}", media_file.long_checksum),
+            n if n == MAX_DUPLICATE_CHECK_ATTEMPTS - 1 => format!("-{}", long_checksum),
             // on first retry add -1, then -2, etc
             n => format!("-{n}"),
         };
@@ -252,9 +253,10 @@ fn get_de_duplicated_path(
         if !output_container.exists(&desired_output_path_with_ext) {
             return Ok(WritePath(desired_output_path_with_ext));
         }
+        let long_checksum = &media_file.hash_info.long_checksum;
         let es_o = is_existing_file_same(
             output_container,
-            &media_file.long_checksum,
+            long_checksum,
             &desired_output_path_with_ext,
         );
         match es_o {

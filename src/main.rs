@@ -7,6 +7,7 @@ mod info_cmd;
 mod markdown;
 mod media;
 mod mp4_util;
+mod progress;
 mod supplemental_info;
 mod sync_cmd;
 mod test_util;
@@ -14,6 +15,8 @@ mod util;
 
 use clap::{Parser, Subcommand};
 use tracing::{Level, debug, error, info};
+use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::util::SubscriberInitExt;
 
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
@@ -140,11 +143,15 @@ fn go() -> anyhow::Result<()> {
 }
 
 fn enable_debug(debug: bool) {
-    let mut level = Level::INFO;
-    if debug {
-        level = Level::DEBUG;
-    }
-    tracing_subscriber::fmt().with_max_level(level).init();
+    let filter = tracing_subscriber::filter::Targets::new()
+        .with_default(if debug { Level::DEBUG } else { Level::INFO })
+        .with_target("nom_exif", Level::ERROR);
+    let registry_layer = tracing_subscriber::fmt::layer().with_target(false);
+    tracing_subscriber::registry()
+        .with(registry_layer)
+        .with(filter)
+        .init();
+
     if debug {
         debug!("Debug mode is on");
     }

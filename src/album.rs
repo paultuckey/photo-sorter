@@ -3,7 +3,6 @@ use crate::media::MediaFileInfo;
 use crate::util::{PsContainer, ScanInfo, dir_part, name_part};
 use serde_json::Value;
 use std::collections::HashMap;
-use std::io;
 use std::path::Path;
 use tracing::{debug, info, warn};
 
@@ -21,14 +20,13 @@ pub(crate) fn parse_album(
 
 fn parse_csv_album(container: &mut Box<dyn PsContainer>, si: &ScanInfo) -> Option<Album> {
     info!("Parse CSV album: {:?}", &si.file_path);
-    let bytes_r = container.file_bytes(&si.file_path);
-    let Ok(bytes) = bytes_r else {
+    let reader_r = container.file_reader(&si.file_path);
+    let Ok(reader) = reader_r else {
         warn!("No bytes for album: {:?}", &si.file_path);
         return None;
     };
     let name = &si.file_path;
-    let cursor = io::Cursor::new(bytes);
-    let mut rdr = csv::Reader::from_reader(cursor);
+    let mut rdr = csv::Reader::from_reader(reader);
     let Ok(s) = rdr.headers() else {
         debug!("  No headers");
         return None;
@@ -108,12 +106,12 @@ fn parse_json_album(
     si: &ScanInfo,
     all_scanned_files: &[ScanInfo],
 ) -> Option<Album> {
-    let bytes_r = container.file_bytes(&si.file_path);
-    let Ok(bytes) = bytes_r else {
+    let reader_r = container.file_reader(&si.file_path);
+    let Ok(reader) = reader_r else {
         warn!("No bytes for album: {:?}", &si.file_path);
         return None;
     };
-    let j: Result<Value, _> = serde_json::from_slice(&bytes);
+    let j: Result<Value, _> = serde_json::from_reader(reader);
     let title;
     if let Ok(j) = j {
         let title_res = j.get("title");
@@ -180,8 +178,8 @@ pub(crate) fn build_album_md(
                         && m.original_path.iter().any(|p| p.eq(&f))
                 })
                 .and_then(|m| {
-                    let cs = m.long_checksum.clone();
-                    final_path_by_checksum.and_then(|fp_map| fp_map.get(&cs).cloned())
+                    let long_checksum = &m.hash_info.long_checksum;
+                    final_path_by_checksum.and_then(|fp_map| fp_map.get(long_checksum).cloned())
                 });
             if target_path_o.is_none() {
                 warn!("No media file desired path found for: {f}");

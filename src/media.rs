@@ -1,26 +1,28 @@
-use crate::exif_util::{ParsedExif, d_as_epoch_ms, dt_as_epoch_ms, parse_exif};
+use crate::db_cmd::HashInfo;
+use crate::exif_util::{PsExifInfo, best_guess_taken_exif, parse_exif_info};
 use crate::file_type::{
     AccurateFileType, MetadataType, QuickFileType, determine_file_type, file_ext_from_file_type,
     metadata_type,
 };
-use crate::mp4_util;
-use crate::mp4_util::ParsedMp4;
+use crate::mp4_util::{PsMp4Info, extract_mp4_metadata};
 use crate::supplemental_info::SupplementalInfo;
-use crate::util::ScanInfo;
+use crate::util::{PsContainer, ScanInfo};
 use anyhow::anyhow;
-use chrono::{DateTime, Datelike, Timelike};
+use chrono::{DateTime, Datelike, NaiveDateTime, Timelike};
+use serde::{Deserialize, Serialize};
 use tracing::warn;
 
-#[derive(Debug, Clone)]
+#[derive(Deserialize, Serialize, Debug, Clone)]
+#[serde(rename_all(deserialize = "camelCase", serialize = "camelCase"))]
 pub(crate) struct MediaFileInfo {
     pub(crate) original_file_this_run: String,
     pub(crate) original_path: Vec<String>,
     pub(crate) quick_file_type: QuickFileType,
-    pub(crate) parsed_exif: Option<ParsedExif>,
-    pub(crate) parsed_mp4: Option<ParsedMp4>,
+    //pub(crate) parsed_exif: Option<ParsedExif>,
+    pub(crate) exif_info: Option<PsExifInfo>,
+    pub(crate) mp4_info: Option<PsMp4Info>,
     pub(crate) accurate_file_type: AccurateFileType,
-    pub(crate) short_checksum: String,
-    pub(crate) long_checksum: String,
+    pub(crate) hash_info: HashInfo,
     pub(crate) supp_info: Option<SupplementalInfo>,
     // Modified time of the file
     pub(crate) modified: Option<i64>,
@@ -36,14 +38,14 @@ pub(crate) struct MediaFileDerivedInfo {
 }
 
 pub(crate) fn media_file_info_from_readable(
-    scan_info: &ScanInfo,
-    bytes: &Vec<u8>,
+    si: &ScanInfo,
+    root: &mut Box<dyn PsContainer>,
     supp_info: &Option<SupplementalInfo>,
-    short_checksum: &str,
-    long_checksum: &str,
+    hash_info: &HashInfo,
 ) -> anyhow::Result<MediaFileInfo> {
-    let name = &scan_info.file_path;
-    let guessed_ff = determine_file_type(bytes, name);
+    let name = &si.file_path;
+    let reader = root.file_reader(&si.file_path.to_string())?;
+    let guessed_ff = determine_file_type(reader, name);
     if guessed_ff == AccurateFileType::Unsupported {
         warn!("Not a valid media file {name:?}");
         return Err(anyhow!("File is not a valid media file"));
@@ -53,25 +55,28 @@ pub(crate) fn media_file_info_from_readable(
     let mut mp4_o = None;
     match metadata_type(&guessed_ff) {
         MetadataType::Exif => {
-            exif_o = parse_exif(bytes, name, &guessed_ff);
+            let reader = root.file_reader(&si.file_path.to_string())?;
+            exif_o = parse_exif_info(reader);
         }
         MetadataType::Mp4 => {
-            mp4_o = mp4_util::extract_mp4_metadata(bytes).ok();
+            let reader = root.file_reader(&si.file_path.to_string())?;
+            mp4_o = extract_mp4_metadata(reader);
         }
         MetadataType::NoMetadata => {}
     }
+    let hash_info = hash_info.clone();
+
     let media_file_info = MediaFileInfo {
         original_file_this_run: name.clone(),
         original_path: vec![name.clone()],
         accurate_file_type: guessed_ff.clone(),
-        quick_file_type: scan_info.quick_file_type.clone(),
-        parsed_exif: exif_o.clone(),
-        parsed_mp4: mp4_o.clone(),
-        short_checksum: short_checksum.to_string(),
-        long_checksum: long_checksum.to_string(),
+        quick_file_type: si.quick_file_type.clone(),
+        exif_info: exif_o.clone(),
+        mp4_info: mp4_o.clone(),
+        hash_info,
         supp_info: supp_info.clone(),
-        modified: scan_info.modified_datetime,
-        created: scan_info.created_datetime,
+        modified: si.modified_datetime,
+        created: si.created_datetime,
     };
     Ok(media_file_info)
 }
@@ -80,16 +85,9 @@ pub(crate) fn media_file_derived_from_media_info(
     media_info: &MediaFileInfo,
 ) -> anyhow::Result<MediaFileDerivedInfo> {
     let ext = file_ext_from_file_type(&media_info.accurate_file_type);
-    let guessed_datetime = best_guess_taken_dt(
-        &media_info.parsed_exif,
-        &media_info.supp_info,
-        media_info.modified,
-        media_info.created,
-    );
-    let desired_media_path_o = Some(get_desired_media_path(
-        &media_info.short_checksum,
-        &guessed_datetime,
-    ));
+    let guessed_datetime = best_guess_taken_dt(media_info);
+    let short_checksum = &media_info.hash_info.short_checksum;
+    let desired_media_path_o = Some(get_desired_media_path(short_checksum, &guessed_datetime));
     let media_file_info = MediaFileDerivedInfo {
         desired_media_path: desired_media_path_o.clone(),
         desired_media_extension: ext,
@@ -109,80 +107,52 @@ pub(crate) fn media_file_derived_from_media_info(
 /// 7. File creation time
 ///   - no timezone info, unavailable in zips, somewhat unreliable in directories due to file
 ///     copying / syncing not preserving, only use as a last resort
-pub(crate) fn best_guess_taken_dt(
-    pe_o: &Option<ParsedExif>,
-    supp_info: &Option<SupplementalInfo>,
-    modified_datetime: Option<i64>,
-    created_datetime: Option<i64>,
-) -> Option<i64> {
-    if let Some(dt) = supp_info
+/// Result returned as ISO 8601 string
+pub(crate) fn best_guess_taken_dt(info: &MediaFileInfo) -> Option<String> {
+    if let Some(dt) = info
+        .supp_info
         .as_ref()
         .and_then(|si| si.photo_taken_time.as_ref())
-        .and_then(|si_dt| si_dt.timestamp_as_epoch_ms())
+        .and_then(|si_dt| si_dt.timestamp_s_as_iso_8601())
     {
-        if dt.to_string().len() <= 11 {
-            warn!("File modified datetime {:?}", dt);
-        }
         return Some(dt);
     }
-    if let Some(dt) = pe_o
-        .as_ref()
-        .and_then(|pe| pe.datetime_original.clone())
-        .and_then(dt_as_epoch_ms)
-    {
-        if dt.to_string().len() <= 11 {
-            warn!("File modified datetime {:?}", dt);
-        }
+    let time_taken_from_exif = best_guess_taken_exif(&info.exif_info);
+    if let Some(dt) = time_taken_from_exif {
         return Some(dt);
     }
-    if let Some(dt) = pe_o
-        .as_ref()
-        .and_then(|pe| pe.datetime.clone())
-        .and_then(dt_as_epoch_ms)
-    {
-        if dt.to_string().len() <= 11 {
-            warn!("File modified datetime {:?}", dt);
-        }
-        return Some(dt);
-    }
-    if let Some(dt) = pe_o
-        .as_ref()
-        .and_then(|pe| pe.gps_date.clone())
-        .and_then(d_as_epoch_ms)
-    {
-        if dt.to_string().len() <= 11 {
-            warn!("File modified datetime {:?}", dt);
-        }
-        return Some(dt);
-    }
-    if let Some(dt) = supp_info
+    if let Some(dt) = info
+        .supp_info
         .as_ref()
         .and_then(|si| si.creation_time.as_ref())
-        .and_then(|si_dt| si_dt.timestamp_as_epoch_ms())
+        .and_then(|si_dt| si_dt.timestamp_s_as_iso_8601())
     {
-        if dt.to_string().len() <= 11 {
-            warn!("File modified datetime {:?}", dt);
+        return Some(dt);
+    }
+    if let Some(dt) = info.created {
+        let o = DateTime::from_timestamp_millis(dt).map(|d| d.to_rfc3339());
+        if let Some(dt) = o {
+            return Some(dt);
         }
-        return Some(dt);
     }
-    if let Some(dt) = modified_datetime {
-        return Some(dt);
-    }
-    if let Some(dt) = created_datetime {
-        return Some(dt);
+    if let Some(dt) = info.modified {
+        let o = DateTime::from_timestamp_millis(dt).map(|d| d.to_rfc3339());
+        if let Some(dt) = o {
+            return Some(dt);
+        }
     }
     None
 }
 
 /// `yyyy/mm/dd/hhmm-ssms`
 /// OR `undated/checksum`
-pub(crate) fn get_desired_media_path(short_checksum: &str, media_datetime: &Option<i64>) -> String {
+pub(crate) fn get_desired_media_path(short_checksum: &str, media_datetime: &Option<String>) -> String {
     let date_dir;
     let name;
-    if let Some(dt_ms) = media_datetime {
-        let dt = DateTime::from_timestamp_millis(*dt_ms);
-        match dt {
-            Some(dt) => {
+    if let Some(dt_s) = media_datetime {
+        let dt_r = DateTime::parse_from_rfc3339(&dt_s);
+        match dt_r {
+            Ok(dt) => {
                 date_dir = format!("{}/{:0>2}/{:0>2}", dt.year(), dt.month(), dt.day());
                 name = format!(
                     "{:0>2}{:0>2}-{:0>2}{:0>3}",
@@ -192,15 +162,15 @@ pub(crate) fn get_desired_media_path(short_checksum: &str, media_datetime: &Opti
                     dt.timestamp_subsec_millis()
                 );
             }
-            None => {
-                warn!("Could not parse datetime: {dt_ms:?}");
+            Err(_) => {
+                warn!("Could not parse datetime: {dt_s:?}");
                 date_dir = "undated".to_string();
-                name = short_checksum.to_owned();
+                name = short_checksum.to_string();
             }
         }
     } else {
         date_dir = "undated".to_string();
-        name = short_checksum.to_owned();
+        name = short_checksum.to_string();
     }
     format!("{date_dir}/{name}")
 }
@@ -217,19 +187,19 @@ mod tests {
         use crate::util::checksum_bytes;
 
         let mut c = PsDirectoryContainer::new(&"test".to_string());
-        let bytes = c.file_bytes(&"Canon_40D.jpg".to_string()).unwrap();
-        let short_checksum = checksum_bytes(&bytes)?.0;
+        let reader = c.file_reader(&"Canon_40D.jpg".to_string()).unwrap();
+        let short_checksum = checksum_bytes(reader)?.short_checksum;
 
         assert_eq!(
             get_desired_media_path(&short_checksum, &None),
             "undated/6bfdabd".to_string()
         );
         assert_eq!(
-            get_desired_media_path(&short_checksum, &Some(1212162961000)),
+            get_desired_media_path(&short_checksum, &Some("2008-05-30T15:56:01Z".to_string())),
             "2008/05/30/1556-01000".to_string()
         );
         assert_eq!(
-            get_desired_media_path(&short_checksum, &Some(1212162961009)),
+            get_desired_media_path(&short_checksum, &Some("2008-05-30T15:56:01.009Z".to_string())),
             "2008/05/30/1556-01009".to_string()
         );
         Ok(())
@@ -243,11 +213,13 @@ impl MediaFileInfo {
             original_file_this_run: "".to_string(),
             original_path: vec![],
             quick_file_type: QuickFileType::Media,
-            parsed_exif: None,
-            parsed_mp4: None,
+            exif_info: None,
+            mp4_info: None,
             accurate_file_type: AccurateFileType::Jpg,
-            short_checksum: "tsc".to_string(),
-            long_checksum: "tlc".to_string(),
+            hash_info: HashInfo {
+                short_checksum: "tsc".to_string(),
+                long_checksum: "tlc".to_string(),
+            },
             supp_info: None,
             modified: None,
             created: None,

@@ -1,10 +1,12 @@
 use chrono::DateTime;
 use nom_exif::{MediaParser, MediaSource, TrackInfo, TrackInfoTag};
-use std::io::Cursor;
-use tracing::info;
+use serde::{Deserialize, Serialize};
+use std::io::{Read, Seek};
+use tracing::{info, warn};
 
-#[derive(Debug, Clone)]
-pub(crate) struct ParsedMp4 {
+#[derive(Deserialize, Serialize, Debug, Clone)]
+#[serde(rename_all(deserialize = "camelCase", serialize = "camelCase"))]
+pub(crate) struct PsMp4Info {
     pub width: Option<u64>,
     pub height: Option<u64>,
     // rfc3339
@@ -17,19 +19,25 @@ pub(crate) struct ParsedMp4 {
     pub gps_iso_6709: Option<String>,
 }
 
-pub fn extract_mp4_metadata(bytes: &Vec<u8>) -> anyhow::Result<ParsedMp4> {
-    let mut parser = MediaParser::new();
-    let ms = MediaSource::seekable(Cursor::new(bytes))?;
-
+pub fn extract_mp4_metadata<R: Read + Seek>(reader: R) -> Option<PsMp4Info> {
+    let ms_r = MediaSource::seekable(reader);
+    let Ok(ms) = ms_r else {
+        warn!("Failed to read MP4 media source");
+        return None;
+    };
     if !ms.has_track() {
-        return Err(anyhow::anyhow!("MP4 file does not have Track metadata."));
+        return None;
     }
+    let mut parser = MediaParser::new();
     let info: nom_exif::Result<TrackInfo> = parser.parse(ms);
 
     match info {
-        Err(e) => Err(anyhow::anyhow!("Failed to parse MP4 metadata: {:?}", e)),
+        Err(e) => {
+            warn!("Failed to parse MP4 metadata: {:?}", e);
+            None
+        }
         Ok(info) => {
-            let pm = ParsedMp4 {
+            let pm = PsMp4Info {
                 width: parse_to_o_u64(&info.get(TrackInfoTag::ImageWidth)),
                 height: parse_to_o_u64(&info.get(TrackInfoTag::ImageHeight)),
                 creation_time: parse_to_o_s(&info.get(TrackInfoTag::CreateDate)),
@@ -59,7 +67,7 @@ pub fn extract_mp4_metadata(bytes: &Vec<u8>) -> anyhow::Result<ParsedMp4> {
                 .for_each(|info| {
                     info!("MP4 Additional Metadata: {} = {}", info.0, info.1);
                 });
-            Ok(pm)
+            Some(pm)
         }
     }
 }
@@ -100,8 +108,8 @@ mod tests {
     fn test_parse_mp4() -> anyhow::Result<()> {
         crate::test_util::setup_log();
         let mut c = PsDirectoryContainer::new(&"test".to_string());
-        let bytes = c.file_bytes(&"Hello.mp4".to_string())?;
-        let meta = extract_mp4_metadata(&bytes)?;
+        let reader = c.file_reader(&"Hello.mp4".to_string())?;
+        let meta = extract_mp4_metadata(reader).unwrap();
         assert_eq!(meta.width, Some(854));
         assert_eq!(meta.height, Some(480));
         assert_eq!(meta.duration_ms, Some(5000));
@@ -124,8 +132,8 @@ mod tests {
                 .extension()
                 .map_or(false, |ext| ext.eq_ignore_ascii_case("mp4"))
             {
-                let bytes = c.file_bytes(&path.to_string_lossy().to_string())?;
-                let _ = extract_mp4_metadata(&bytes);
+                let reader = c.file_reader(&path.to_string_lossy().to_string())?;
+                let _ = extract_mp4_metadata(reader);
             }
         }
         Ok(())

@@ -1,10 +1,12 @@
 use crate::util::PsContainer;
 use serde::{Deserialize, Serialize};
+use std::io::Read;
+use chrono::DateTime;
 use tracing::{debug, warn};
 
 pub(crate) fn detect_supplemental_info(
     path: &String,
-    container: &dyn PsContainer,
+    container: &mut Box<dyn PsContainer>,
 ) -> Option<String> {
     let google_supp_json_exts = vec![
         ".supplemental-metadata.json",
@@ -24,14 +26,13 @@ pub(crate) fn load_supplemental_info(
     path: &String,
     container: &mut Box<dyn PsContainer>,
 ) -> Option<SupplementalInfo> {
-    let bytes = container.file_bytes(path);
-    let Ok(bytes) = bytes else {
+    let reader_r = container.file_reader(path);
+    let Ok(reader) = reader_r else {
         warn!("Could not read supplemental json file: {path}");
         return None;
     };
     debug!("  Loaded: {path}");
-    let s = String::from_utf8_lossy(&bytes).to_string();
-    parse_supplemental_info(s)
+    parse_supplemental_info(reader)
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
@@ -53,15 +54,15 @@ pub(crate) struct SupplementalInfoDateTime {
 }
 
 impl SupplementalInfoDateTime {
-    pub(crate) fn timestamp_as_epoch_ms(&self) -> Option<i64> {
+    pub(crate) fn timestamp_s_as_iso_8601(&self) -> Option<String> {
         if let Some(ts) = &self.timestamp
             && let Ok(ts_i64) = ts.parse::<i64>()
         {
             if ts.len() == 10 {
                 // seconds to milliseconds
-                return Some(ts_i64 * 1000);
+                return DateTime::from_timestamp_millis(ts_i64 * 1000).map(|d| d.to_rfc3339());
             }
-            return Some(ts_i64);
+            return DateTime::from_timestamp_millis(ts_i64).map(|d| d.to_rfc3339());
         }
         None
     }
@@ -76,8 +77,8 @@ pub(crate) struct SupplementalInfo {
     pub(crate) creation_time: Option<SupplementalInfoDateTime>,
 }
 
-fn parse_supplemental_info(json: String) -> Option<SupplementalInfo> {
-    let gs_r: Result<SupplementalInfo, _> = serde_json::from_str(&json);
+fn parse_supplemental_info<R: Read>(json_reader: R) -> Option<SupplementalInfo> {
+    let gs_r: Result<SupplementalInfo, _> = serde_json::from_reader(json_reader);
     if let Ok(gs) = gs_r {
         return Some(gs);
     }
@@ -97,14 +98,15 @@ fn lat_long_from_geo_data(geo_data: SupplementalInfoGeoData) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs::File;
 
     #[test]
     fn test_parse_supp() -> anyhow::Result<()> {
         crate::test_util::setup_log();
         use std::path::Path;
         let file = Path::new("test/test1.jpeg.supplemental-metadata.json");
-        let json_s = std::fs::read_to_string(file)?;
-        let r = parse_supplemental_info(json_s).unwrap();
+        let json_reader = File::open(file)?;
+        let r = parse_supplemental_info(json_reader).unwrap();
         // long lat limited to 6 decimal places
         let latitude = r.geo_data.clone().unwrap().latitude.unwrap();
         let longitude = r.geo_data.clone().unwrap().longitude.unwrap();

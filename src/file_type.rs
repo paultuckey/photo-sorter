@@ -1,8 +1,11 @@
+use serde::{Deserialize, Serialize};
+use std::io::{Read, Seek};
 use std::path::Path;
 use strum_macros::Display;
 use tracing::{debug, warn};
 
-#[derive(Clone, Debug, PartialEq, Display)]
+#[derive(Deserialize, Serialize, Debug, Clone, PartialEq, Display)]
+#[serde(rename_all(deserialize = "camelCase", serialize = "camelCase"))]
 pub(crate) enum QuickFileType {
     Media,
     AlbumCsv,
@@ -32,7 +35,8 @@ pub(crate) fn find_quick_file_type(file_path: &str) -> QuickFileType {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Display)]
+#[derive(Deserialize, Serialize, Clone, Debug, PartialEq, Display)]
+#[serde(rename_all(deserialize = "camelCase", serialize = "camelCase"))]
 pub(crate) enum AccurateFileType {
     Jpg,
     Png,
@@ -91,18 +95,18 @@ pub(crate) fn file_type_from_content_type(ct: &str) -> AccurateFileType {
     }
 }
 
-pub(crate) fn determine_file_type(bytes: &Vec<u8>, name: &String) -> AccurateFileType {
+pub(crate) fn determine_file_type<R: Read + Seek>(reader: R, name: &String) -> AccurateFileType {
     // take json files at face value
     if name.to_lowercase().ends_with(".json") {
         return AccurateFileType::Json;
     }
-    // Limit buffer size same as that inside `file_format` crate
-    // let buffer_res = media_file_readable.take(36_870);
-    if bytes.is_empty() {
-        warn!("  file is empty file:{name:?}");
-        return AccurateFileType::Unsupported;
+    let fmt = match file_format::FileFormat::from_reader(reader) {
+        Err(e) => {
+            warn!("  could not determine file format for file:{name:?}, error:{e:?}");
+            return AccurateFileType::Unsupported;
+        }
+        Ok(fmt) => fmt,
     };
-    let fmt = file_format::FileFormat::from_bytes(bytes);
     let mt = fmt.media_type();
     if mt == "application/octet-stream" {
         debug!("  can not calculate mime type file:{name:?}");
@@ -121,6 +125,7 @@ pub(crate) fn determine_file_type(bytes: &Vec<u8>, name: &String) -> AccurateFil
 mod tests {
     use super::*;
     use crate::util::PsContainer;
+    use std::io::Cursor;
 
     #[test]
     fn test_quick_file_type() {
@@ -157,12 +162,12 @@ mod tests {
         use crate::util::PsDirectoryContainer;
         let name = "Canon_40D.jpg".to_string();
         let mut root = PsDirectoryContainer::new(&"test".to_string());
-        let bytes = root.file_bytes(&name).unwrap();
-        assert_eq!(determine_file_type(&bytes, &name), AccurateFileType::Jpg);
+        let r = root.file_reader(&name).unwrap();
+        assert_eq!(determine_file_type(r, &name), AccurateFileType::Jpg);
 
         let bad: Vec<u8> = vec![];
         assert_eq!(
-            determine_file_type(&bad, &"bad.bad".to_string()),
+            determine_file_type(Cursor::new(&bad), &"bad.bad".to_string()),
             AccurateFileType::Unsupported
         );
     }
