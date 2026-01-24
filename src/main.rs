@@ -6,11 +6,11 @@ mod index_cmd;
 mod info_cmd;
 mod markdown;
 mod media;
-mod track_util;
 mod progress;
 mod supplemental_info;
 mod sync_cmd;
 mod test_util;
+mod track_util;
 mod util;
 
 use clap::{Parser, Subcommand};

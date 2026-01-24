@@ -4,8 +4,8 @@ use crate::file_type::{
     AccurateFileType, MetadataType, QuickFileType, determine_file_type, file_ext_from_file_type,
     metadata_type,
 };
-use crate::track_util::{PsTrackInfo, parse_track_info};
 use crate::supplemental_info::PsSupplementalInfo;
+use crate::track_util::{PsTrackInfo, parse_track_info};
 use crate::util::{PsContainer, ScanInfo};
 use anyhow::anyhow;
 use chrono::{DateTime, Datelike, Timelike};
@@ -146,7 +146,10 @@ pub(crate) fn best_guess_taken_dt(info: &MediaFileInfo) -> Option<String> {
 
 /// `yyyy/mm/dd/hhmm-ssms`
 /// OR `undated/checksum`
-pub(crate) fn get_desired_media_path(short_checksum: &str, media_datetime: &Option<String>) -> String {
+pub(crate) fn get_desired_media_path(
+    short_checksum: &str,
+    media_datetime: &Option<String>,
+) -> String {
     let date_dir;
     let name;
     if let Some(dt_s) = media_datetime {
@@ -199,7 +202,10 @@ mod tests {
             "2008/05/30/1556-01000".to_string()
         );
         assert_eq!(
-            get_desired_media_path(&short_checksum, &Some("2008-05-30T15:56:01.009Z".to_string())),
+            get_desired_media_path(
+                &short_checksum,
+                &Some("2008-05-30T15:56:01.009Z".to_string())
+            ),
             "2008/05/30/1556-01009".to_string()
         );
         Ok(())

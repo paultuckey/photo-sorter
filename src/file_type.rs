@@ -75,8 +75,7 @@ pub(crate) fn metadata_type(ff: &AccurateFileType) -> MetadataType {
         | AccurateFileType::Png
         | AccurateFileType::Heic
         | AccurateFileType::Gif => MetadataType::ExifTags,
-        AccurateFileType::Mp4
-        | AccurateFileType::Mov => MetadataType::Track,
+        AccurateFileType::Mp4 | AccurateFileType::Mov => MetadataType::Track,
         AccurateFileType::Json | AccurateFileType::Csv | AccurateFileType::Unsupported => {
             MetadataType::NoMetadata
         }

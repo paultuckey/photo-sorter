@@ -134,10 +134,7 @@ mod tests {
         let reader = c.file_reader("Canon_40D.jpg")?;
         let t = parse_exif_info(reader).unwrap().tags;
         assert_eq!(t.len(), 40);
-        let mut tag_names: Vec<String> = t
-            .iter()
-            .map(|(t, _)| t.to_string())
-            .collect();
+        let mut tag_names: Vec<String> = t.iter().map(|(t, _)| t.to_string()).collect();
         assert_eq!(
             tag_names.sort(),
             vec![

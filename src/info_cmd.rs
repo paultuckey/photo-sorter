@@ -1,5 +1,5 @@
 use crate::album::{build_album_md, parse_album};
-use crate::exif_util::{parse_exif_info};
+use crate::exif_util::parse_exif_info;
 use crate::file_type::QuickFileType;
 use crate::markdown::{assemble_markdown, mfm_from_media_file_info};
 use crate::media::media_file_info_from_readable;

@@ -1,7 +1,7 @@
 use crate::util::PsContainer;
+use chrono::DateTime;
 use serde::{Deserialize, Serialize};
 use std::io::Read;
-use chrono::DateTime;
 use tracing::{debug, warn};
 
 pub(crate) fn detect_supplemental_info(
@@ -81,16 +81,6 @@ fn parse_supplemental_info<R: Read>(json_reader: R) -> Option<PsSupplementalInfo
     let gs_r: Result<PsSupplementalInfo, _> = serde_json::from_reader(json_reader);
     if let Ok(gs) = gs_r {
         return Some(gs);
-    }
-    None
-}
-
-fn lat_long_from_geo_data(geo_data: SupplementalInfoGeoData) -> Option<String> {
-    if let Some(lat) = geo_data.latitude
-        && let Some(long) = geo_data.longitude
-    {
-        // only need 5 decimal places to get 50m acuracy
-        return Some(format!("{lat:.6},{long:.6}"));
     }
     None
 }

@@ -94,7 +94,6 @@ fn db_record(conn: &Connection, info: &MediaFileInfo) -> anyhow::Result<()> {
     let long_hash = &info.hash_info.long_checksum;
     let short_hash = &info.hash_info.short_checksum;
     let item = DbMediaItem {
-        media_item_id: 0,
         media_path: info.original_file_this_run.clone(),
         long_hash: long_hash.to_string(),
         short_hash: short_hash.to_string(),
@@ -125,7 +124,6 @@ fn db_record(conn: &Connection, info: &MediaFileInfo) -> anyhow::Result<()> {
 
 #[derive(Debug)]
 struct DbMediaItem {
-    media_item_id: i64,
     media_path: String,
     long_hash: String,
     short_hash: String,
