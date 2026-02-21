@@ -26,7 +26,16 @@ pub(crate) fn main(input: &String) -> anyhow::Result<()> {
     }
 
     let conn = db_conn()?;
-    db_prepare(&conn)?;
+    run_db_scan(&mut container, &conn)?;
+    conn.close().unwrap_or(());
+    Ok(())
+}
+
+fn run_db_scan(
+    container: &mut Box<dyn PsContainer>,
+    conn: &Connection,
+) -> anyhow::Result<()> {
+    db_prepare(conn)?;
 
     let files = container.scan();
     info!("Found {} files in input", files.len());
@@ -39,14 +48,13 @@ pub(crate) fn main(input: &String) -> anyhow::Result<()> {
     let prog = Progress::new(media_si_files.len() as u64);
     for media_si in media_si_files {
         prog.inc();
-        process_file(&mut container, &conn, &media_si)?;
+        process_file(container, conn, &media_si)?;
     }
     drop(prog);
 
     // todo: support albums
 
     info!("Done {} files", files.len());
-    conn.close().unwrap_or(());
     Ok(())
 }
 
@@ -188,6 +196,34 @@ mod tests {
             let media_path: String = row.get(0)?;
             println!("media_path: {}", media_path);
         }
+        Ok(())
+    }
+
+    #[test]
+    fn test_db_scan() -> anyhow::Result<()> {
+        crate::test_util::setup_log();
+        let conn = Connection::open_in_memory()?;
+        let mut container: Box<dyn PsContainer> = Box::new(PsDirectoryContainer::new("test"));
+        run_db_scan(&mut container, &conn)?;
+
+        let mut stmt = conn
+            .prepare("SELECT media_path, quick_file_type FROM media_item ORDER BY media_path")?;
+        let rows = stmt.query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })?;
+
+        let mut results = Vec::new();
+        for row in rows {
+            results.push(row?);
+        }
+
+        assert!(results
+            .iter()
+            .any(|(path, ftype)| path == "Canon_40D.jpg" && ftype == "Media"));
+        assert!(results
+            .iter()
+            .any(|(path, ftype)| path == "Hello.mp4" && ftype == "Media"));
+
         Ok(())
     }
 }
