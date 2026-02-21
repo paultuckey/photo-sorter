@@ -11,6 +11,13 @@ Let's use the most basic rust we can to make the code as approachable as possibl
 - Use `.clone()` to avoid hard things
 - Don't use `async`/`await` (this type of I/O heavy work may not benefit that much)
 
+## Technical goals
+
+- User should never lose a media file, an album or a metadata file during processing
+- Processing the same source zip or directory multiple times should result in no changes
+- It should run as quickly as possible
+
+## Commands
 
 ```shell
 cargo fmt
