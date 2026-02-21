@@ -10,17 +10,17 @@ Problem: Google Takeout and iCloud archives of photos and videos:
 
 Solution: A CLI tool that syncs photos, videos and albums from Google Takeout and iCloud archives
 into a standard directory structure that:
-- separates photos by year to makes long-term archiving by year possible
+- Separates photos by year to makes long-term archiving by year possible
 - checksums files to avoid storing duplicates
-- standardizes file names based on EXIF tags
-- Standardises albums as Markdown files
+- Standardizes file names based on EXIF tags
+- Standardizes albums as Markdown files
 
 In detail:
 - EXIF metadata and supplemental is extracted from photos and videos and used to determine the date and time of the file
 - Files are put into directories with the following format: `yyyy/mm/dd/hhmmss-ms{-duplicate}.ext`
 - For each photo or video file:
   - A matching Markdown file is written at the same path with the extension `md`
-  - This contains [YAML](https://en.wikipedia.org/wiki/YAML) frontmatter (the part between `---`'s) with metadata
+  - This contains [YAML](https://en.wikipedia.org/wiki/YAML) frontmatter (the part between `---`'s) where basic metadata is written
   - The Markdown part of this file can be edited with notes, and it will not be clobbered on later runs
   - Determine date and time taken based on EXIF tags or file modification time
 - Rename files with the wrong extension based on a inspecting bytes of the file
@@ -82,6 +82,11 @@ any storage solution.
 It's the first 7 characters of a SHA256 hash over the bytes of the file. As with a git short hash it's a good trade-off
 between uniqueness and length.
 
+> What is the YAML in the Markdown files for?
+
+Two reasons:
+- It allows for notes to be made on each photo or album that will not be clobbered on later runs
+- It allows for metadata to be stored in a structured way that can be easily parsed by software (in frontmatter)
 
 ---
 
