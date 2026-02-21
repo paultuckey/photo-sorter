@@ -89,6 +89,7 @@ pub(crate) fn file_type_from_content_type(ct: &str) -> AccurateFileType {
         "image/png" => AccurateFileType::Png,
         "image/heic" => AccurateFileType::Heic,
         "video/mp4" => AccurateFileType::Mp4,
+        "application/mp4" => AccurateFileType::Mp4,
         "video/mov" => AccurateFileType::Mov,
         "video/quicktime" => AccurateFileType::Mp4,
         "application/octet-stream" => AccurateFileType::Unsupported,
