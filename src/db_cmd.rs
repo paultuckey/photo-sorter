@@ -162,6 +162,7 @@ const DB_MEDIA_ITEM_INSERT: &str = "
         accurate_file_type, media_info, guessed_datetime, modified_at, created_at)
     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
 ";
+#[allow(dead_code)]
 const DB_MEDIA_ITEM_SELECT_ALL: &str = "
     SELECT media_path, long_hash, short_hash, quick_file_type,
         accurate_file_type, media_info, guessed_datetime, modified_at, created_at
