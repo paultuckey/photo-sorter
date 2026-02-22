@@ -73,20 +73,14 @@ fn parse_csv_album(container: &mut Box<dyn PsContainer>, si: &ScanInfo) -> Optio
         return None;
     }
     // find index of last dot and get all chars before that
-    let name_without_ext;
-    let dot_idx = name.rfind('.').map_or(0, |idx| idx);
-    if dot_idx > 0 {
-        name_without_ext = name[..dot_idx].to_string();
-        if name_without_ext.is_empty() {
-            debug!("Album file has no name: {name:?}");
-            return None;
-        }
-    } else {
-        name_without_ext = name.clone();
-        if name_without_ext.is_empty() {
-            debug!("Album file has no name: {name:?}");
-            return None;
-        }
+    let name_without_ext = Path::new(name)
+        .file_stem()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_else(|| name.clone());
+
+    if name_without_ext.is_empty() {
+        debug!("Album file has no name: {name:?}");
+        return None;
     }
     info!(
         "Found album: {:?} with {:?} entries at {:?}",
