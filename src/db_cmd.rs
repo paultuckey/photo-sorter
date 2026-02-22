@@ -227,4 +227,65 @@ mod tests {
 
         Ok(())
     }
+
+    use std::fs;
+    use zip::write::FileOptions;
+    use zip::ZipWriter;
+
+    fn create_zip_of_test_dir(output_path: &Path) -> anyhow::Result<()> {
+        let file = fs::File::create(output_path)?;
+        let mut zip = ZipWriter::new(file);
+        let options = FileOptions::<()>::default();
+
+        let root = Path::new("test");
+        let walker = fs::read_dir(root)?;
+        for entry in walker {
+            let entry = entry?;
+            let path = entry.path();
+            if path.is_file() {
+                let name = path.file_name().unwrap().to_str().unwrap();
+                zip.start_file(name, options)?;
+                let mut f = fs::File::open(&path)?;
+                std::io::copy(&mut f, &mut zip)?;
+            }
+        }
+        zip.finish()?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_db_scan_zip() -> anyhow::Result<()> {
+        crate::test_util::setup_log();
+        let zip_path = Path::new("target/test_output.zip");
+        create_zip_of_test_dir(zip_path)?;
+
+        let conn = Connection::open_in_memory()?;
+        let tz = chrono::FixedOffset::east_opt(0).unwrap();
+        let mut container: Box<dyn PsContainer> =
+            Box::new(PsZipContainer::new(&zip_path.to_string_lossy().to_string(), tz));
+
+        run_db_scan(&mut container, &conn)?;
+
+        let mut stmt = conn
+            .prepare("SELECT media_path, quick_file_type FROM media_item ORDER BY media_path")?;
+        let rows = stmt.query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })?;
+
+        let mut results = Vec::new();
+        for row in rows {
+            results.push(row?);
+        }
+
+        assert!(results
+            .iter()
+            .any(|(path, ftype)| path == "Canon_40D.jpg" && ftype == "Media"));
+        assert!(results
+            .iter()
+            .any(|(path, ftype)| path == "Hello.mp4" && ftype == "Media"));
+
+        // Cleanup
+        let _ = fs::remove_file(zip_path);
+        Ok(())
+    }
 }
