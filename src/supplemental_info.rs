@@ -1,5 +1,4 @@
 use crate::util::PsContainer;
-use chrono::DateTime;
 use serde::{Deserialize, Serialize};
 use std::io::Read;
 use tracing::{debug, warn};
@@ -60,9 +59,9 @@ impl SupplementalInfoDateTime {
         {
             if ts.len() == 10 {
                 // seconds to milliseconds
-                return DateTime::from_timestamp_millis(ts_i64 * 1000).map(|d| d.to_rfc3339());
+                return crate::util::timestamp_to_rfc3339(ts_i64 * 1000);
             }
-            return DateTime::from_timestamp_millis(ts_i64).map(|d| d.to_rfc3339());
+            return crate::util::timestamp_to_rfc3339(ts_i64);
         }
         None
     }

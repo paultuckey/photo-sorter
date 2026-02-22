@@ -1,6 +1,7 @@
 use crate::db_cmd::HashInfo;
 use crate::file_type::{QuickFileType, find_quick_file_type};
 use anyhow::anyhow;
+use chrono::DateTime;
 use sha2::{Digest, Sha256};
 use std::fs;
 use std::fs::File;
@@ -358,6 +359,10 @@ pub(crate) fn name_part(file_path_s: &String) -> String {
         return "@@broken".to_string();
     };
     file_name_str.to_string_lossy().to_string()
+}
+
+pub(crate) fn timestamp_to_rfc3339(ts: i64) -> Option<String> {
+    DateTime::from_timestamp_millis(ts).map(|d| d.to_rfc3339())
 }
 
 #[cfg(test)]
