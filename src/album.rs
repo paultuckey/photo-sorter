@@ -1,10 +1,22 @@
 use crate::file_type::{AccurateFileType, QuickFileType};
 use crate::media::MediaFileInfo;
 use crate::util::{PsContainer, ScanInfo, dir_part, name_part};
+use percent_encoding::{AsciiSet, CONTROLS, utf8_percent_encode};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::path::Path;
 use tracing::{debug, info, warn};
+
+const FRAGMENT: &AsciiSet = &CONTROLS
+    .add(b' ')
+    .add(b'"')
+    .add(b'<')
+    .add(b'>')
+    .add(b'`')
+    .add(b'(')
+    .add(b')')
+    .add(b'[')
+    .add(b']');
 
 pub(crate) fn parse_album(
     container: &mut Box<dyn PsContainer>,
@@ -191,7 +203,8 @@ pub(crate) fn build_album_md(
         }
         if let Some(target_path) = target_path_o.clone() {
             let alt_text = "Photo";
-            let path = format!("{media_relative_path}{target_path}");
+            let path_raw = format!("{media_relative_path}{target_path}");
+            let path = utf8_percent_encode(&path_raw, FRAGMENT).to_string();
             md.push_str(&format!("\n![{alt_text}]({path})"));
         } else {
             warn!("Target path empty: {f}");
@@ -239,5 +252,18 @@ mod tests {
             "Google Photos/album1/test1.jpg".to_string()
         );
         Ok(())
+    }
+
+    #[test]
+    fn test_xss_injection() {
+        let album = Album {
+            desired_album_md_path: "album.md".to_string(),
+            title: "Test Album".to_string(),
+            files: vec!["foo.jpg) <script>alert(1)</script>".to_string()],
+        };
+        let md = build_album_md(&album, None, "media/", None);
+        // The vulnerability allows breaking out of the image link and injecting HTML
+        // With the fix, the path should be percent-encoded
+        assert!(md.contains("](media/foo.jpg%29%20%3Cscript%3Ealert%281%29%3C/script%3E)"));
     }
 }
