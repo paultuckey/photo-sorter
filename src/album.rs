@@ -240,4 +240,75 @@ mod tests {
         );
         Ok(())
     }
+
+    #[test]
+    fn test_build_album_md_no_media_info() {
+        let album = Album {
+            desired_album_md_path: "albums/test.md".to_string(),
+            title: "Test Album".to_string(),
+            files: vec!["file1.jpg".to_string(), "file2.jpg".to_string()],
+        };
+        let md = build_album_md(&album, None, "../media/", None);
+        assert!(md.contains("# Test Album"));
+        assert!(md.contains("![Photo](../media/file1.jpg)"));
+        assert!(md.contains("![Photo](../media/file2.jpg)"));
+    }
+
+    #[test]
+    fn test_build_album_md_with_mappings() {
+        let album = Album {
+            desired_album_md_path: "albums/test.md".to_string(),
+            title: "Test Album".to_string(),
+            files: vec!["file1.jpg".to_string()],
+        };
+        let mut media_info = MediaFileInfo::new_for_test();
+        media_info.original_path = vec!["file1.jpg".to_string()];
+        media_info.hash_info.long_checksum = "longhash1".to_string();
+
+        let mut all_media = HashMap::new();
+        all_media.insert("key1".to_string(), media_info);
+
+        let mut final_path_by_checksum = HashMap::new();
+        final_path_by_checksum.insert("longhash1".to_string(), "2023/01/file1.jpg".to_string());
+
+        let md = build_album_md(&album, Some(&all_media), "../media/", Some(&final_path_by_checksum));
+        assert!(md.contains("# Test Album"));
+        assert!(md.contains("![Photo](../media/2023/01/file1.jpg)"));
+    }
+
+    #[test]
+    fn test_build_album_md_missing_mapping() {
+        let album = Album {
+            desired_album_md_path: "albums/test.md".to_string(),
+            title: "Test Album".to_string(),
+            files: vec!["file1.jpg".to_string()],
+        };
+        let all_media = HashMap::new(); // Empty
+        let final_path_by_checksum = HashMap::new();
+
+        let md = build_album_md(&album, Some(&all_media), "../media/", Some(&final_path_by_checksum));
+        assert!(md.contains("# Test Album"));
+        assert!(!md.contains("![Photo]")); // Should be skipped
+    }
+
+    #[test]
+    fn test_build_album_md_missing_final_path() {
+        let album = Album {
+            desired_album_md_path: "albums/test.md".to_string(),
+            title: "Test Album".to_string(),
+            files: vec!["file1.jpg".to_string()],
+        };
+        let mut media_info = MediaFileInfo::new_for_test();
+        media_info.original_path = vec!["file1.jpg".to_string()];
+        media_info.hash_info.long_checksum = "longhash1".to_string();
+
+        let mut all_media = HashMap::new();
+        all_media.insert("key1".to_string(), media_info);
+
+        let final_path_by_checksum = HashMap::new(); // Empty, so lookup fails
+
+        let md = build_album_md(&album, Some(&all_media), "../media/", Some(&final_path_by_checksum));
+        assert!(md.contains("# Test Album"));
+        assert!(!md.contains("![Photo]")); // Should be skipped
+    }
 }
