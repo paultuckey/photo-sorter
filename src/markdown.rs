@@ -267,6 +267,12 @@ pub(crate) fn get_desired_markdown_path(desired_media_path: String) -> anyhow::R
 mod tests {
     use super::*;
 
+    fn assert_split(text: &str, expected_fm: &str, expected_md: &str) {
+        let (fm, md) = split_frontmatter(text);
+        assert_eq!(fm, expected_fm, "Frontmatter mismatch for input: {:?}", text);
+        assert_eq!(md, expected_md, "Markdown mismatch for input: {:?}", text);
+    }
+
     fn get_mfi() -> PhotoSorterFrontMatter {
         PhotoSorterFrontMatter {
             path_original: vec!["p1".to_string(), "p2".to_string()],
@@ -329,98 +335,62 @@ checksum: abcdefg
 
     #[test]
     fn parse_with_missing_beginning_line() {
-        let text = "";
-        let (fm, md) = split_frontmatter(text);
-        assert_eq!(fm, "");
-        assert_eq!(md, "");
+        assert_split("", "", "");
     }
 
     #[test]
     fn parse_with_missing_ending_line() {
-        let text = "---\n";
-        let (fm, md) = split_frontmatter(text);
-        assert_eq!(fm, "");
-        assert_eq!(md, "---\n");
-    }
-
-    #[test]
-    fn parse_with_missing_ending_line_crlf() {
-        let text = "---\r\n";
-        let (fm, md) = split_frontmatter(text);
-        assert_eq!(fm, "");
-        assert_eq!(md, "---\r\n");
+        assert_split("---\n", "", "---\n");
+        assert_split("---\r\n", "", "---\r\n");
     }
 
     #[test]
     fn parse_with_empty_frontmatter() {
-        let text = "---\n---\n";
-        let (fm, md) = split_frontmatter(text);
-        assert_eq!(fm, "");
-        assert_eq!(md, "---\n---\n");
-    }
-
-    #[test]
-    fn parse_with_empty_frontmatter_crlf() {
-        let text = "---\r\n---\r\n";
-        let (fm, md) = split_frontmatter(text);
-        assert_eq!(fm, "");
-        assert_eq!(md, "---\r\n---\r\n");
+        assert_split("---\n---\n", "", "---\n---\n");
+        assert_split("---\r\n---\r\n", "", "---\r\n---\r\n");
     }
 
     #[test]
     fn parse_with_missing_known_field() {
-        let text = "---\ndate: 2000-01-01\n---\n";
-        let (fm, md) = split_frontmatter(text);
-        assert_eq!(fm, "date: 2000-01-01");
-        assert_eq!(md, "\n");
-    }
-
-    #[test]
-    fn parse_with_missing_known_field_crlf() {
-        let text = "---\r\ndate: 2000-01-01\r\n---\r\n";
-        let (fm, md) = split_frontmatter(text);
-        assert_eq!(fm, "date: 2000-01-01");
-        assert_eq!(md, "\r\n");
+        assert_split("---\ndate: 2000-01-01\n---\n", "date: 2000-01-01", "\n");
+        assert_split(
+            "---\r\ndate: 2000-01-01\r\n---\r\n",
+            "date: 2000-01-01",
+            "\r\n",
+        );
     }
 
     #[test]
     fn parse_with_valid_frontmatter() {
-        let text = "---\ntitle: dummy_title---\ndummy_body";
-        let (fm, md) = split_frontmatter(text);
-        assert_eq!(fm, "title: dummy_title");
-        assert_eq!(md, "dummy_body");
-    }
-
-    #[test]
-    fn parse_with_valid_frontmatter_crlf() {
-        let text = "---\r\ntitle: dummy_title---\r\ndummy_body";
-        let (fm, md) = split_frontmatter(text);
-        assert_eq!(fm, "title: dummy_title");
-        assert_eq!(md, "dummy_body");
+        assert_split(
+            "---\ntitle: dummy_title---\ndummy_body",
+            "title: dummy_title",
+            "dummy_body",
+        );
+        assert_split(
+            "---\r\ntitle: dummy_title---\r\ndummy_body",
+            "title: dummy_title",
+            "dummy_body",
+        );
     }
 
     #[test]
     fn parse_with_extra_whitespace() {
-        let text = "\n\n\n---\ntitle: dummy_title---\ndummy_body";
-        let (fm, md) = split_frontmatter(text);
-        assert_eq!(fm, "title: dummy_title");
-        assert_eq!(md, "dummy_body");
+        assert_split(
+            "\n\n\n---\ntitle: dummy_title---\ndummy_body",
+            "title: dummy_title",
+            "dummy_body",
+        );
+        assert_split(
+            "\r\n\r\n\r\n---\r\ntitle: dummy_title---\r\ndummy_body",
+            "title: dummy_title",
+            "dummy_body",
+        );
     }
 
     #[test]
     fn parse_md_only_with_no_frontmatter() {
-        let text = "\n\n\ndummy_body";
-        let (fm, md) = split_frontmatter(text);
-        assert_eq!(fm, "");
-        assert_eq!(md, "\n\n\ndummy_body");
-    }
-
-    #[test]
-    fn parse_with_extra_whitespace_rn() {
-        let text = "\r\n\r\n\r\n---\r\ntitle: dummy_title---\r\ndummy_body";
-        let (fm, md) = split_frontmatter(text);
-        assert_eq!(fm, "title: dummy_title");
-        assert_eq!(md, "dummy_body");
+        assert_split("\n\n\ndummy_body", "", "\n\n\ndummy_body");
     }
 
     #[test]
