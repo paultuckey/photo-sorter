@@ -140,7 +140,7 @@ mod tests {
     #[test]
     fn test_parse_exif_mp4() -> anyhow::Result<()> {
         crate::test_util::setup_log();
-        let mut c = OsFileSystem::new(&"test".to_string());
+        let c = OsFileSystem::new(&"test".to_string());
         let reader = c.open(&"Hello.mp4".to_string())?;
         let t = parse_exif_info(reader);
         assert_eq!(t.is_none(), true);
@@ -150,7 +150,7 @@ mod tests {
     #[test]
     fn test_parse_exif_all_tags() -> anyhow::Result<()> {
         crate::test_util::setup_log();
-        let mut c = OsFileSystem::new("test");
+        let c = OsFileSystem::new("test");
         let reader = c.open("Canon_40D.jpg")?;
         let t = parse_exif_info(reader).unwrap().tags;
         assert_eq!(t.len(), 40);

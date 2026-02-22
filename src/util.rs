@@ -1,15 +1,12 @@
 use crate::db_cmd::HashInfo;
 use crate::file_type::{find_quick_file_type, QuickFileType};
-use crate::fs::{FileSystem, OsFileSystem, ZipFileSystem};
+use crate::fs::{FileSystem, OsFileSystem};
 use anyhow::Result;
 use chrono::DateTime;
 use sha2::{Digest, Sha256};
 use std::io::Read;
 use std::path::Path;
 use tracing::{debug, warn};
-
-// Re-export ReadSeek for convenience if needed, or consumers can use fs::ReadSeek
-pub use crate::fs::ReadSeek;
 
 /// Similar to github generate a short and long hash from the bytes
 pub(crate) fn checksum_bytes<R: Read>(mut reader: R) -> Result<HashInfo> {
@@ -57,7 +54,7 @@ impl ScanInfo {
     }
 }
 
-pub(crate) fn scan_fs(fs: &mut dyn FileSystem) -> Vec<ScanInfo> {
+pub(crate) fn scan_fs(fs: &dyn FileSystem) -> Vec<ScanInfo> {
     let paths = fs.walk();
     let mut scan_infos = Vec::new();
     for path in paths {
@@ -72,7 +69,7 @@ pub(crate) fn scan_fs(fs: &mut dyn FileSystem) -> Vec<ScanInfo> {
 }
 
 pub(crate) fn is_existing_file_same(
-    fs: &mut OsFileSystem,
+    fs: &OsFileSystem,
     long_checksum: &str,
     output_path: &String,
 ) -> Option<bool> {
@@ -114,13 +111,14 @@ pub(crate) fn timestamp_to_rfc3339(ts: i64) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::fs::ZipFileSystem;
 
     #[test]
     fn test_zip() -> anyhow::Result<()> {
         crate::test_util::setup_log();
         let tz = chrono::FixedOffset::east_opt(0).unwrap();
-        let mut c = ZipFileSystem::new("test/Canon_40D.jpg.zip", tz)?;
-        let index = scan_fs(&mut c);
+        let c = ZipFileSystem::new("test/Canon_40D.jpg.zip", tz)?;
+        let index = scan_fs(&c);
         assert_eq!(index.len(), 2);
         // Find Canon_40D.jpg
         let si = index.iter().find(|i| i.file_path == "Canon_40D.jpg").unwrap();
@@ -130,7 +128,7 @@ mod tests {
 
     #[test]
     fn test_files_checksum() -> anyhow::Result<()> {
-        let mut c = OsFileSystem::new("test");
+        let c = OsFileSystem::new("test");
         let b = c.open("Canon_40D.jpg")?;
         let csm = checksum_bytes(b)?;
         assert_eq!(csm.short_checksum, "6bfdabd".to_string());

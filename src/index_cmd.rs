@@ -27,7 +27,7 @@ pub(crate) fn main(input: &String) -> anyhow::Result<()> {
     if !path.exists() {
         return Err(anyhow!("Input path does not exist: {}", input));
     }
-    let mut container: Box<dyn FileSystem> = if path.is_dir() {
+    let container: Box<dyn FileSystem> = if path.is_dir() {
         info!("Input directory: {input}");
         Box::new(OsFileSystem::new(input))
     } else {
@@ -35,7 +35,7 @@ pub(crate) fn main(input: &String) -> anyhow::Result<()> {
         let tz = chrono::Local::now().offset().to_owned();
         Box::new(ZipFileSystem::new(input, tz)?)
     };
-    let idx = scan_fs(container.as_mut());
+    let idx = scan_fs(container.as_ref());
 
     let mut distinct_dirs: HashSet<String> = HashSet::new();
     for si in &idx {

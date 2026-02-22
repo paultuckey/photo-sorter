@@ -1,5 +1,5 @@
 use crate::file_type::{AccurateFileType, QuickFileType};
-use crate::fs::{FileSystem, OsFileSystem};
+use crate::fs::FileSystem;
 use crate::media::MediaFileInfo;
 use crate::util::{ScanInfo, dir_part, name_part};
 use serde_json::Value;
@@ -8,7 +8,7 @@ use std::path::Path;
 use tracing::{debug, info, warn};
 
 pub(crate) fn parse_album(
-    container: &mut Box<dyn FileSystem>,
+    container: &dyn FileSystem,
     si: &ScanInfo,
     si_files: &[ScanInfo],
 ) -> Option<Album> {
@@ -19,7 +19,7 @@ pub(crate) fn parse_album(
     }
 }
 
-fn parse_csv_album(container: &mut Box<dyn FileSystem>, si: &ScanInfo) -> Option<Album> {
+fn parse_csv_album(container: &dyn FileSystem, si: &ScanInfo) -> Option<Album> {
     info!("Parse CSV album: {:?}", &si.file_path);
     let reader_r = container.open(&si.file_path);
     let Ok(reader) = reader_r else {
@@ -97,7 +97,7 @@ fn parse_csv_album(container: &mut Box<dyn FileSystem>, si: &ScanInfo) -> Option
 }
 
 fn parse_json_album(
-    container: &mut Box<dyn FileSystem>,
+    container: &dyn FileSystem,
     si: &ScanInfo,
     all_scanned_files: &[ScanInfo],
 ) -> Option<Album> {
@@ -199,13 +199,14 @@ pub(crate) fn build_album_md(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::fs::OsFileSystem;
 
     #[test]
     fn test_ic_sample() -> anyhow::Result<()> {
         crate::test_util::setup_log();
-        let mut c: Box<dyn FileSystem> = Box::new(OsFileSystem::new(&"test".to_string()));
+        let c = OsFileSystem::new(&"test".to_string());
         let qsf = ScanInfo::new("ic-album-sample.csv".to_string(), None, None);
-        let a = parse_album(&mut c, &qsf, &vec![]).unwrap();
+        let a = parse_album(&c, &qsf, &vec![]).unwrap();
         assert_eq!(a.title, "ic-album-sample".to_string());
         assert_eq!(a.files.len(), 5);
         assert_eq!(
@@ -218,12 +219,11 @@ mod tests {
     #[test]
     fn test_g_sample() -> anyhow::Result<()> {
         crate::test_util::setup_log();
-        let mut c: Box<dyn FileSystem> =
-            Box::new(OsFileSystem::new(&"test/takeout1".to_string()));
+        let c = OsFileSystem::new(&"test/takeout1".to_string());
         let qsf = ScanInfo::new("Google Photos/album1/metadata.json".to_string(), None, None);
         let si1 = ScanInfo::new("Google Photos/album1/test1.jpg".to_string(), None, None);
         let si2 = ScanInfo::new("different/test2.jpg".to_string(), None, None);
-        let a = parse_album(&mut c, &qsf, &vec![si1, si2]).unwrap();
+        let a = parse_album(&c, &qsf, &vec![si1, si2]).unwrap();
         assert_eq!(a.title, "Some album title".to_string());
         assert_eq!(a.files.len(), 1);
         assert_eq!(

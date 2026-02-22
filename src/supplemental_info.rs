@@ -5,7 +5,7 @@ use tracing::{debug, warn};
 
 pub(crate) fn detect_supplemental_info(
     path: &String,
-    container: &mut Box<dyn FileSystem>,
+    container: &dyn FileSystem,
 ) -> Option<String> {
     let google_supp_json_exts = vec![
         ".supplemental-metadata.json",
@@ -23,7 +23,7 @@ pub(crate) fn detect_supplemental_info(
 
 pub(crate) fn load_supplemental_info(
     path: &String,
-    container: &mut Box<dyn FileSystem>,
+    container: &dyn FileSystem,
 ) -> Option<PsSupplementalInfo> {
     let reader_r = container.open(path);
     let Ok(reader) = reader_r else {

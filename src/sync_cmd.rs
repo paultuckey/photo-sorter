@@ -32,17 +32,16 @@ pub(crate) fn main(
     if !path.exists() {
         return Err(anyhow!("Input path does not exist: {}", input));
     }
-    let mut container: Box<dyn FileSystem>;
-    if path.is_dir() {
+    let container: Box<dyn FileSystem> = if path.is_dir() {
         info!("Input directory: {input}");
-        container = Box::new(OsFileSystem::new(input));
+        Box::new(OsFileSystem::new(input))
     } else {
         info!("Input zip: {input}");
         let tz = chrono::Local::now().offset().to_owned();
-        container = Box::new(ZipFileSystem::new(input, tz)?);
-    }
+        Box::new(ZipFileSystem::new(input, tz)?)
+    };
 
-    let files = scan_fs(container.as_mut());
+    let files = scan_fs(container.as_ref());
     info!("Found {} files in input", files.len());
 
     let mut output_container_o: Option<OsFileSystem> = None;
@@ -69,11 +68,11 @@ pub(crate) fn main(
 
             let mut supp_info_o = None;
             let supp_info_path_o =
-                detect_supplemental_info(&media_si.file_path.clone(), &mut container);
+                detect_supplemental_info(&media_si.file_path.clone(), container.as_ref());
             if let Some(supp_info_path) = supp_info_path_o {
-                supp_info_o = load_supplemental_info(&supp_info_path, &mut container);
+                supp_info_o = load_supplemental_info(&supp_info_path, container.as_ref());
             }
-            let _ = inspect_media(media_si, &mut container, &mut all_media, &supp_info_o);
+            let _ = inspect_media(media_si, container.as_ref(), &mut all_media, &supp_info_o);
         }
         drop(prog);
 
@@ -84,7 +83,7 @@ pub(crate) fn main(
                 prog.inc();
                 let derived = media_file_derived_from_media_info(media)?;
                 let write_r =
-                    write_media(media, &derived, dry_run, &mut container, output_container);
+                    write_media(media, &derived, dry_run, container.as_ref(), output_container);
                 match write_r {
                     Ok(final_path) => {
                         let long_checksum = &media.hash_info.long_checksum;
@@ -126,7 +125,7 @@ pub(crate) fn main(
         let prog = Progress::new(all_media.len() as u64);
         for si in scan_info_albums {
             prog.inc();
-            let album_o = parse_album(&mut container, si, &files);
+            let album_o = parse_album(container.as_ref(), si, &files);
             let Some(album) = album_o else {
                 continue;
             };
@@ -134,23 +133,22 @@ pub(crate) fn main(
         }
         drop(prog);
 
-        info!("Outputting {} albums", albums.len());
-        for album in albums {
-            let a_s = build_album_md(
-                &album,
-                Some(&all_media),
-                "../",
-                Some(&final_path_by_original_path),
-            );
-            let Some(output_c) = &output_container_o else {
-                continue;
-            };
-            let output_path = &album.desired_album_md_path;
-            if output_c.exists(&album.desired_album_md_path) {
-                debug!("  Album markdown file already exists, clobbering, at {output_path:?}");
+        if let Some(ref output_container) = output_container_o {
+            info!("Outputting {} albums", albums.len());
+            for album in albums {
+                let a_s = build_album_md(
+                    &album,
+                    Some(&all_media),
+                    "../",
+                    Some(&final_path_by_original_path),
+                );
+                let output_path = &album.desired_album_md_path;
+                if output_container.exists(&album.desired_album_md_path) {
+                    debug!("  Album markdown file already exists, clobbering, at {output_path:?}");
+                }
+                let bytes = a_s.as_bytes().to_vec();
+                output_container.write(dry_run, output_path, Cursor::new(bytes));
             }
-            let bytes = &a_s.as_bytes().to_vec();
-            output_c.write(dry_run, output_path, Cursor::new(bytes));
         }
     }
 
@@ -164,7 +162,7 @@ pub(crate) fn main(
 /// - populate exif data
 pub(crate) fn inspect_media(
     si: &ScanInfo,
-    root: &mut Box<dyn FileSystem>,
+    root: &dyn FileSystem,
     all_media: &mut HashMap<String, MediaFileInfo>,
     supp_info: &Option<PsSupplementalInfo>,
 ) -> anyhow::Result<MediaFileInfo> {
@@ -197,8 +195,8 @@ pub(crate) fn write_media(
     media_file: &MediaFileInfo,
     derived: &MediaFileDerivedInfo,
     dry_run: bool,
-    input_container: &mut Box<dyn FileSystem>,
-    output_container: &mut OsFileSystem,
+    input_container: &dyn FileSystem,
+    output_container: &OsFileSystem,
 ) -> anyhow::Result<String> {
     info!("Output {:?}", derived.desired_media_path);
 
@@ -226,7 +224,7 @@ enum DeDuplicationResult {
 fn get_de_duplicated_path(
     media_file: &MediaFileInfo,
     derived: &MediaFileDerivedInfo,
-    output_container: &mut OsFileSystem,
+    output_container: &OsFileSystem,
 ) -> anyhow::Result<DeDuplicationResult> {
     let Some(desired_output_path) = &derived.desired_media_path else {
         debug!("  No desired media path for file: {media_file:?}");
@@ -292,32 +290,32 @@ mod tests {
 
     #[test]
     fn test_dedupe_one() -> anyhow::Result<()> {
-        let mut c = OsFileSystem::new(&"test".to_string());
+        let c = OsFileSystem::new(&"test".to_string());
         let mfi = MediaFileInfo::new_for_test();
         let derived = MediaFileDerivedInfo::new_for_test(Some("duplicates/one".to_string()), "txt");
-        let res = get_de_duplicated_path(&mfi, &derived, &mut c)?;
+        let res = get_de_duplicated_path(&mfi, &derived, &c)?;
         assert_eq!(res, WritePath("duplicates/one-1.txt".to_string()));
         Ok(())
     }
 
     #[test]
     fn test_dedupe_many() -> anyhow::Result<()> {
-        let mut c = OsFileSystem::new(&"test".to_string());
+        let c = OsFileSystem::new(&"test".to_string());
         let mfi = MediaFileInfo::new_for_test();
         let derived =
             MediaFileDerivedInfo::new_for_test(Some("duplicates/many".to_string()), "txt");
-        let res = get_de_duplicated_path(&mfi, &derived, &mut c)?;
+        let res = get_de_duplicated_path(&mfi, &derived, &c)?;
         assert_eq!(res, WritePath("duplicates/many-tsc.txt".to_string()));
         Ok(())
     }
 
     #[test]
     fn test_dedupe_too_many() -> anyhow::Result<()> {
-        let mut c = OsFileSystem::new(&"test".to_string());
+        let c = OsFileSystem::new(&"test".to_string());
         let mfi = MediaFileInfo::new_for_test();
         let derived =
             MediaFileDerivedInfo::new_for_test(Some("duplicates/too-many".to_string()), "txt");
-        let res = get_de_duplicated_path(&mfi, &derived, &mut c);
+        let res = get_de_duplicated_path(&mfi, &derived, &c);
         assert_eq!(res.ok(), None);
         Ok(())
     }
