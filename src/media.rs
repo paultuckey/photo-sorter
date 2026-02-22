@@ -130,13 +130,13 @@ pub(crate) fn best_guess_taken_dt(info: &MediaFileInfo) -> Option<String> {
         return Some(dt);
     }
     if let Some(dt) = info.created {
-        let o = DateTime::from_timestamp_millis(dt).map(|d| d.to_rfc3339());
+        let o = crate::util::timestamp_to_rfc3339(dt);
         if let Some(dt) = o {
             return Some(dt);
         }
     }
     if let Some(dt) = info.modified {
-        let o = DateTime::from_timestamp_millis(dt).map(|d| d.to_rfc3339());
+        let o = crate::util::timestamp_to_rfc3339(dt);
         if let Some(dt) = o {
             return Some(dt);
         }
@@ -181,6 +181,25 @@ pub(crate) fn get_desired_media_path(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_best_guess_taken_dt_timestamps() {
+        let mut info = MediaFileInfo::new_for_test();
+        // 1000000000000 ms = 2001-09-09T01:46:40Z
+        let ts = 1000000000000;
+
+        // Test created timestamp
+        info.created = Some(ts);
+        info.modified = None;
+        let dt = best_guess_taken_dt(&info).expect("Should have a date from created");
+        assert_eq!(dt, "2001-09-09T01:46:40+00:00");
+
+        // Test modified timestamp
+        info.created = None;
+        info.modified = Some(ts);
+        let dt = best_guess_taken_dt(&info).expect("Should have a date from modified");
+        assert_eq!(dt, "2001-09-09T01:46:40+00:00");
+    }
 
     #[test]
     fn test_desired_media_path() -> anyhow::Result<()> {
@@ -232,6 +251,7 @@ impl MediaFileInfo {
         }
     }
 }
+
 
 #[cfg(test)]
 impl MediaFileDerivedInfo {
