@@ -134,14 +134,14 @@ pub(crate) fn best_guess_taken_exif(exif: &Option<PsExifInfo>) -> Option<String>
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::util::PsContainer;
-    use crate::util::PsDirectoryContainer;
+    use crate::fs::FileSystem;
+    use crate::fs::OsFileSystem;
 
     #[test]
     fn test_parse_exif_mp4() -> anyhow::Result<()> {
         crate::test_util::setup_log();
-        let mut c = PsDirectoryContainer::new(&"test".to_string());
-        let reader = c.file_reader(&"Hello.mp4".to_string())?;
+        let mut c = OsFileSystem::new(&"test".to_string());
+        let reader = c.open(&"Hello.mp4".to_string())?;
         let t = parse_exif_info(reader);
         assert_eq!(t.is_none(), true);
         Ok(())
@@ -150,8 +150,8 @@ mod tests {
     #[test]
     fn test_parse_exif_all_tags() -> anyhow::Result<()> {
         crate::test_util::setup_log();
-        let mut c = PsDirectoryContainer::new("test");
-        let reader = c.file_reader("Canon_40D.jpg")?;
+        let mut c = OsFileSystem::new("test");
+        let reader = c.open("Canon_40D.jpg")?;
         let t = parse_exif_info(reader).unwrap().tags;
         assert_eq!(t.len(), 40);
         let mut tag_names: Vec<String> = t.iter().map(|(t, _)| t.to_string()).collect();

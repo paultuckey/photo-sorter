@@ -1,13 +1,14 @@
 use crate::file_type::{AccurateFileType, QuickFileType};
+use crate::fs::{FileSystem, OsFileSystem};
 use crate::media::MediaFileInfo;
-use crate::util::{PsContainer, ScanInfo, dir_part, name_part};
+use crate::util::{ScanInfo, dir_part, name_part};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::path::Path;
 use tracing::{debug, info, warn};
 
 pub(crate) fn parse_album(
-    container: &mut Box<dyn PsContainer>,
+    container: &mut Box<dyn FileSystem>,
     si: &ScanInfo,
     si_files: &[ScanInfo],
 ) -> Option<Album> {
@@ -18,9 +19,9 @@ pub(crate) fn parse_album(
     }
 }
 
-fn parse_csv_album(container: &mut Box<dyn PsContainer>, si: &ScanInfo) -> Option<Album> {
+fn parse_csv_album(container: &mut Box<dyn FileSystem>, si: &ScanInfo) -> Option<Album> {
     info!("Parse CSV album: {:?}", &si.file_path);
-    let reader_r = container.file_reader(&si.file_path);
+    let reader_r = container.open(&si.file_path);
     let Ok(reader) = reader_r else {
         warn!("No bytes for album: {:?}", &si.file_path);
         return None;
@@ -96,11 +97,11 @@ fn parse_csv_album(container: &mut Box<dyn PsContainer>, si: &ScanInfo) -> Optio
 }
 
 fn parse_json_album(
-    container: &mut Box<dyn PsContainer>,
+    container: &mut Box<dyn FileSystem>,
     si: &ScanInfo,
     all_scanned_files: &[ScanInfo],
 ) -> Option<Album> {
-    let reader_r = container.file_reader(&si.file_path);
+    let reader_r = container.open(&si.file_path);
     let Ok(reader) = reader_r else {
         warn!("No bytes for album: {:?}", &si.file_path);
         return None;
@@ -202,9 +203,7 @@ mod tests {
     #[test]
     fn test_ic_sample() -> anyhow::Result<()> {
         crate::test_util::setup_log();
-        use crate::util::PsDirectoryContainer;
-        let mut c: Box<dyn PsContainer> = Box::new(PsDirectoryContainer::new(&"test".to_string()));
-        assert_eq!(c.root_exists(), true);
+        let mut c: Box<dyn FileSystem> = Box::new(OsFileSystem::new(&"test".to_string()));
         let qsf = ScanInfo::new("ic-album-sample.csv".to_string(), None, None);
         let a = parse_album(&mut c, &qsf, &vec![]).unwrap();
         assert_eq!(a.title, "ic-album-sample".to_string());
@@ -219,9 +218,8 @@ mod tests {
     #[test]
     fn test_g_sample() -> anyhow::Result<()> {
         crate::test_util::setup_log();
-        use crate::util::PsDirectoryContainer;
-        let mut c: Box<dyn PsContainer> =
-            Box::new(PsDirectoryContainer::new(&"test/takeout1".to_string()));
+        let mut c: Box<dyn FileSystem> =
+            Box::new(OsFileSystem::new(&"test/takeout1".to_string()));
         let qsf = ScanInfo::new("Google Photos/album1/metadata.json".to_string(), None, None);
         let si1 = ScanInfo::new("Google Photos/album1/test1.jpg".to_string(), None, None);
         let si2 = ScanInfo::new("different/test2.jpg".to_string(), None, None);

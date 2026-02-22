@@ -6,14 +6,12 @@ use crate::media::{
     media_file_info_from_readable,
 };
 use crate::progress::Progress;
+use crate::fs::{FileSystem, OsFileSystem, ZipFileSystem};
 use crate::supplemental_info::{
     PsSupplementalInfo, detect_supplemental_info, load_supplemental_info,
 };
 use crate::sync_cmd::DeDuplicationResult::{SkipWrite, WritePath};
-use crate::util::{
-    PsContainer, PsDirectoryContainer, PsZipContainer, ScanInfo, checksum_bytes,
-    is_existing_file_same,
-};
+use crate::util::{ScanInfo, checksum_bytes, is_existing_file_same, scan_fs};
 use anyhow::anyhow;
 use std::collections::HashMap;
 use std::io::Cursor;
@@ -34,23 +32,23 @@ pub(crate) fn main(
     if !path.exists() {
         return Err(anyhow!("Input path does not exist: {}", input));
     }
-    let mut container: Box<dyn PsContainer>;
+    let mut container: Box<dyn FileSystem>;
     if path.is_dir() {
         info!("Input directory: {input}");
-        container = Box::new(PsDirectoryContainer::new(input));
+        container = Box::new(OsFileSystem::new(input));
     } else {
         info!("Input zip: {input}");
         let tz = chrono::Local::now().offset().to_owned();
-        container = Box::new(PsZipContainer::new(input, tz));
+        container = Box::new(ZipFileSystem::new(input, tz)?);
     }
 
-    let files = container.scan();
+    let files = scan_fs(container.as_mut());
     info!("Found {} files in input", files.len());
 
-    let mut output_container_o: Option<PsDirectoryContainer> = None;
+    let mut output_container_o: Option<OsFileSystem> = None;
     if let Some(output) = output_directory {
         info!("Output directory: {output}");
-        let output_container = PsDirectoryContainer::new(output);
+        let output_container = OsFileSystem::new(output);
         if !output_container.root_exists() {
             warn!("Output directory does not exist {output}");
         }
@@ -166,12 +164,12 @@ pub(crate) fn main(
 /// - populate exif data
 pub(crate) fn inspect_media(
     si: &ScanInfo,
-    root: &mut Box<dyn PsContainer>,
+    root: &mut Box<dyn FileSystem>,
     all_media: &mut HashMap<String, MediaFileInfo>,
     supp_info: &Option<PsSupplementalInfo>,
 ) -> anyhow::Result<MediaFileInfo> {
     info!("Inspect: {}", si.file_path);
-    let reader = root.file_reader(&si.file_path.to_string())?;
+    let reader = root.open(&si.file_path.to_string())?;
     let hash_info_o = checksum_bytes(reader).ok();
     let Some(hash_info) = hash_info_o else {
         warn!("Could not calculate checksum for: {:?}", si.file_path);
@@ -199,8 +197,8 @@ pub(crate) fn write_media(
     media_file: &MediaFileInfo,
     derived: &MediaFileDerivedInfo,
     dry_run: bool,
-    input_container: &mut Box<dyn PsContainer>,
-    output_container: &mut PsDirectoryContainer,
+    input_container: &mut Box<dyn FileSystem>,
+    output_container: &mut OsFileSystem,
 ) -> anyhow::Result<String> {
     info!("Output {:?}", derived.desired_media_path);
 
@@ -209,7 +207,7 @@ pub(crate) fn write_media(
             SkipWrite(path) => return Ok(path),
             WritePath(path) => path,
         };
-    let reader = input_container.file_reader(&media_file.original_file_this_run)?;
+    let reader = input_container.open(&media_file.original_file_this_run)?;
     output_container.write(dry_run, &desired_output_path_with_ext.clone(), reader);
     output_container.set_modified(
         dry_run,
@@ -228,7 +226,7 @@ enum DeDuplicationResult {
 fn get_de_duplicated_path(
     media_file: &MediaFileInfo,
     derived: &MediaFileDerivedInfo,
-    output_container: &mut PsDirectoryContainer,
+    output_container: &mut OsFileSystem,
 ) -> anyhow::Result<DeDuplicationResult> {
     let Some(desired_output_path) = &derived.desired_media_path else {
         debug!("  No desired media path for file: {media_file:?}");
@@ -290,11 +288,11 @@ fn get_de_duplicated_path(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::util::PsDirectoryContainer;
+    use crate::fs::OsFileSystem;
 
     #[test]
     fn test_dedupe_one() -> anyhow::Result<()> {
-        let mut c = PsDirectoryContainer::new(&"test".to_string());
+        let mut c = OsFileSystem::new(&"test".to_string());
         let mfi = MediaFileInfo::new_for_test();
         let derived = MediaFileDerivedInfo::new_for_test(Some("duplicates/one".to_string()), "txt");
         let res = get_de_duplicated_path(&mfi, &derived, &mut c)?;
@@ -304,7 +302,7 @@ mod tests {
 
     #[test]
     fn test_dedupe_many() -> anyhow::Result<()> {
-        let mut c = PsDirectoryContainer::new(&"test".to_string());
+        let mut c = OsFileSystem::new(&"test".to_string());
         let mfi = MediaFileInfo::new_for_test();
         let derived =
             MediaFileDerivedInfo::new_for_test(Some("duplicates/many".to_string()), "txt");
@@ -315,7 +313,7 @@ mod tests {
 
     #[test]
     fn test_dedupe_too_many() -> anyhow::Result<()> {
-        let mut c = PsDirectoryContainer::new(&"test".to_string());
+        let mut c = OsFileSystem::new(&"test".to_string());
         let mfi = MediaFileInfo::new_for_test();
         let derived =
             MediaFileDerivedInfo::new_for_test(Some("duplicates/too-many".to_string()), "txt");

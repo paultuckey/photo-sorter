@@ -1,7 +1,7 @@
+use crate::fs::{FileSystem, OsFileSystem};
 use crate::media::{MediaFileDerivedInfo, MediaFileInfo, best_guess_taken_dt};
-use crate::util::{PsContainer, PsDirectoryContainer};
 use anyhow::anyhow;
-use std::io::Cursor;
+use std::io::{Cursor, Read};
 use tracing::{debug, warn};
 use yaml_rust2::yaml::Hash;
 use yaml_rust2::{Yaml, YamlEmitter, YamlLoader};
@@ -34,7 +34,7 @@ pub(crate) fn sync_markdown(
     dry_run: bool,
     media_file: &MediaFileInfo,
     derived: &MediaFileDerivedInfo,
-    output_c: &mut PsDirectoryContainer,
+    output_c: &mut OsFileSystem,
 ) -> anyhow::Result<()> {
     let Some(desired_media_path) = derived.desired_media_path.clone() else {
         warn!(
@@ -49,17 +49,22 @@ pub(crate) fn sync_markdown(
     let mut e_yaml = None;
 
     if output_c.exists(&output_path) {
-        let existing_md_bytes_r = output_c.file_bytes(&output_path);
-        let Ok(existing_md_bytes) = existing_md_bytes_r else {
-            warn!("Could not read existing markdown file at {output_path:?}");
-            return Err(anyhow!(
-                "Could not read existing markdown file at {output_path:?}"
-            ));
-        };
-        let existing_full_md = String::from_utf8_lossy(&existing_md_bytes);
-        let (e_yaml_i, e_md_i) = split_frontmatter(&existing_full_md);
-        e_yaml = Some(e_yaml_i);
-        e_md = e_md_i;
+        let mut reader = output_c.open(&output_path)?;
+        let mut existing_md_bytes = Vec::new();
+        match reader.read_to_end(&mut existing_md_bytes) {
+            Ok(_) => {
+                let existing_full_md = String::from_utf8_lossy(&existing_md_bytes);
+                let (e_yaml_i, e_md_i) = split_frontmatter(&existing_full_md);
+                e_yaml = Some(e_yaml_i);
+                e_md = e_md_i;
+            }
+            Err(e) => {
+                warn!("Could not read existing markdown file at {output_path:?}: {e}");
+                return Err(anyhow!(
+                    "Could not read existing markdown file at {output_path:?}: {e}"
+                ));
+            }
+        }
     }
     let md_res = assemble_markdown(&mfm, &e_yaml, &e_md)?;
     if let AssembledMarkdown::Modified(md_str) = md_res {

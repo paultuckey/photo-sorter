@@ -3,16 +3,17 @@ use crate::exif_util::parse_exif_info;
 use crate::file_type::QuickFileType;
 use crate::markdown::{assemble_markdown, mfm_from_media_file_info};
 use crate::media::media_file_info_from_readable;
+use crate::fs::{FileSystem, OsFileSystem};
 use crate::supplemental_info::{detect_supplemental_info, load_supplemental_info};
 use crate::sync_cmd::inspect_media;
-use crate::util::{PsContainer, PsDirectoryContainer, ScanInfo, checksum_bytes};
+use crate::util::{ScanInfo, checksum_bytes, scan_fs};
 use anyhow::anyhow;
 use std::collections::HashMap;
 use tracing::{debug, warn};
 
 pub(crate) fn main(input: &String, root_s: &str) -> anyhow::Result<()> {
     debug!("Inspecting: {input}");
-    let mut root: Box<dyn PsContainer> = Box::new(PsDirectoryContainer::new(root_s));
+    let mut root: Box<dyn FileSystem> = Box::new(OsFileSystem::new(root_s));
     let si = ScanInfo::new(input.clone(), None, None);
     match si.quick_file_type {
         QuickFileType::Unknown => {
@@ -24,8 +25,8 @@ pub(crate) fn main(input: &String, root_s: &str) -> anyhow::Result<()> {
     }
 }
 
-pub(crate) fn media(si: &ScanInfo, root: &mut Box<dyn PsContainer>) -> anyhow::Result<()> {
-    let reader = root.file_reader(&si.file_path.to_string())?;
+pub(crate) fn media(si: &ScanInfo, root: &mut Box<dyn FileSystem>) -> anyhow::Result<()> {
+    let reader = root.open(&si.file_path.to_string())?;
     let hash_info_o = checksum_bytes(reader).ok();
     let Some(hash_info) = hash_info_o else {
         debug!("Could not calculate checksum for file: {:?}", si.file_path);
@@ -56,7 +57,7 @@ pub(crate) fn media(si: &ScanInfo, root: &mut Box<dyn PsContainer>) -> anyhow::R
     println!("{s}");
     println!();
 
-    let reader = root.file_reader(&si.file_path.to_string())?;
+    let reader = root.open(&si.file_path.to_string())?;
     let exif_info_o = parse_exif_info(reader);
     if let Some(exif_info) = exif_info_o {
         if !exif_info.tags.is_empty() {
@@ -75,8 +76,8 @@ pub(crate) fn media(si: &ScanInfo, root: &mut Box<dyn PsContainer>) -> anyhow::R
     Ok(())
 }
 
-pub(crate) fn album(si: &ScanInfo, root: &mut Box<dyn PsContainer>) -> anyhow::Result<()> {
-    let files = root.scan();
+pub(crate) fn album(si: &ScanInfo, root: &mut Box<dyn FileSystem>) -> anyhow::Result<()> {
+    let files = scan_fs(root.as_mut());
     let album_o = parse_album(root, si, &files);
     let Some(album) = album_o else {
         warn!("Not a valid album file: {}", si.file_path);

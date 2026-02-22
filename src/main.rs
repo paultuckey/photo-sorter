@@ -2,6 +2,7 @@ mod album;
 mod db_cmd;
 mod exif_util;
 mod file_type;
+mod fs;
 mod index_cmd;
 mod info_cmd;
 mod markdown;

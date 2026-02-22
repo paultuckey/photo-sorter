@@ -1,4 +1,5 @@
-use crate::util::{PsContainer, PsDirectoryContainer, PsZipContainer};
+use crate::fs::{FileSystem, OsFileSystem, ZipFileSystem};
+use crate::util::scan_fs;
 use anyhow::anyhow;
 use regex::Regex;
 use std::collections::{HashMap, HashSet};
@@ -26,15 +27,15 @@ pub(crate) fn main(input: &String) -> anyhow::Result<()> {
     if !path.exists() {
         return Err(anyhow!("Input path does not exist: {}", input));
     }
-    let container: Box<dyn PsContainer> = if path.is_dir() {
+    let mut container: Box<dyn FileSystem> = if path.is_dir() {
         info!("Input directory: {input}");
-        Box::new(PsDirectoryContainer::new(input))
+        Box::new(OsFileSystem::new(input))
     } else {
         info!("Input zip: {input}");
         let tz = chrono::Local::now().offset().to_owned();
-        Box::new(PsZipContainer::new(input, tz))
+        Box::new(ZipFileSystem::new(input, tz)?)
     };
-    let idx = container.scan();
+    let idx = scan_fs(container.as_mut());
 
     let mut distinct_dirs: HashSet<String> = HashSet::new();
     for si in &idx {
