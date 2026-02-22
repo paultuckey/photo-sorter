@@ -128,7 +128,7 @@ pub(crate) fn determine_file_type<R: Read + Seek>(reader: R, name: &String) -> A
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::util::PsContainer;
+    use crate::fs::FileSystem;
     use std::io::Cursor;
 
     #[test]
@@ -163,10 +163,10 @@ mod tests {
     #[test]
     fn test_accurate_file_type() {
         crate::test_util::setup_log();
-        use crate::util::PsDirectoryContainer;
+        use crate::fs::OsFileSystem;
         let name = "Canon_40D.jpg".to_string();
-        let mut root = PsDirectoryContainer::new(&"test".to_string());
-        let r = root.file_reader(&name).unwrap();
+        let mut root = OsFileSystem::new(&"test".to_string());
+        let r = root.open(&name).unwrap();
         assert_eq!(determine_file_type(r, &name), AccurateFileType::Jpg);
 
         let bad: Vec<u8> = vec![];

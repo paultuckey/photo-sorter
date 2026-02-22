@@ -4,9 +4,10 @@ use crate::file_type::{
     AccurateFileType, MetadataType, QuickFileType, determine_file_type, file_ext_from_file_type,
     metadata_type,
 };
+use crate::fs::{FileSystem, OsFileSystem};
 use crate::supplemental_info::PsSupplementalInfo;
 use crate::track_util::{PsTrackInfo, parse_track_info};
-use crate::util::{PsContainer, ScanInfo};
+use crate::util::ScanInfo;
 use anyhow::anyhow;
 use chrono::{DateTime, Datelike, Timelike};
 use serde::{Deserialize, Serialize};
@@ -38,12 +39,12 @@ pub(crate) struct MediaFileDerivedInfo {
 
 pub(crate) fn media_file_info_from_readable(
     si: &ScanInfo,
-    root: &mut Box<dyn PsContainer>,
+    root: &mut Box<dyn FileSystem>,
     supp_info: &Option<PsSupplementalInfo>,
     hash_info: &HashInfo,
 ) -> anyhow::Result<MediaFileInfo> {
     let name = &si.file_path;
-    let reader = root.file_reader(&si.file_path.to_string())?;
+    let reader = root.open(&si.file_path.to_string())?;
     let guessed_ff = determine_file_type(reader, name);
     if guessed_ff == AccurateFileType::Unsupported {
         warn!("Not a valid media file {name:?}");
@@ -54,11 +55,11 @@ pub(crate) fn media_file_info_from_readable(
     let mut track_o = None;
     match metadata_type(&guessed_ff) {
         MetadataType::ExifTags => {
-            let reader = root.file_reader(&si.file_path.to_string())?;
+            let reader = root.open(&si.file_path.to_string())?;
             exif_o = parse_exif_info(reader);
         }
         MetadataType::Track => {
-            let reader = root.file_reader(&si.file_path.to_string())?;
+            let reader = root.open(&si.file_path.to_string())?;
             track_o = parse_track_info(reader);
         }
         MetadataType::NoMetadata => {}
@@ -204,12 +205,10 @@ mod tests {
     #[test]
     fn test_desired_media_path() -> anyhow::Result<()> {
         crate::test_util::setup_log();
-        use crate::util::PsContainer;
-        use crate::util::PsDirectoryContainer;
         use crate::util::checksum_bytes;
 
-        let mut c = PsDirectoryContainer::new(&"test".to_string());
-        let reader = c.file_reader(&"Canon_40D.jpg".to_string()).unwrap();
+        let mut c = OsFileSystem::new(&"test".to_string());
+        let reader = c.open(&"Canon_40D.jpg".to_string()).unwrap();
         let short_checksum = checksum_bytes(reader)?.short_checksum;
 
         assert_eq!(

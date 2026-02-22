@@ -1,8 +1,9 @@
 use crate::file_type::QuickFileType;
+use crate::fs::{FileSystem, OsFileSystem, ZipFileSystem};
 use crate::media::{MediaFileInfo, best_guess_taken_dt, media_file_info_from_readable};
 use crate::progress::Progress;
 use crate::supplemental_info::{detect_supplemental_info, load_supplemental_info};
-use crate::util::{PsContainer, PsDirectoryContainer, PsZipContainer, ScanInfo, checksum_bytes};
+use crate::util::{ScanInfo, checksum_bytes, scan_fs};
 use anyhow::anyhow;
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
@@ -15,14 +16,14 @@ pub(crate) fn main(input: &String) -> anyhow::Result<()> {
     if !path.exists() {
         return Err(anyhow!("Input path does not exist: {}", input));
     }
-    let mut container: Box<dyn PsContainer>;
+    let mut container: Box<dyn FileSystem>;
     if path.is_dir() {
         info!("Input directory: {input}");
-        container = Box::new(PsDirectoryContainer::new(input));
+        container = Box::new(OsFileSystem::new(input));
     } else {
         info!("Input zip: {input}");
         let tz = chrono::Local::now().offset().to_owned();
-        container = Box::new(PsZipContainer::new(input, tz));
+        container = Box::new(ZipFileSystem::new(input, tz)?);
     }
 
     let conn = db_conn()?;
@@ -31,10 +32,10 @@ pub(crate) fn main(input: &String) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn run_db_scan(container: &mut Box<dyn PsContainer>, conn: &Connection) -> anyhow::Result<()> {
+fn run_db_scan(container: &mut Box<dyn FileSystem>, conn: &Connection) -> anyhow::Result<()> {
     db_prepare(conn)?;
 
-    let files = container.scan();
+    let files = scan_fs(container.as_mut());
     info!("Found {} files in input", files.len());
 
     let media_si_files = files
@@ -56,7 +57,7 @@ fn run_db_scan(container: &mut Box<dyn PsContainer>, conn: &Connection) -> anyho
 }
 
 fn process_file(
-    root: &mut Box<dyn PsContainer>,
+    root: &mut Box<dyn FileSystem>,
     conn: &Connection,
     media_si: &&ScanInfo,
 ) -> anyhow::Result<()> {
@@ -66,7 +67,7 @@ fn process_file(
         supp_info_o = load_supplemental_info(&supp_info_path, root);
     }
 
-    let reader = root.file_reader(&media_si.file_path.clone())?;
+    let reader = root.open(&media_si.file_path.clone())?;
     let hash_info_o = checksum_bytes(reader).ok();
     let Some(hash_info) = hash_info_o else {
         debug!(
@@ -201,7 +202,7 @@ mod tests {
     fn test_db_scan() -> anyhow::Result<()> {
         crate::test_util::setup_log();
         let conn = Connection::open_in_memory()?;
-        let mut container: Box<dyn PsContainer> = Box::new(PsDirectoryContainer::new("test"));
+        let mut container: Box<dyn FileSystem> = Box::new(OsFileSystem::new("test"));
         run_db_scan(&mut container, &conn)?;
 
         let mut stmt =
@@ -262,10 +263,10 @@ mod tests {
 
         let conn = Connection::open_in_memory()?;
         let tz = chrono::FixedOffset::east_opt(0).unwrap();
-        let mut container: Box<dyn PsContainer> = Box::new(PsZipContainer::new(
+        let mut container: Box<dyn FileSystem> = Box::new(ZipFileSystem::new(
             &zip_path.to_string_lossy().to_string(),
             tz,
-        ));
+        )?);
 
         run_db_scan(&mut container, &conn)?;
 

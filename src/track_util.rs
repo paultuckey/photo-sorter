@@ -90,14 +90,15 @@ fn parse_to_o_s(opt: &Option<&nom_exif::EntryValue>) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::util::{PsContainer, PsDirectoryContainer};
+    use crate::fs::{FileSystem, OsFileSystem};
+    use crate::util::scan_fs;
     use std::path::Path;
 
     #[test]
     fn test_parse_track() -> anyhow::Result<()> {
         crate::test_util::setup_log();
-        let mut c = PsDirectoryContainer::new(&"test".to_string());
-        let reader = c.file_reader(&"Hello.mp4".to_string())?;
+        let mut c = OsFileSystem::new(&"test".to_string());
+        let reader = c.open(&"Hello.mp4".to_string())?;
         let meta = parse_track_info(reader).unwrap();
         assert_eq!(meta.width, Some(854));
         assert_eq!(meta.height, Some(480));
@@ -114,14 +115,14 @@ mod tests {
     #[ignore]
     fn test_all_mp4s() -> anyhow::Result<()> {
         crate::test_util::setup_log();
-        let mut c = PsDirectoryContainer::new(&"input".to_string());
-        for si in c.scan() {
+        let mut c = OsFileSystem::new(&"input".to_string());
+        for si in scan_fs(&mut c) {
             let path = Path::new(&si.file_path);
             if path
                 .extension()
                 .map_or(false, |ext| ext.eq_ignore_ascii_case("mp4"))
             {
-                let reader = c.file_reader(&path.to_string_lossy().to_string())?;
+                let reader = c.open(&path.to_string_lossy().to_string())?;
                 let _ = parse_track_info(reader);
             }
         }
