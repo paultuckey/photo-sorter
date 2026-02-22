@@ -52,7 +52,7 @@ pub(crate) fn media(si: &ScanInfo, root: &mut Box<dyn PsContainer>) -> anyhow::R
 
     println!("Markdown:");
     let mfm = mfm_from_media_file_info(&media_file_info);
-    let s = assemble_markdown(&mfm, &None, "")?;
+    let s = assemble_markdown(&mfm, &None, "")?.into_string();
     println!("{s}");
     println!();
 
