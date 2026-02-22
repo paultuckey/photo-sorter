@@ -22,6 +22,8 @@ pub(crate) struct PsExifInfo {
     pub(crate) tags: HashMap<String, String>,
     // as iso6709
     pub(crate) gps: Option<String>,
+    pub(crate) latitude: Option<f64>,
+    pub(crate) longitude: Option<f64>,
 }
 
 pub(crate) fn parse_exif_info<R: Read + Seek>(reader: R) -> Option<PsExifInfo> {
@@ -38,6 +40,8 @@ pub(crate) fn parse_exif_info<R: Read + Seek>(reader: R) -> Option<PsExifInfo> {
     let mut parser = MediaParser::new();
     let exif_iter_r: nom_exif::Result<ExifIter> = parser.parse(ms);
     let mut ps_gps_info = None;
+    let mut lat = None;
+    let mut long = None;
     match exif_iter_r {
         Ok(exif_iter) => {
             for entry in exif_iter.clone() {
@@ -54,13 +58,27 @@ pub(crate) fn parse_exif_info<R: Read + Seek>(reader: R) -> Option<PsExifInfo> {
                 }
                 m.insert(tag_name, s);
             }
-            if let Some(gps_info) = exif_iter
-                .parse_gps_info()
-                .ok()
-                .flatten()
-                .map(|g| g.format_iso6709())
-            {
-                ps_gps_info = Some(gps_info);
+            if let Some(gps_info) = exif_iter.parse_gps_info().ok().flatten() {
+                ps_gps_info = Some(gps_info.format_iso6709());
+                let lat_val = gps_info.latitude.0.as_float()
+                    + gps_info.latitude.1.as_float() / 60.0
+                    + gps_info.latitude.2.as_float() / 3600.0;
+                let lat_sign = if gps_info.latitude_ref == 'N' {
+                    1.0
+                } else {
+                    -1.0
+                };
+                lat = Some(lat_val * lat_sign);
+
+                let long_val = gps_info.longitude.0.as_float()
+                    + gps_info.longitude.1.as_float() / 60.0
+                    + gps_info.longitude.2.as_float() / 3600.0;
+                let long_sign = if gps_info.longitude_ref == 'E' {
+                    1.0
+                } else {
+                    -1.0
+                };
+                long = Some(long_val * long_sign);
             }
         }
         Err(e) => {
@@ -70,6 +88,8 @@ pub(crate) fn parse_exif_info<R: Read + Seek>(reader: R) -> Option<PsExifInfo> {
     Some(PsExifInfo {
         tags: m,
         gps: ps_gps_info,
+        latitude: lat,
+        longitude: long,
     })
 }
 

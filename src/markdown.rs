@@ -8,10 +8,17 @@ use yaml_rust2::{Yaml, YamlEmitter, YamlLoader};
 
 pub(crate) fn mfm_from_media_file_info(media_info: &MediaFileInfo) -> PhotoSorterFrontMatter {
     let guessed_datetime = best_guess_taken_dt(media_info);
+    let (lat, long) = if let Some(exif) = &media_info.exif_info {
+        (exif.latitude, exif.longitude)
+    } else {
+        (None, None)
+    };
     PhotoSorterFrontMatter {
         path_original: media_info.original_path.clone(),
         checksum: media_info.hash_info.long_checksum.clone(),
         datetime: guessed_datetime,
+        latitude: lat,
+        longitude: long,
     }
 }
 
@@ -19,6 +26,8 @@ pub(crate) struct PhotoSorterFrontMatter {
     pub(crate) path_original: Vec<String>,
     pub(crate) checksum: String,
     pub(crate) datetime: Option<String>,
+    pub(crate) latitude: Option<f64>,
+    pub(crate) longitude: Option<f64>,
 }
 
 pub(crate) fn sync_markdown(
@@ -202,7 +211,18 @@ fn merge_yaml(s: &Option<String>, fm: &PhotoSorterFrontMatter) -> String {
     );
     yaml_array_merge(&mut root, &"original-paths".to_string(), &fm.path_original);
 
-    // TODO: do we need to add longitude, latitude? they are stored in exif, but might be nice to have?
+    if let Some(lat) = fm.latitude {
+        root.insert(
+            Yaml::String("latitude".to_string()),
+            Yaml::Real(lat.to_string()),
+        );
+    }
+    if let Some(long) = fm.longitude {
+        root.insert(
+            Yaml::String("longitude".to_string()),
+            Yaml::Real(long.to_string()),
+        );
+    }
 
     let mut out_str = String::new();
     {
@@ -278,6 +298,8 @@ mod tests {
             path_original: vec!["p1".to_string(), "p2".to_string()],
             datetime: None,
             checksum: "abcdefg".to_string(),
+            latitude: None,
+            longitude: None,
         }
     }
 
@@ -299,6 +321,19 @@ original-paths:
   - p2
 "
         );
+    }
+
+    #[test]
+    fn test_yaml_output_with_gps() {
+        crate::test_util::setup_log();
+        let mut mfi = get_mfi();
+        mfi.latitude = Some(12.3456);
+        mfi.longitude = Some(-78.9012);
+
+        let yaml = merge_yaml(&None, &mfi);
+        assert!(yaml.contains("latitude: 12.3456"));
+        assert!(yaml.contains("longitude: -78.9012"));
+        assert!(yaml.contains("checksum: abcdefg"));
     }
 
     #[test]
