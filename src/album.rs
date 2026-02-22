@@ -73,21 +73,25 @@ fn parse_csv_album(container: &mut Box<dyn PsContainer>, si: &ScanInfo) -> Optio
         return None;
     }
     // find index of last dot and get all chars before that
+    let name_only = name_part(name);
     let name_without_ext;
-    let dot_idx = name.rfind('.').map_or(0, |idx| idx);
+    let dot_idx = name_only.rfind('.').map_or(0, |idx| idx);
     if dot_idx > 0 {
-        name_without_ext = name[..dot_idx].to_string();
+        name_without_ext = name_only[..dot_idx].to_string();
         if name_without_ext.is_empty() {
             debug!("Album file has no name: {name:?}");
             return None;
         }
     } else {
-        name_without_ext = name.clone();
+        name_without_ext = name_only.clone();
         if name_without_ext.is_empty() {
             debug!("Album file has no name: {name:?}");
             return None;
         }
     }
+
+    let desired_album_md_path = format!("albums/{}.md", name_without_ext);
+
     info!(
         "Found album: {:?} with {:?} entries at {:?}",
         name_without_ext,
@@ -96,7 +100,7 @@ fn parse_csv_album(container: &mut Box<dyn PsContainer>, si: &ScanInfo) -> Optio
     );
     Some(Album {
         title: name_without_ext.clone(),
-        desired_album_md_path: name.clone(),
+        desired_album_md_path,
         files,
     })
 }
@@ -214,11 +218,29 @@ mod tests {
         let qsf = ScanInfo::new("ic-album-sample.csv".to_string(), None, None);
         let a = parse_album(&mut c, &qsf, &vec![]).unwrap();
         assert_eq!(a.title, "ic-album-sample".to_string());
+        assert_eq!(
+            a.desired_album_md_path,
+            "albums/ic-album-sample.md".to_string()
+        );
         assert_eq!(a.files.len(), 5);
         assert_eq!(
             a.files.get(0).unwrap(),
             "35F8739B-30E0-4620-802C-0817AD7356F6.JPG"
         );
+        Ok(())
+    }
+
+    #[test]
+    fn test_csv_album_in_subdir() -> anyhow::Result<()> {
+        crate::test_util::setup_log();
+        use crate::util::PsDirectoryContainer;
+        let mut c: Box<dyn PsContainer> = Box::new(PsDirectoryContainer::new(&"test".to_string()));
+        let qsf = ScanInfo::new("subdir/my-album.csv".to_string(), None, None);
+        let a = parse_album(&mut c, &qsf, &vec![]).unwrap();
+        assert_eq!(a.title, "my-album".to_string());
+        assert_eq!(a.desired_album_md_path, "albums/my-album.md".to_string());
+        assert_eq!(a.files.len(), 5);
+        assert_eq!(a.files.get(0).unwrap(), "subdir/35F8739B-30E0-4620-802C-0817AD7356F6.JPG");
         Ok(())
     }
 
