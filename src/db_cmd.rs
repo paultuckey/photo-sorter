@@ -25,16 +25,13 @@ pub(crate) fn main(input: &String) -> anyhow::Result<()> {
         container = Box::new(PsZipContainer::new(input, tz));
     }
 
-    let conn = db_conn()?;
-    run_db_scan(&mut container, &conn)?;
+    let mut conn = db_conn()?;
+    run_db_scan(&mut container, &mut conn)?;
     conn.close().unwrap_or(());
     Ok(())
 }
 
-fn run_db_scan(
-    container: &mut Box<dyn PsContainer>,
-    conn: &Connection,
-) -> anyhow::Result<()> {
+fn run_db_scan(container: &mut Box<dyn PsContainer>, conn: &mut Connection) -> anyhow::Result<()> {
     db_prepare(conn)?;
 
     let files = container.scan();
@@ -45,12 +42,26 @@ fn run_db_scan(
         .filter(|m| m.quick_file_type == QuickFileType::Media)
         .collect::<Vec<&ScanInfo>>();
     info!("Inspecting {} photo and video files", media_si_files.len());
+
     let prog = Progress::new(media_si_files.len() as u64);
-    for media_si in media_si_files {
-        prog.inc();
-        process_file(container, conn, &media_si)?;
+    let batch_size = 1000;
+    for chunk in media_si_files.chunks(batch_size) {
+        let mut batch_data = Vec::new();
+        for media_si in chunk {
+            prog.inc();
+            if let Some(info) = extract_media_info(container, media_si)? {
+                batch_data.push(info);
+            }
+        }
+
+        if !batch_data.is_empty() {
+            let tx = conn.transaction()?;
+            for info in batch_data {
+                db_record(&tx, &info)?;
+            }
+            tx.commit()?;
+        }
     }
-    drop(prog);
 
     // todo: support albums
 
@@ -58,11 +69,10 @@ fn run_db_scan(
     Ok(())
 }
 
-fn process_file(
+fn extract_media_info(
     root: &mut Box<dyn PsContainer>,
-    conn: &Connection,
     media_si: &&ScanInfo,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<Option<MediaFileInfo>> {
     let mut supp_info_o = None;
     let supp_info_path_o = detect_supplemental_info(&media_si.file_path.clone(), root);
     if let Some(supp_info_path) = supp_info_path_o {
@@ -83,10 +93,10 @@ fn process_file(
     };
 
     let media_info_r = media_file_info_from_readable(media_si, root, &supp_info_o, &hash_info);
-    if let Ok(media_info) = media_info_r {
-        db_record(conn, &media_info)?;
+    match media_info_r {
+        Ok(media_info) => Ok(Some(media_info)),
+        Err(_) => Ok(None),
     }
-    Ok(())
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
@@ -203,12 +213,12 @@ mod tests {
     #[test]
     fn test_db_scan() -> anyhow::Result<()> {
         crate::test_util::setup_log();
-        let conn = Connection::open_in_memory()?;
+        let mut conn = Connection::open_in_memory()?;
         let mut container: Box<dyn PsContainer> = Box::new(PsDirectoryContainer::new("test"));
-        run_db_scan(&mut container, &conn)?;
+        run_db_scan(&mut container, &mut conn)?;
 
-        let mut stmt = conn
-            .prepare("SELECT media_path, quick_file_type FROM media_item ORDER BY media_path")?;
+        let mut stmt =
+            conn.prepare("SELECT media_path, quick_file_type FROM media_item ORDER BY media_path")?;
         let rows = stmt.query_map([], |row| {
             Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
         })?;
@@ -218,19 +228,23 @@ mod tests {
             results.push(row?);
         }
 
-        assert!(results
-            .iter()
-            .any(|(path, ftype)| path == "Canon_40D.jpg" && ftype == "Media"));
-        assert!(results
-            .iter()
-            .any(|(path, ftype)| path == "Hello.mp4" && ftype == "Media"));
+        assert!(
+            results
+                .iter()
+                .any(|(path, ftype)| path == "Canon_40D.jpg" && ftype == "Media")
+        );
+        assert!(
+            results
+                .iter()
+                .any(|(path, ftype)| path == "Hello.mp4" && ftype == "Media")
+        );
 
         Ok(())
     }
 
     use std::fs;
-    use zip::write::FileOptions;
     use zip::ZipWriter;
+    use zip::write::FileOptions;
 
     fn create_zip_of_test_dir(output_path: &Path) -> anyhow::Result<()> {
         let file = fs::File::create(output_path)?;
@@ -259,15 +273,17 @@ mod tests {
         let zip_path = Path::new("target/test_output.zip");
         create_zip_of_test_dir(zip_path)?;
 
-        let conn = Connection::open_in_memory()?;
+        let mut conn = Connection::open_in_memory()?;
         let tz = chrono::FixedOffset::east_opt(0).unwrap();
-        let mut container: Box<dyn PsContainer> =
-            Box::new(PsZipContainer::new(&zip_path.to_string_lossy().to_string(), tz));
+        let mut container: Box<dyn PsContainer> = Box::new(PsZipContainer::new(
+            &zip_path.to_string_lossy().to_string(),
+            tz,
+        ));
 
-        run_db_scan(&mut container, &conn)?;
+        run_db_scan(&mut container, &mut conn)?;
 
-        let mut stmt = conn
-            .prepare("SELECT media_path, quick_file_type FROM media_item ORDER BY media_path")?;
+        let mut stmt =
+            conn.prepare("SELECT media_path, quick_file_type FROM media_item ORDER BY media_path")?;
         let rows = stmt.query_map([], |row| {
             Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
         })?;
@@ -277,12 +293,16 @@ mod tests {
             results.push(row?);
         }
 
-        assert!(results
-            .iter()
-            .any(|(path, ftype)| path == "Canon_40D.jpg" && ftype == "Media"));
-        assert!(results
-            .iter()
-            .any(|(path, ftype)| path == "Hello.mp4" && ftype == "Media"));
+        assert!(
+            results
+                .iter()
+                .any(|(path, ftype)| path == "Canon_40D.jpg" && ftype == "Media")
+        );
+        assert!(
+            results
+                .iter()
+                .any(|(path, ftype)| path == "Hello.mp4" && ftype == "Media")
+        );
 
         // Cleanup
         let _ = fs::remove_file(zip_path);
