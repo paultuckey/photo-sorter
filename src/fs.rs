@@ -1,9 +1,10 @@
 use anyhow::{anyhow, Result};
-use chrono::{Datelike, FixedOffset, Timelike};
+use chrono::FixedOffset;
 use std::collections::HashMap;
 use std::fs::{self, File};
 use std::io::{Cursor, Read, Seek};
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 use std::time::{Duration, SystemTime};
 use tracing::{debug, error};
 use zip::ZipArchive;
@@ -13,14 +14,16 @@ impl<T: Read + Seek> ReadSeek for T {}
 
 #[derive(Debug, Clone)]
 pub struct FileMetadata {
+    #[allow(dead_code)]
     pub len: u64,
+    #[allow(dead_code)]
     pub is_dir: bool,
     pub modified: Option<i64>,
     pub created: Option<i64>,
 }
 
-pub trait FileSystem {
-    fn open(&mut self, path: &str) -> Result<Box<dyn ReadSeek>>;
+pub trait FileSystem: Send + Sync {
+    fn open(&self, path: &str) -> Result<Box<dyn ReadSeek>>;
     fn exists(&self, path: &str) -> bool;
     // Walk returns all files recursively as relative paths
     fn walk(&self) -> Vec<String>;
@@ -95,7 +98,7 @@ impl OsFileSystem {
 }
 
 impl FileSystem for OsFileSystem {
-    fn open(&mut self, path: &str) -> Result<Box<dyn ReadSeek>> {
+    fn open(&self, path: &str) -> Result<Box<dyn ReadSeek>> {
         let p = self.root.join(path);
         let f = File::open(&p).map_err(|e| anyhow!("Unable to open file {:?}: {}", p, e))?;
         Ok(Box::new(f))
@@ -158,8 +161,10 @@ fn scan_dir_recursively(files: &mut Vec<String>, dir_path: &Path, root_path: &Pa
 }
 
 pub struct ZipFileSystem {
+    #[allow(dead_code)]
     zip_file: String,
-    zip: ZipArchive<File>,
+    zip: Mutex<ZipArchive<File>>,
+    #[allow(dead_code)]
     tz: FixedOffset,
     file_names: Vec<String>,
     metadata_cache: HashMap<String, FileMetadata>,
@@ -212,7 +217,7 @@ impl ZipFileSystem {
         }
         Ok(Self {
             zip_file: zip_file.to_string(),
-            zip,
+            zip: Mutex::new(zip),
             tz,
             file_names,
             metadata_cache,
@@ -221,9 +226,9 @@ impl ZipFileSystem {
 }
 
 impl FileSystem for ZipFileSystem {
-    fn open(&mut self, path: &str) -> Result<Box<dyn ReadSeek>> {
-        let mut file = self
-            .zip
+    fn open(&self, path: &str) -> Result<Box<dyn ReadSeek>> {
+        let mut zip = self.zip.lock().unwrap();
+        let mut file = zip
             .by_name(path)
             .map_err(|_| anyhow!("File not found in zip: {}", path))?;
         let mut buffer = Vec::new();

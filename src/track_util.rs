@@ -97,7 +97,7 @@ mod tests {
     #[test]
     fn test_parse_track() -> anyhow::Result<()> {
         crate::test_util::setup_log();
-        let mut c = OsFileSystem::new(&"test".to_string());
+        let c = OsFileSystem::new(&"test".to_string());
         let reader = c.open(&"Hello.mp4".to_string())?;
         let meta = parse_track_info(reader).unwrap();
         assert_eq!(meta.width, Some(854));
@@ -115,8 +115,8 @@ mod tests {
     #[ignore]
     fn test_all_mp4s() -> anyhow::Result<()> {
         crate::test_util::setup_log();
-        let mut c = OsFileSystem::new(&"input".to_string());
-        for si in scan_fs(&mut c) {
+        let c = OsFileSystem::new(&"input".to_string());
+        for si in scan_fs(&c) {
             let path = Path::new(&si.file_path);
             if path
                 .extension()

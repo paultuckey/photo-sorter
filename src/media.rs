@@ -4,7 +4,7 @@ use crate::file_type::{
     AccurateFileType, MetadataType, QuickFileType, determine_file_type, file_ext_from_file_type,
     metadata_type,
 };
-use crate::fs::{FileSystem, OsFileSystem};
+use crate::fs::FileSystem;
 use crate::supplemental_info::PsSupplementalInfo;
 use crate::track_util::{PsTrackInfo, parse_track_info};
 use crate::util::ScanInfo;
@@ -39,7 +39,7 @@ pub(crate) struct MediaFileDerivedInfo {
 
 pub(crate) fn media_file_info_from_readable(
     si: &ScanInfo,
-    root: &mut Box<dyn FileSystem>,
+    root: &dyn FileSystem,
     supp_info: &Option<PsSupplementalInfo>,
     hash_info: &HashInfo,
 ) -> anyhow::Result<MediaFileInfo> {
@@ -182,6 +182,7 @@ pub(crate) fn get_desired_media_path(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::fs::OsFileSystem;
 
     #[test]
     fn test_best_guess_taken_dt_timestamps() {
@@ -207,7 +208,7 @@ mod tests {
         crate::test_util::setup_log();
         use crate::util::checksum_bytes;
 
-        let mut c = OsFileSystem::new(&"test".to_string());
+        let c = OsFileSystem::new(&"test".to_string());
         let reader = c.open(&"Canon_40D.jpg".to_string()).unwrap();
         let short_checksum = checksum_bytes(reader)?.short_checksum;
 

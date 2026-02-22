@@ -13,19 +13,19 @@ use tracing::{debug, warn};
 
 pub(crate) fn main(input: &String, root_s: &str) -> anyhow::Result<()> {
     debug!("Inspecting: {input}");
-    let mut root: Box<dyn FileSystem> = Box::new(OsFileSystem::new(root_s));
+    let root: Box<dyn FileSystem> = Box::new(OsFileSystem::new(root_s));
     let si = ScanInfo::new(input.clone(), None, None);
     match si.quick_file_type {
         QuickFileType::Unknown => {
             warn!("File type is unknown, skipping: {input}");
             Ok(())
         }
-        QuickFileType::AlbumCsv | QuickFileType::AlbumJson => album(&si, &mut root),
-        QuickFileType::Media => media(&si, &mut root),
+        QuickFileType::AlbumCsv | QuickFileType::AlbumJson => album(&si, root.as_ref()),
+        QuickFileType::Media => media(&si, root.as_ref()),
     }
 }
 
-pub(crate) fn media(si: &ScanInfo, root: &mut Box<dyn FileSystem>) -> anyhow::Result<()> {
+pub(crate) fn media(si: &ScanInfo, root: &dyn FileSystem) -> anyhow::Result<()> {
     let reader = root.open(&si.file_path.to_string())?;
     let hash_info_o = checksum_bytes(reader).ok();
     let Some(hash_info) = hash_info_o else {
@@ -76,8 +76,8 @@ pub(crate) fn media(si: &ScanInfo, root: &mut Box<dyn FileSystem>) -> anyhow::Re
     Ok(())
 }
 
-pub(crate) fn album(si: &ScanInfo, root: &mut Box<dyn FileSystem>) -> anyhow::Result<()> {
-    let files = scan_fs(root.as_mut());
+pub(crate) fn album(si: &ScanInfo, root: &dyn FileSystem) -> anyhow::Result<()> {
+    let files = scan_fs(root);
     let album_o = parse_album(root, si, &files);
     let Some(album) = album_o else {
         warn!("Not a valid album file: {}", si.file_path);

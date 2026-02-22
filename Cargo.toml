@@ -22,3 +22,4 @@ strum_macros = "0.27"
 rusqlite = { version = "0.38", features = ["bundled"] }
 nom-exif = "2.6"
 hex = "0.4"
+rayon = "1.11.0"

@@ -5,6 +5,7 @@ use crate::progress::Progress;
 use crate::supplemental_info::{detect_supplemental_info, load_supplemental_info};
 use crate::util::{ScanInfo, checksum_bytes, scan_fs};
 use anyhow::anyhow;
+use rayon::prelude::*;
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
@@ -35,7 +36,7 @@ pub(crate) fn main(input: &String) -> anyhow::Result<()> {
 fn run_db_scan(container: &mut Box<dyn FileSystem>, conn: &Connection) -> anyhow::Result<()> {
     db_prepare(conn)?;
 
-    let files = scan_fs(container.as_mut());
+    let files = scan_fs(container.as_ref());
     info!("Found {} files in input", files.len());
 
     let media_si_files = files
@@ -44,10 +45,27 @@ fn run_db_scan(container: &mut Box<dyn FileSystem>, conn: &Connection) -> anyhow
         .collect::<Vec<&ScanInfo>>();
     info!("Inspecting {} photo and video files", media_si_files.len());
     let prog = Progress::new(media_si_files.len() as u64);
-    for media_si in media_si_files {
-        prog.inc();
-        process_file(container, conn, &media_si)?;
-    }
+
+    std::thread::scope(|s| {
+        let (tx, rx) = std::sync::mpsc::channel();
+        let container_ref = container.as_ref();
+        let prog_ref = &prog;
+
+        s.spawn(move || {
+            media_si_files.par_iter().for_each(|media_si| {
+                if let Ok(Some(info)) = analyze_file(container_ref, media_si) {
+                    let _ = tx.send(info);
+                }
+                prog_ref.inc();
+            });
+        });
+
+        for info in rx {
+            db_record(conn, &info)?;
+        }
+        Ok::<(), anyhow::Error>(())
+    })?;
+
     drop(prog);
 
     // todo: support albums
@@ -56,11 +74,10 @@ fn run_db_scan(container: &mut Box<dyn FileSystem>, conn: &Connection) -> anyhow
     Ok(())
 }
 
-fn process_file(
-    root: &mut Box<dyn FileSystem>,
-    conn: &Connection,
-    media_si: &&ScanInfo,
-) -> anyhow::Result<()> {
+fn analyze_file(
+    root: &dyn FileSystem,
+    media_si: &ScanInfo,
+) -> anyhow::Result<Option<MediaFileInfo>> {
     let mut supp_info_o = None;
     let supp_info_path_o = detect_supplemental_info(&media_si.file_path.clone(), root);
     if let Some(supp_info_path) = supp_info_path_o {
@@ -81,10 +98,10 @@ fn process_file(
     };
 
     let media_info_r = media_file_info_from_readable(media_si, root, &supp_info_o, &hash_info);
-    if let Ok(media_info) = media_info_r {
-        db_record(conn, &media_info)?;
+    match media_info_r {
+        Ok(media_info) => Ok(Some(media_info)),
+        Err(_) => Ok(None),
     }
-    Ok(())
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]

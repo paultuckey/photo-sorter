@@ -165,7 +165,7 @@ mod tests {
         crate::test_util::setup_log();
         use crate::fs::OsFileSystem;
         let name = "Canon_40D.jpg".to_string();
-        let mut root = OsFileSystem::new(&"test".to_string());
+        let root = OsFileSystem::new(&"test".to_string());
         let r = root.open(&name).unwrap();
         assert_eq!(determine_file_type(r, &name), AccurateFileType::Jpg);
 

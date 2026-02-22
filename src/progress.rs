@@ -1,15 +1,17 @@
 use status_line::StatusLine;
 use std::fmt::{Display, Formatter};
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 
+#[derive(Clone)]
 pub(crate) struct Progress {
     total: u64,
-    current: AtomicU64,
+    current: Arc<AtomicU64>,
 }
 impl Progress {
     pub(crate) fn new(total: u64) -> StatusLine<Progress> {
         StatusLine::new(Progress {
-            current: AtomicU64::new(0),
+            current: Arc::new(AtomicU64::new(0)),
             total,
         })
     }
@@ -66,7 +68,7 @@ mod tests {
     fn test_display_basic() {
         // 0%
         let p = Progress {
-            current: AtomicU64::new(0),
+            current: Arc::new(AtomicU64::new(0)),
             total: 100,
         };
         assert_eq!(
@@ -76,7 +78,7 @@ mod tests {
 
         // 50%
         let p = Progress {
-            current: AtomicU64::new(50),
+            current: Arc::new(AtomicU64::new(50)),
             total: 100,
         };
         // 19 * 50 / 100 = 9.5 -> 9
@@ -91,7 +93,7 @@ mod tests {
 
         // 100%
         let p = Progress {
-            current: AtomicU64::new(100),
+            current: Arc::new(AtomicU64::new(100)),
             total: 100,
         };
         // pos=19
@@ -106,7 +108,7 @@ mod tests {
     #[test]
     fn test_display_zero_total() {
         let p = Progress {
-            current: AtomicU64::new(0),
+            current: Arc::new(AtomicU64::new(0)),
             total: 0,
         };
         // Should handle total=0 gracefully (0% progress)
@@ -119,7 +121,7 @@ mod tests {
     #[test]
     fn test_display_overflow() {
         let p = Progress {
-            current: AtomicU64::new(150),
+            current: Arc::new(AtomicU64::new(150)),
             total: 100,
         };
         // Should cap at 100% visual progress
