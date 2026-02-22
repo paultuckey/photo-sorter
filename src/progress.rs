@@ -22,7 +22,13 @@ impl Display for Progress {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let current = self.current.load(Ordering::Relaxed);
         let progress_bar_char_width = 19; // plus on for arrow head
-        let pos = progress_bar_char_width * current / self.total;
+
+        let pos = if self.total == 0 {
+            0
+        } else {
+            (progress_bar_char_width * current / self.total).min(progress_bar_char_width)
+        };
+
         let bar_done = "=".repeat(pos as usize);
         let bar_not_done = " ".repeat(progress_bar_char_width as usize - pos as usize);
         let x_of_y = format!("{} of {}", current, self.total);
@@ -54,5 +60,72 @@ mod tests {
             thread::sleep(delay);
         }
         Ok(())
+    }
+
+    #[test]
+    fn test_display_basic() {
+        // 0%
+        let p = Progress {
+            current: AtomicU64::new(0),
+            total: 100,
+        };
+        assert_eq!(
+            format!("{}", p),
+            "[>                   ] 0 of 100"
+        );
+
+        // 50%
+        let p = Progress {
+            current: AtomicU64::new(50),
+            total: 100,
+        };
+        // 19 * 50 / 100 = 9.5 -> 9
+        // [========= >          ] ?
+        // pos=9.
+        // done: 9 "="
+        // not done: 10 " "
+        assert_eq!(
+            format!("{}", p),
+            "[=========>          ] 50 of 100"
+        );
+
+        // 100%
+        let p = Progress {
+            current: AtomicU64::new(100),
+            total: 100,
+        };
+        // pos=19
+        // done: 19 "="
+        // not done: 0 " "
+        assert_eq!(
+            format!("{}", p),
+            "[===================>] 100 of 100"
+        );
+    }
+
+    #[test]
+    fn test_display_zero_total() {
+        let p = Progress {
+            current: AtomicU64::new(0),
+            total: 0,
+        };
+        // Should handle total=0 gracefully (0% progress)
+        assert_eq!(
+            format!("{}", p),
+            "[>                   ] 0 of 0"
+        );
+    }
+
+    #[test]
+    fn test_display_overflow() {
+        let p = Progress {
+            current: AtomicU64::new(150),
+            total: 100,
+        };
+        // Should cap at 100% visual progress
+        assert_eq!(
+            format!("{}", p),
+            "[===================>] 150 of 100"
+        );
     }
 }
