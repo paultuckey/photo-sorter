@@ -61,9 +61,11 @@ pub(crate) fn sync_markdown(
         e_yaml = Some(e_yaml_i);
         e_md = e_md_i;
     }
-    let md_str = assemble_markdown(&mfm, &e_yaml, &e_md)?;
-    let md_bytes = md_str.as_bytes().to_vec();
-    output_c.write(dry_run, &output_path, Cursor::new(&md_bytes));
+    let md_res = assemble_markdown(&mfm, &e_yaml, &e_md)?;
+    if let AssembledMarkdown::Modified(md_str) = md_res {
+        let md_bytes = md_str.as_bytes().to_vec();
+        output_c.write(dry_run, &output_path, Cursor::new(&md_bytes));
+    }
     Ok(())
 }
 
@@ -153,29 +155,42 @@ pub(crate) fn split_frontmatter(file_contents: &str) -> (String, String) {
     ("".to_string(), file_contents.to_string())
 }
 
+pub(crate) enum AssembledMarkdown {
+    Modified(String),
+    Unchanged(String),
+}
+
+impl AssembledMarkdown {
+    pub(crate) fn into_string(self) -> String {
+        match self {
+            AssembledMarkdown::Modified(s) => s,
+            AssembledMarkdown::Unchanged(s) => s,
+        }
+    }
+}
+
 pub(crate) fn assemble_markdown(
     mfm: &PhotoSorterFrontMatter,
     existing_yaml: &Option<String>,
     markdown_content: &str,
-) -> anyhow::Result<String> {
+) -> anyhow::Result<AssembledMarkdown> {
     let new_yaml = merge_yaml(existing_yaml, mfm);
     if new_yaml.is_empty() {
         warn!("Generated YAML is empty, returning markdown content");
-        return Ok(markdown_content.to_string());
+        return Ok(AssembledMarkdown::Unchanged(markdown_content.to_string()));
     }
     if let Some(existing_yaml) = existing_yaml
         && new_yaml.eq(existing_yaml)
     {
         warn!("Generated YAML matches existing, returning original content");
-        // todo: better return type
-        return Ok(markdown_content.to_string());
+        return Ok(AssembledMarkdown::Unchanged(markdown_content.to_string()));
     }
     let mut s = String::new();
     s.push_str("---\n");
     s.push_str(&new_yaml);
     s.push_str("---\n");
     s.push_str(markdown_content);
-    Ok(s)
+    Ok(AssembledMarkdown::Modified(s))
 }
 
 fn merge_yaml(s: &Option<String>, fm: &PhotoSorterFrontMatter) -> String {
