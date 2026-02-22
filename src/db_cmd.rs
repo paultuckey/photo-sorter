@@ -31,10 +31,7 @@ pub(crate) fn main(input: &String) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn run_db_scan(
-    container: &mut Box<dyn PsContainer>,
-    conn: &Connection,
-) -> anyhow::Result<()> {
+fn run_db_scan(container: &mut Box<dyn PsContainer>, conn: &Connection) -> anyhow::Result<()> {
     db_prepare(conn)?;
 
     let files = container.scan();
@@ -162,12 +159,6 @@ const DB_MEDIA_ITEM_INSERT: &str = "
         accurate_file_type, media_info, guessed_datetime, modified_at, created_at)
     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
 ";
-#[allow(dead_code)]
-const DB_MEDIA_ITEM_SELECT_ALL: &str = "
-    SELECT media_path, long_hash, short_hash, quick_file_type,
-        accurate_file_type, media_info, guessed_datetime, modified_at, created_at
-    FROM media_item
-";
 const DB_MEDIA_ITEM_DELETE_ALL: &str = "
     DELETE FROM media_item
 ";
@@ -185,6 +176,12 @@ fn db_prepare(conn: &Connection) -> anyhow::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const DB_MEDIA_ITEM_SELECT_ALL: &str = "
+        SELECT media_path, long_hash, short_hash, quick_file_type,
+            accurate_file_type, media_info, guessed_datetime, modified_at, created_at
+        FROM media_item
+    ";
 
     #[test]
     #[ignore]
@@ -207,8 +204,8 @@ mod tests {
         let mut container: Box<dyn PsContainer> = Box::new(PsDirectoryContainer::new("test"));
         run_db_scan(&mut container, &conn)?;
 
-        let mut stmt = conn
-            .prepare("SELECT media_path, quick_file_type FROM media_item ORDER BY media_path")?;
+        let mut stmt =
+            conn.prepare("SELECT media_path, quick_file_type FROM media_item ORDER BY media_path")?;
         let rows = stmt.query_map([], |row| {
             Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
         })?;
@@ -218,19 +215,23 @@ mod tests {
             results.push(row?);
         }
 
-        assert!(results
-            .iter()
-            .any(|(path, ftype)| path == "Canon_40D.jpg" && ftype == "Media"));
-        assert!(results
-            .iter()
-            .any(|(path, ftype)| path == "Hello.mp4" && ftype == "Media"));
+        assert!(
+            results
+                .iter()
+                .any(|(path, ftype)| path == "Canon_40D.jpg" && ftype == "Media")
+        );
+        assert!(
+            results
+                .iter()
+                .any(|(path, ftype)| path == "Hello.mp4" && ftype == "Media")
+        );
 
         Ok(())
     }
 
     use std::fs;
-    use zip::write::FileOptions;
     use zip::ZipWriter;
+    use zip::write::FileOptions;
 
     fn create_zip_of_test_dir(output_path: &Path) -> anyhow::Result<()> {
         let file = fs::File::create(output_path)?;
@@ -261,13 +262,15 @@ mod tests {
 
         let conn = Connection::open_in_memory()?;
         let tz = chrono::FixedOffset::east_opt(0).unwrap();
-        let mut container: Box<dyn PsContainer> =
-            Box::new(PsZipContainer::new(&zip_path.to_string_lossy().to_string(), tz));
+        let mut container: Box<dyn PsContainer> = Box::new(PsZipContainer::new(
+            &zip_path.to_string_lossy().to_string(),
+            tz,
+        ));
 
         run_db_scan(&mut container, &conn)?;
 
-        let mut stmt = conn
-            .prepare("SELECT media_path, quick_file_type FROM media_item ORDER BY media_path")?;
+        let mut stmt =
+            conn.prepare("SELECT media_path, quick_file_type FROM media_item ORDER BY media_path")?;
         let rows = stmt.query_map([], |row| {
             Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
         })?;
@@ -277,12 +280,16 @@ mod tests {
             results.push(row?);
         }
 
-        assert!(results
-            .iter()
-            .any(|(path, ftype)| path == "Canon_40D.jpg" && ftype == "Media"));
-        assert!(results
-            .iter()
-            .any(|(path, ftype)| path == "Hello.mp4" && ftype == "Media"));
+        assert!(
+            results
+                .iter()
+                .any(|(path, ftype)| path == "Canon_40D.jpg" && ftype == "Media")
+        );
+        assert!(
+            results
+                .iter()
+                .any(|(path, ftype)| path == "Hello.mp4" && ftype == "Media")
+        );
 
         // Cleanup
         let _ = fs::remove_file(zip_path);
