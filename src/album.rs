@@ -234,13 +234,30 @@ mod tests {
     fn test_csv_album_in_subdir() -> anyhow::Result<()> {
         crate::test_util::setup_log();
         use crate::util::PsDirectoryContainer;
-        let mut c: Box<dyn PsContainer> = Box::new(PsDirectoryContainer::new(&"test".to_string()));
+        use std::fs;
+        use std::io::Write;
+
+        let test_dir = "target/test_subdir";
+        if fs::metadata(test_dir).is_ok() {
+            let _ = fs::remove_dir_all(test_dir);
+        }
+        fs::create_dir_all(format!("{}/subdir", test_dir))?;
+
+        let csv_path = format!("{}/subdir/my-album.csv", test_dir);
+        let mut file = fs::File::create(&csv_path)?;
+        writeln!(file, "Images")?;
+        writeln!(file, "img1.jpg")?;
+
+        let mut c: Box<dyn PsContainer> =
+            Box::new(PsDirectoryContainer::new(&test_dir.to_string()));
         let qsf = ScanInfo::new("subdir/my-album.csv".to_string(), None, None);
         let a = parse_album(&mut c, &qsf, &vec![]).unwrap();
         assert_eq!(a.title, "my-album".to_string());
         assert_eq!(a.desired_album_md_path, "albums/my-album.md".to_string());
-        assert_eq!(a.files.len(), 5);
-        assert_eq!(a.files.get(0).unwrap(), "subdir/35F8739B-30E0-4620-802C-0817AD7356F6.JPG");
+        assert_eq!(a.files.len(), 1);
+        assert_eq!(a.files.get(0).unwrap(), "subdir/img1.jpg");
+
+        let _ = fs::remove_dir_all(test_dir);
         Ok(())
     }
 
