@@ -156,7 +156,7 @@ pub(crate) struct Album {
 
 pub(crate) fn build_album_md(
     album: &Album,
-    all_media_o: Option<&HashMap<String, MediaFileInfo>>,
+    media_by_original_path: Option<&HashMap<String, &MediaFileInfo>>,
     media_relative_path: &str,
     final_path_by_checksum: Option<&HashMap<String, String>>,
 ) -> String {
@@ -169,13 +169,12 @@ pub(crate) fn build_album_md(
     md.push_str("\n\n");
     for f in album.files.clone() {
         let target_path_o: Option<String>;
-        if let Some(all_media) = all_media_o {
-            target_path_o = all_media
-                .values()
-                .find(|m| {
+        if let Some(media_map) = media_by_original_path {
+            target_path_o = media_map
+                .get(&f)
+                .filter(|m| {
                     m.accurate_file_type != AccurateFileType::Unsupported
                         && m.quick_file_type == QuickFileType::Media
-                        && m.original_path.iter().any(|p| p.eq(&f))
                 })
                 .and_then(|m| {
                     let long_checksum = &m.hash_info.long_checksum;
@@ -239,5 +238,58 @@ mod tests {
             "Google Photos/album1/test1.jpg".to_string()
         );
         Ok(())
+    }
+
+    #[test]
+    #[ignore]
+    fn benchmark_build_album_md_perf() {
+        use crate::db_cmd::HashInfo;
+        use crate::file_type::{AccurateFileType, QuickFileType};
+        use crate::media::MediaFileInfo;
+        use std::time::Instant;
+
+        let mut files = vec![];
+        for i in 0..1000 {
+            files.push(format!("path/to/file_{}.jpg", i));
+        }
+        let album = Album {
+            desired_album_md_path: "album.md".to_string(),
+            title: "Test Album".to_string(),
+            files: files.clone(),
+        };
+
+        let mut all_media = HashMap::new();
+        // Add 10000 media files
+        // 0-999 match the album files
+        for i in 0..10000 {
+            let path = format!("path/to/file_{}.jpg", i);
+            let m = MediaFileInfo {
+                original_file_this_run: path.clone(),
+                original_path: vec![path.clone(), format!("other/path/file_{}.jpg", i)],
+                quick_file_type: QuickFileType::Media,
+                accurate_file_type: AccurateFileType::Jpg,
+                exif_info: None,
+                track_info: None,
+                hash_info: HashInfo {
+                    short_checksum: format!("short{}", i),
+                    long_checksum: format!("long{}", i),
+                },
+                supp_info: None,
+                modified: None,
+                created: None,
+            };
+            all_media.insert(m.hash_info.long_checksum.clone(), m);
+        }
+
+        let mut media_by_path = HashMap::new();
+        for media in all_media.values() {
+            for path in &media.original_path {
+                media_by_path.insert(path.clone(), media);
+            }
+        }
+
+        let start = Instant::now();
+        build_album_md(&album, Some(&media_by_path), "", None);
+        println!("Time taken: {:?}", start.elapsed());
     }
 }

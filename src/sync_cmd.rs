@@ -137,10 +137,16 @@ pub(crate) fn main(
         drop(prog);
 
         info!("Outputting {} albums", albums.len());
+        let mut media_by_path = HashMap::new();
+        for media in all_media.values() {
+            for path in &media.original_path {
+                media_by_path.insert(path.clone(), media);
+            }
+        }
         for album in albums {
             let a_s = build_album_md(
                 &album,
-                Some(&all_media),
+                Some(&media_by_path),
                 "../",
                 Some(&final_path_by_original_path),
             );
