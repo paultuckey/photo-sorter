@@ -28,7 +28,6 @@ pub(crate) struct MediaFileInfo {
     // Modified time of the file
     pub(crate) modified: Option<i64>,
     pub(crate) created: Option<i64>,
-    pub(crate) file_size: u64,
 }
 
 #[derive(Debug, Clone)]
@@ -78,7 +77,6 @@ pub(crate) fn media_file_info_from_readable(
         supp_info: supp_info.clone(),
         modified: si.modified_datetime,
         created: si.created_datetime,
-        file_size: si.file_size,
     };
     Ok(media_file_info)
 }
@@ -245,7 +243,7 @@ mod tests {
         let fs = crate::fs::ZipFileSystem::new(zip_path, tz)?;
 
         let file_path = "Canon_40D.jpg";
-        let si = ScanInfo::new(file_path.to_string(), None, None);
+        let si = ScanInfo::new(file_path.to_string(), None, None, 0);
         let hash_info = HashInfo { short_checksum: "dummy".to_string(), long_checksum: "dummy".to_string() };
 
         let start = std::time::Instant::now();
@@ -275,7 +273,6 @@ impl MediaFileInfo {
             supp_info: None,
             modified: None,
             created: None,
-            file_size: 0,
         }
     }
 }

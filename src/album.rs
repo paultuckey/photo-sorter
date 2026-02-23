@@ -206,7 +206,7 @@ mod tests {
         use anyhow::anyhow;
         crate::test_util::setup_log();
         let c = OsFileSystem::new("test");
-        let qsf = ScanInfo::new("ic-album-sample.csv".to_string(), None, None);
+        let qsf = ScanInfo::new("ic-album-sample.csv".to_string(), None, None, 0);
         let a = parse_album(&c, &qsf, &[]).ok_or_else(|| anyhow!("Failed to parse album"))?;
         assert_eq!(a.title, "ic-album-sample".to_string());
         assert_eq!(a.files.len(), 5);
@@ -222,9 +222,19 @@ mod tests {
         use anyhow::anyhow;
         crate::test_util::setup_log();
         let c = OsFileSystem::new("test/takeout1");
-        let qsf = ScanInfo::new("Google Photos/album1/metadata.json".to_string(), None, None);
-        let si1 = ScanInfo::new("Google Photos/album1/test1.jpg".to_string(), None, None);
-        let si2 = ScanInfo::new("different/test2.jpg".to_string(), None, None);
+        let qsf = ScanInfo::new(
+            "Google Photos/album1/metadata.json".to_string(),
+            None,
+            None,
+            0,
+        );
+        let si1 = ScanInfo::new(
+            "Google Photos/album1/test1.jpg".to_string(),
+            None,
+            None,
+            0,
+        );
+        let si2 = ScanInfo::new("different/test2.jpg".to_string(), None, None, 0);
         let a = parse_album(&c, &qsf, &[si1, si2]).ok_or_else(|| anyhow!("Failed to parse album"))?;
         assert_eq!(a.title, "Some album title".to_string());
         assert_eq!(a.files.len(), 1);
