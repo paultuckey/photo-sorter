@@ -24,6 +24,10 @@ hex = "0.4"
 rayon = "1.11.0"
 indicatif = "0.17"
 tempfile = "3.25.0"
+eframe = "0.29.1"
+egui = "0.29.1"
+egui_extras = { version = "0.29.1", features = ["all_loaders"] }
+image = "0.25.5"
 
 [lints.rust]
 unsafe_code = "forbid"
