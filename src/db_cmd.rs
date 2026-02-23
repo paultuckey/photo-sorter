@@ -68,7 +68,30 @@ fn run_db_scan(container: &mut Box<dyn FileSystem>, conn: &Connection) -> anyhow
 
     drop(prog);
 
-    // todo: support albums
+    let album_si_files = files
+        .iter()
+        .filter(|m| {
+            matches!(
+                m.quick_file_type,
+                QuickFileType::AlbumCsv | QuickFileType::AlbumJson
+            )
+        })
+        .collect::<Vec<&ScanInfo>>();
+
+    info!("Inspecting {} album files", album_si_files.len());
+    let prog_albums = Progress::new(album_si_files.len() as u64);
+
+    for album_si in album_si_files {
+        if let Some(album) = crate::album::parse_album(container.as_ref(), album_si, &files) {
+            conn.execute(DB_ALBUM_INSERT, (&album.title, &album_si.file_path))?;
+            let album_id = conn.last_insert_rowid();
+            for file in album.files {
+                conn.execute(DB_ALBUM_FILE_INSERT, (album_id, &file))?;
+            }
+        }
+        prog_albums.inc();
+    }
+    drop(prog_albums);
 
     info!("Done {} files", files.len());
     Ok(())
@@ -181,6 +204,33 @@ const DB_MEDIA_ITEM_DELETE_ALL: &str = "
     DELETE FROM media_item
 ";
 
+const DB_ALBUM_CREATE: &str = "
+    CREATE TABLE IF NOT EXISTS album (
+        album_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        title TEXT,
+        album_path TEXT NOT NULL
+    )
+";
+
+const DB_ALBUM_FILE_CREATE: &str = "
+    CREATE TABLE IF NOT EXISTS album_file (
+        album_id INTEGER,
+        file_path TEXT NOT NULL,
+        FOREIGN KEY(album_id) REFERENCES album(album_id)
+    )
+";
+
+const DB_ALBUM_INSERT: &str = "
+    INSERT INTO album (title, album_path) VALUES (?1, ?2)
+";
+
+const DB_ALBUM_FILE_INSERT: &str = "
+    INSERT INTO album_file (album_id, file_path) VALUES (?1, ?2)
+";
+
+const DB_ALBUM_DELETE_ALL: &str = "DELETE FROM album";
+const DB_ALBUM_FILE_DELETE_ALL: &str = "DELETE FROM album_file";
+
 fn db_conn() -> anyhow::Result<Connection> {
     Ok(Connection::open("db.sqlite")?)
 }
@@ -188,6 +238,12 @@ fn db_conn() -> anyhow::Result<Connection> {
 fn db_prepare(conn: &Connection) -> anyhow::Result<()> {
     conn.execute(DB_MEDIA_ITEM_CREATE, ())?;
     conn.execute(DB_MEDIA_ITEM_DELETE_ALL, ())?;
+
+    conn.execute(DB_ALBUM_CREATE, ())?;
+    conn.execute(DB_ALBUM_DELETE_ALL, ())?;
+
+    conn.execute(DB_ALBUM_FILE_CREATE, ())?;
+    conn.execute(DB_ALBUM_FILE_DELETE_ALL, ())?;
     Ok(())
 }
 
@@ -315,6 +371,58 @@ mod tests {
 
         // Cleanup
         let _ = fs::remove_file(zip_path);
+        Ok(())
+    }
+
+    #[test]
+    fn test_db_scan_with_album() -> anyhow::Result<()> {
+        use std::io::Write;
+        crate::test_util::setup_log();
+        let test_dir = Path::new("target/test_db_album");
+        if test_dir.exists() {
+            fs::remove_dir_all(test_dir)?;
+        }
+        fs::create_dir_all(test_dir)?;
+
+        // Copy a file
+        let src_file = Path::new("test/Canon_40D.jpg");
+        let dest_file = test_dir.join("Canon_40D.jpg");
+        fs::copy(src_file, &dest_file)?;
+
+        // Create album CSV
+        let album_path = test_dir.join("album.csv");
+        let mut file = fs::File::create(&album_path)?;
+        writeln!(file, "Images")?;
+        writeln!(file, "Canon_40D.jpg")?;
+
+        let conn = Connection::open_in_memory()?;
+        let mut container: Box<dyn FileSystem> = Box::new(OsFileSystem::new(test_dir.to_str().unwrap()));
+        run_db_scan(&mut container, &conn)?;
+
+        // Verify Album
+        let mut stmt = conn.prepare("SELECT title, album_path FROM album")?;
+        let mut rows = stmt.query([])?;
+        if let Some(row) = rows.next()? {
+            let title: String = row.get(0)?;
+            let path: String = row.get(1)?;
+            assert_eq!(title, "album");
+            assert_eq!(path, "album.csv");
+        } else {
+            panic!("No album found");
+        }
+
+        // Verify Album Files
+        let mut stmt = conn.prepare("SELECT file_path FROM album_file")?;
+        let mut rows = stmt.query([])?;
+        if let Some(row) = rows.next()? {
+            let path: String = row.get(0)?;
+            assert_eq!(path, "Canon_40D.jpg");
+        } else {
+            panic!("No album file found");
+        }
+
+        // Cleanup
+        fs::remove_dir_all(test_dir)?;
         Ok(())
     }
 }

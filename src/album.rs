@@ -146,7 +146,7 @@ fn parse_json_album(
 pub(crate) struct Album {
     pub(crate) desired_album_md_path: String,
     pub(crate) title: String,
-    files: Vec<String>,
+    pub(crate) files: Vec<String>,
 }
 
 pub(crate) fn build_album_md(
