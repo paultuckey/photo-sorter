@@ -14,7 +14,8 @@ use tracing::{debug, warn};
 pub(crate) fn main(input: &String, root_s: &str) -> anyhow::Result<()> {
     debug!("Inspecting: {input}");
     let root: Box<dyn FileSystem> = Box::new(OsFileSystem::new(root_s));
-    let si = ScanInfo::new(input.clone(), None, None);
+    let len = root.metadata(input).map(|m| m.len).unwrap_or(0);
+    let si = ScanInfo::new(input.clone(), None, None, len);
     match si.quick_file_type {
         QuickFileType::Unknown => {
             warn!("File type is unknown, skipping: {input}");

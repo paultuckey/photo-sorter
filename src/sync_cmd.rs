@@ -254,6 +254,7 @@ fn get_de_duplicated_path(
             output_container,
             long_checksum,
             &desired_output_path_with_ext,
+            Some(media_file.file_size),
         );
         match es_o {
             Some(true) => {

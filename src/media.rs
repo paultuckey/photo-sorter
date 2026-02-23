@@ -28,6 +28,7 @@ pub(crate) struct MediaFileInfo {
     // Modified time of the file
     pub(crate) modified: Option<i64>,
     pub(crate) created: Option<i64>,
+    pub(crate) file_size: u64,
 }
 
 #[derive(Debug, Clone)]
@@ -77,6 +78,7 @@ pub(crate) fn media_file_info_from_readable(
         supp_info: supp_info.clone(),
         modified: si.modified_datetime,
         created: si.created_datetime,
+        file_size: si.file_size,
     };
     Ok(media_file_info)
 }
@@ -269,6 +271,7 @@ impl MediaFileInfo {
             supp_info: None,
             modified: None,
             created: None,
+            file_size: 0,
         }
     }
 }
