@@ -11,6 +11,7 @@ use crate::util::ScanInfo;
 use anyhow::anyhow;
 use chrono::{DateTime, Datelike, Timelike};
 use serde::{Deserialize, Serialize};
+use std::io::Seek;
 use tracing::warn;
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
@@ -44,23 +45,22 @@ pub(crate) fn media_file_info_from_readable(
     hash_info: &HashInfo,
 ) -> anyhow::Result<MediaFileInfo> {
     let name = &si.file_path;
-    let reader = root.open(&si.file_path.to_string())?;
-    let guessed_ff = determine_file_type(reader, name);
+    let mut reader = root.open(&si.file_path.to_string())?;
+    let guessed_ff = determine_file_type(&mut reader, name);
     if guessed_ff == AccurateFileType::Unsupported {
         warn!("Not a valid media file {name:?}");
         return Err(anyhow!("File is not a valid media file"));
     }
+    reader.seek(std::io::SeekFrom::Start(0))?;
 
     let mut exif_o = None;
     let mut track_o = None;
     match metadata_type(&guessed_ff) {
         MetadataType::ExifTags => {
-            let reader = root.open(&si.file_path.to_string())?;
-            exif_o = parse_exif_info(reader);
+            exif_o = parse_exif_info(&mut reader);
         }
         MetadataType::Track => {
-            let reader = root.open(&si.file_path.to_string())?;
-            track_o = parse_track_info(reader);
+            track_o = parse_track_info(&mut reader);
         }
         MetadataType::NoMetadata => {}
     }
@@ -228,6 +228,27 @@ mod tests {
             "2008/05/30/1556-01009".to_string()
         );
         Ok(())
+    }
+
+    #[test]
+    #[ignore]
+    fn test_perf_benchmark_zip_read() {
+        crate::test_util::setup_log();
+        let tz = chrono::FixedOffset::east_opt(0).unwrap();
+        // Ensure test file exists
+        let zip_path = "test/Canon_40D.jpg.zip";
+        let fs = crate::fs::ZipFileSystem::new(zip_path, tz).expect("Failed to open zip");
+
+        let file_path = "Canon_40D.jpg";
+        let si = ScanInfo::new(file_path.to_string(), None, None);
+        let hash_info = HashInfo { short_checksum: "dummy".to_string(), long_checksum: "dummy".to_string() };
+
+        let start = std::time::Instant::now();
+        for _ in 0..100 {
+            let _ = media_file_info_from_readable(&si, &fs, &None, &hash_info);
+        }
+        let duration = start.elapsed();
+        println!("Time taken for 100 iterations: {:?}", duration);
     }
 }
 
