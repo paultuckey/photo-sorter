@@ -36,6 +36,7 @@ pub(crate) struct ScanInfo {
     /// Unix Epoch time file creation
     pub(crate) created_datetime: Option<i64>,
     pub(crate) quick_file_type: QuickFileType,
+    pub(crate) file_size: u64,
 }
 
 impl ScanInfo {
@@ -43,6 +44,7 @@ impl ScanInfo {
         file_path: String,
         modified_datetime: Option<i64>,
         created_datetime: Option<i64>,
+        file_size: u64,
     ) -> Self {
         let quick_file_type = find_quick_file_type(&file_path);
         ScanInfo {
@@ -50,6 +52,7 @@ impl ScanInfo {
             modified_datetime,
             created_datetime,
             quick_file_type,
+            file_size,
         }
     }
 }
@@ -59,11 +62,11 @@ pub(crate) fn scan_fs(fs: &dyn FileSystem) -> Vec<ScanInfo> {
     let mut scan_infos = Vec::new();
     for path in paths {
         let meta = fs.metadata(&path).ok();
-        let (mod_dt, create_dt) = match meta {
-            Some(m) => (m.modified, m.created),
-            None => (None, None),
+        let (mod_dt, create_dt, len) = match meta {
+            Some(m) => (m.modified, m.created, m.len),
+            None => (None, None, 0),
         };
-        scan_infos.push(ScanInfo::new(path, mod_dt, create_dt));
+        scan_infos.push(ScanInfo::new(path, mod_dt, create_dt, len));
     }
     scan_infos
 }
@@ -72,7 +75,20 @@ pub(crate) fn is_existing_file_same(
     fs: &OsFileSystem,
     long_checksum: &str,
     output_path: &String,
+    expected_file_size: Option<u64>,
 ) -> Option<bool> {
+    if let Some(expected_size) = expected_file_size {
+        if let Ok(metadata) = fs.metadata(output_path) {
+            if metadata.len != expected_size {
+                debug!(
+                    "File size mismatch for {output_path:?}. Expected {expected_size}, found {}",
+                    metadata.len
+                );
+                return Some(false);
+            }
+        }
+    }
+
     let Ok(reader) = fs.open(output_path) else {
         debug!("Could not read file bytes for checksum: {output_path:?}");
         return None;
@@ -141,5 +157,48 @@ mod tests {
             "6bfdabd4fc33d112283c147acccc574e770bbe6fbdbc3d4da968ba7b606ecc2f".to_string()
         );
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod performance_tests {
+    use super::*;
+    use crate::fs::OsFileSystem;
+    use std::fs::File;
+    use std::io::Write;
+    use std::time::Instant;
+
+    #[test]
+    #[ignore]
+    fn test_performance_is_existing_file_same() {
+        let test_dir = "test_perf_output";
+        std::fs::create_dir_all(test_dir).unwrap();
+        let file_path = format!("{}/large_file.dat", test_dir);
+
+        // Create a 50MB file
+        let mut file = File::create(&file_path).unwrap();
+        let data =vec![0u8; 50 * 1024 * 1024];
+        file.write_all(&data).unwrap();
+
+        let fs = OsFileSystem::new(test_dir);
+        let start = Instant::now();
+
+        // Check with a fake checksum
+        let res = is_existing_file_same(
+            &fs,
+            "fakechecksum",
+            &"large_file.dat".to_string(),
+            Some(12345),
+        );
+        assert_eq!(res, Some(false));
+
+        let duration = start.elapsed();
+        println!("Time taken: {:?}", duration);
+
+        // Cleanup
+        std::fs::remove_dir_all(test_dir).unwrap();
+
+        // Assert that it was fast (optimization works)
+        assert!(duration.as_millis() < 10, "Should be instant due to size check optimization");
     }
 }
