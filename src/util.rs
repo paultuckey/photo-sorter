@@ -35,8 +35,8 @@ pub(crate) struct ScanInfo {
     pub(crate) modified_datetime: Option<i64>,
     /// Unix Epoch time file creation
     pub(crate) created_datetime: Option<i64>,
-    pub(crate) quick_file_type: QuickFileType,
     pub(crate) file_size: u64,
+    pub(crate) quick_file_type: QuickFileType,
 }
 
 impl ScanInfo {
@@ -51,8 +51,8 @@ impl ScanInfo {
             file_path,
             modified_datetime,
             created_datetime,
-            quick_file_type,
             file_size,
+            quick_file_type,
         }
     }
 }
@@ -75,20 +75,7 @@ pub(crate) fn is_existing_file_same(
     fs: &OsFileSystem,
     long_checksum: &str,
     output_path: &String,
-    expected_file_size: Option<u64>,
 ) -> Option<bool> {
-    if let Some(expected_size) = expected_file_size {
-        if let Ok(metadata) = fs.metadata(output_path) {
-            if metadata.len != expected_size {
-                debug!(
-                    "File size mismatch for {output_path:?}. Expected {expected_size}, found {}",
-                    metadata.len
-                );
-                return Some(false);
-            }
-        }
-    }
-
     let Ok(reader) = fs.open(output_path) else {
         debug!("Could not read file bytes for checksum: {output_path:?}");
         return None;
@@ -131,13 +118,17 @@ mod tests {
 
     #[test]
     fn test_zip() -> anyhow::Result<()> {
+        use anyhow::anyhow;
         crate::test_util::setup_log();
-        let tz = chrono::FixedOffset::east_opt(0).unwrap();
+        let tz = chrono::FixedOffset::east_opt(0).ok_or_else(|| anyhow!("Failed to create timezone"))?;
         let c = ZipFileSystem::new("test/Canon_40D.jpg.zip", tz)?;
         let index = scan_fs(&c);
         assert_eq!(index.len(), 2);
         // Find Canon_40D.jpg
-        let si = index.iter().find(|i| i.file_path == "Canon_40D.jpg").unwrap();
+        let si = index
+            .iter()
+            .find(|i| i.file_path == "Canon_40D.jpg")
+            .ok_or_else(|| anyhow!("Canon_40D.jpg not found in zip"))?;
         assert_eq!(si.modified_datetime, Some(1749917340000));
         Ok(())
     }
@@ -153,48 +144,5 @@ mod tests {
             "6bfdabd4fc33d112283c147acccc574e770bbe6fbdbc3d4da968ba7b606ecc2f".to_string()
         );
         Ok(())
-    }
-}
-
-#[cfg(test)]
-mod performance_tests {
-    use super::*;
-    use crate::fs::OsFileSystem;
-    use std::fs::File;
-    use std::io::Write;
-    use std::time::Instant;
-
-    #[test]
-    #[ignore]
-    fn test_performance_is_existing_file_same() {
-        let test_dir = "test_perf_output";
-        std::fs::create_dir_all(test_dir).unwrap();
-        let file_path = format!("{}/large_file.dat", test_dir);
-
-        // Create a 50MB file
-        let mut file = File::create(&file_path).unwrap();
-        let data =vec![0u8; 50 * 1024 * 1024];
-        file.write_all(&data).unwrap();
-
-        let fs = OsFileSystem::new(test_dir);
-        let start = Instant::now();
-
-        // Check with a fake checksum
-        let res = is_existing_file_same(
-            &fs,
-            "fakechecksum",
-            &"large_file.dat".to_string(),
-            Some(12345),
-        );
-        assert_eq!(res, Some(false));
-
-        let duration = start.elapsed();
-        println!("Time taken: {:?}", duration);
-
-        // Cleanup
-        std::fs::remove_dir_all(test_dir).unwrap();
-
-        // Assert that it was fast (optimization works)
-        assert!(duration.as_millis() < 10, "Should be instant due to size check optimization");
     }
 }

@@ -96,10 +96,11 @@ mod tests {
 
     #[test]
     fn test_parse_track() -> anyhow::Result<()> {
+        use anyhow::anyhow;
         crate::test_util::setup_log();
-        let c = OsFileSystem::new(&"test".to_string());
-        let reader = c.open(&"Hello.mp4".to_string())?;
-        let meta = parse_track_info(reader).unwrap();
+        let c = OsFileSystem::new("test");
+        let reader = c.open("Hello.mp4")?;
+        let meta = parse_track_info(reader).ok_or_else(|| anyhow!("Failed to parse track info"))?;
         assert_eq!(meta.width, Some(854));
         assert_eq!(meta.height, Some(480));
         assert_eq!(meta.duration_ms, Some(5000));
@@ -115,14 +116,14 @@ mod tests {
     #[ignore]
     fn test_all_mp4s() -> anyhow::Result<()> {
         crate::test_util::setup_log();
-        let c = OsFileSystem::new(&"input".to_string());
+        let c = OsFileSystem::new("input");
         for si in scan_fs(&c) {
             let path = Path::new(&si.file_path);
             if path
                 .extension()
-                .map_or(false, |ext| ext.eq_ignore_ascii_case("mp4"))
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("mp4"))
             {
-                let reader = c.open(&path.to_string_lossy().to_string())?;
+                let reader = c.open(path.to_string_lossy().as_ref())?;
                 let _ = parse_track_info(reader);
             }
         }

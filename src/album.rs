@@ -203,14 +203,15 @@ mod tests {
 
     #[test]
     fn test_ic_sample() -> anyhow::Result<()> {
+        use anyhow::anyhow;
         crate::test_util::setup_log();
-        let c = OsFileSystem::new(&"test".to_string());
+        let c = OsFileSystem::new("test");
         let qsf = ScanInfo::new("ic-album-sample.csv".to_string(), None, None, 0);
-        let a = parse_album(&c, &qsf, &vec![]).unwrap();
+        let a = parse_album(&c, &qsf, &[]).ok_or_else(|| anyhow!("Failed to parse album"))?;
         assert_eq!(a.title, "ic-album-sample".to_string());
         assert_eq!(a.files.len(), 5);
         assert_eq!(
-            a.files.get(0).unwrap(),
+            a.files.first().ok_or_else(|| anyhow!("Album empty"))?,
             "35F8739B-30E0-4620-802C-0817AD7356F6.JPG"
         );
         Ok(())
@@ -218,16 +219,27 @@ mod tests {
 
     #[test]
     fn test_g_sample() -> anyhow::Result<()> {
+        use anyhow::anyhow;
         crate::test_util::setup_log();
-        let c = OsFileSystem::new(&"test/takeout1".to_string());
-        let qsf = ScanInfo::new("Google Photos/album1/metadata.json".to_string(), None, None, 0);
-        let si1 = ScanInfo::new("Google Photos/album1/test1.jpg".to_string(), None, None, 0);
+        let c = OsFileSystem::new("test/takeout1");
+        let qsf = ScanInfo::new(
+            "Google Photos/album1/metadata.json".to_string(),
+            None,
+            None,
+            0,
+        );
+        let si1 = ScanInfo::new(
+            "Google Photos/album1/test1.jpg".to_string(),
+            None,
+            None,
+            0,
+        );
         let si2 = ScanInfo::new("different/test2.jpg".to_string(), None, None, 0);
-        let a = parse_album(&c, &qsf, &vec![si1, si2]).unwrap();
+        let a = parse_album(&c, &qsf, &[si1, si2]).ok_or_else(|| anyhow!("Failed to parse album"))?;
         assert_eq!(a.title, "Some album title".to_string());
         assert_eq!(a.files.len(), 1);
         assert_eq!(
-            a.files.get(0).unwrap().to_string(),
+            a.files.first().ok_or_else(|| anyhow!("Album empty"))?.to_string(),
             "Google Photos/album1/test1.jpg".to_string()
         );
         Ok(())

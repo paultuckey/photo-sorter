@@ -23,3 +23,10 @@ nom-exif = "2.6"
 hex = "0.4"
 rayon = "1.11.0"
 indicatif = "0.17"
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"

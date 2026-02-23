@@ -28,7 +28,6 @@ pub(crate) struct MediaFileInfo {
     // Modified time of the file
     pub(crate) modified: Option<i64>,
     pub(crate) created: Option<i64>,
-    pub(crate) file_size: u64,
 }
 
 #[derive(Debug, Clone)]
@@ -78,7 +77,6 @@ pub(crate) fn media_file_info_from_readable(
         supp_info: supp_info.clone(),
         modified: si.modified_datetime,
         created: si.created_datetime,
-        file_size: si.file_size,
     };
     Ok(media_file_info)
 }
@@ -187,7 +185,8 @@ mod tests {
     use crate::fs::OsFileSystem;
 
     #[test]
-    fn test_best_guess_taken_dt_timestamps() {
+    fn test_best_guess_taken_dt_timestamps() -> anyhow::Result<()> {
+        use anyhow::anyhow;
         let mut info = MediaFileInfo::new_for_test();
         // 1000000000000 ms = 2001-09-09T01:46:40Z
         let ts = 1000000000000;
@@ -195,14 +194,15 @@ mod tests {
         // Test created timestamp
         info.created = Some(ts);
         info.modified = None;
-        let dt = best_guess_taken_dt(&info).expect("Should have a date from created");
+        let dt = best_guess_taken_dt(&info).ok_or_else(|| anyhow!("Should have a date from created"))?;
         assert_eq!(dt, "2001-09-09T01:46:40+00:00");
 
         // Test modified timestamp
         info.created = None;
         info.modified = Some(ts);
-        let dt = best_guess_taken_dt(&info).expect("Should have a date from modified");
+        let dt = best_guess_taken_dt(&info).ok_or_else(|| anyhow!("Should have a date from modified"))?;
         assert_eq!(dt, "2001-09-09T01:46:40+00:00");
+        Ok(())
     }
 
     #[test]
@@ -210,8 +210,8 @@ mod tests {
         crate::test_util::setup_log();
         use crate::util::checksum_bytes;
 
-        let c = OsFileSystem::new(&"test".to_string());
-        let reader = c.open(&"Canon_40D.jpg".to_string()).unwrap();
+        let c = OsFileSystem::new("test");
+        let reader = c.open("Canon_40D.jpg")?;
         let short_checksum = checksum_bytes(reader)?.short_checksum;
 
         assert_eq!(
@@ -234,15 +234,16 @@ mod tests {
 
     #[test]
     #[ignore]
-    fn test_perf_benchmark_zip_read() {
+    fn test_perf_benchmark_zip_read() -> anyhow::Result<()> {
+        use anyhow::anyhow;
         crate::test_util::setup_log();
-        let tz = chrono::FixedOffset::east_opt(0).unwrap();
+        let tz = chrono::FixedOffset::east_opt(0).ok_or_else(|| anyhow!("Failed to create timezone"))?;
         // Ensure test file exists
         let zip_path = "test/Canon_40D.jpg.zip";
-        let fs = crate::fs::ZipFileSystem::new(zip_path, tz).expect("Failed to open zip");
+        let fs = crate::fs::ZipFileSystem::new(zip_path, tz)?;
 
         let file_path = "Canon_40D.jpg";
-        let si = ScanInfo::new(file_path.to_string(), None, None);
+        let si = ScanInfo::new(file_path.to_string(), None, None, 0);
         let hash_info = HashInfo { short_checksum: "dummy".to_string(), long_checksum: "dummy".to_string() };
 
         let start = std::time::Instant::now();
@@ -251,6 +252,7 @@ mod tests {
         }
         let duration = start.elapsed();
         println!("Time taken for 100 iterations: {:?}", duration);
+        Ok(())
     }
 }
 
@@ -271,7 +273,6 @@ impl MediaFileInfo {
             supp_info: None,
             modified: None,
             created: None,
-            file_size: 0,
         }
     }
 }
