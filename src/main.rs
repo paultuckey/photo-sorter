@@ -147,7 +147,9 @@ fn enable_debug(debug: bool) {
     let filter = tracing_subscriber::filter::Targets::new()
         .with_default(if debug { Level::DEBUG } else { Level::INFO })
         .with_target("nom_exif", Level::ERROR);
-    let registry_layer = tracing_subscriber::fmt::layer().with_target(false);
+    let registry_layer = tracing_subscriber::fmt::layer()
+        .with_writer(progress::IndicatifWriter)
+        .with_target(false);
     tracing_subscriber::registry()
         .with(registry_layer)
         .with(filter)
