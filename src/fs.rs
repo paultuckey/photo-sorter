@@ -1,13 +1,18 @@
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use chrono::FixedOffset;
 use std::collections::HashMap;
 use std::fs::{self, File};
-use std::io::{Cursor, Read, Seek};
+use std::io::{Cursor, Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::{Duration, SystemTime};
 use tracing::{debug, error};
 use zip::ZipArchive;
+
+#[cfg(not(test))]
+const MAX_MEM_THRESHOLD: u64 = 100 * 1024 * 1024; // 100MB
+#[cfg(test)]
+const MAX_MEM_THRESHOLD: u64 = 100; // 100 bytes for testing
 
 pub trait ReadSeek: Read + Seek {}
 impl<T: Read + Seek> ReadSeek for T {}
@@ -81,9 +86,7 @@ impl OsFileSystem {
             .checked_add(Duration::from_millis(*dt as u64))
             .unwrap_or(SystemTime::UNIX_EPOCH);
         if dry_run {
-            debug!(
-                "  Dry run: would set modified datetime for file {p:?} to {dt}"
-            );
+            debug!("  Dry run: would set modified datetime for file {p:?} to {dt}");
             return;
         }
         let f_r = File::open(&p);
@@ -229,13 +232,29 @@ impl ZipFileSystem {
 
 impl FileSystem for ZipFileSystem {
     fn open(&self, path: &str) -> Result<Box<dyn ReadSeek>> {
-        let mut zip = self.zip.lock().map_err(|e| anyhow!("Zip lock failed: {}", e))?;
+        let mut zip = self
+            .zip
+            .lock()
+            .map_err(|e| anyhow!("Zip lock failed: {}", e))?;
         let mut file = zip
             .by_name(path)
             .map_err(|_| anyhow!("File not found in zip: {}", path))?;
-        let mut buffer = Vec::new();
-        file.read_to_end(&mut buffer)?;
-        Ok(Box::new(Cursor::new(buffer)))
+
+        if file.size() > MAX_MEM_THRESHOLD {
+            debug!(
+                "Streaming large file {} ({} bytes) to temp storage",
+                path,
+                file.size()
+            );
+            let mut temp = tempfile::tempfile()?;
+            std::io::copy(&mut file, &mut temp)?;
+            temp.seek(SeekFrom::Start(0))?;
+            Ok(Box::new(temp))
+        } else {
+            let mut buffer = Vec::new();
+            file.read_to_end(&mut buffer)?;
+            Ok(Box::new(Cursor::new(buffer)))
+        }
     }
 
     fn exists(&self, path: &str) -> bool {
@@ -251,5 +270,52 @@ impl FileSystem for ZipFileSystem {
             .get(path)
             .cloned()
             .ok_or_else(|| anyhow!("File not found in zip metadata cache: {}", path))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+    use zip::write::FileOptions;
+
+    #[test]
+    fn test_zip_open_streaming() -> Result<()> {
+        let mut temp_file = tempfile::NamedTempFile::new()?;
+
+        {
+            let mut zip_writer = zip::ZipWriter::new(&mut temp_file);
+            let options =
+                FileOptions::<()>::default().compression_method(zip::CompressionMethod::Stored);
+
+            let large_content = vec![b'a'; 200];
+            zip_writer.start_file("large.txt", options)?;
+            zip_writer.write_all(&large_content)?;
+
+            let small_content = vec![b'b'; 50];
+            zip_writer.start_file("small.txt", options)?;
+            zip_writer.write_all(&small_content)?;
+
+            zip_writer.finish()?;
+        }
+
+        let path = temp_file.path().to_str().unwrap();
+        let fs = ZipFileSystem::new(path, FixedOffset::east_opt(0).unwrap())?;
+
+        // Test large file (should stream)
+        let mut reader = fs.open("large.txt")?;
+        let mut content = Vec::new();
+        reader.read_to_end(&mut content)?;
+        assert_eq!(content.len(), 200);
+        assert_eq!(content, vec![b'a'; 200]);
+
+        // Test small file (should buffer)
+        let mut reader = fs.open("small.txt")?;
+        let mut content = Vec::new();
+        reader.read_to_end(&mut content)?;
+        assert_eq!(content.len(), 50);
+        assert_eq!(content, vec![b'b'; 50]);
+
+        Ok(())
     }
 }

@@ -1,9 +1,9 @@
 use crate::album::{build_album_md, parse_album};
 use crate::exif_util::parse_exif_info;
 use crate::file_type::QuickFileType;
+use crate::fs::{FileSystem, OsFileSystem};
 use crate::markdown::{assemble_markdown, mfm_from_media_file_info};
 use crate::media::media_file_info_from_readable;
-use crate::fs::{FileSystem, OsFileSystem};
 use crate::supplemental_info::{detect_supplemental_info, load_supplemental_info};
 use crate::sync_cmd::inspect_media;
 use crate::util::{ScanInfo, checksum_bytes, scan_fs};

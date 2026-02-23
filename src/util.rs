@@ -1,5 +1,5 @@
 use crate::db_cmd::HashInfo;
-use crate::file_type::{find_quick_file_type, QuickFileType};
+use crate::file_type::{QuickFileType, find_quick_file_type};
 use crate::fs::{FileSystem, OsFileSystem};
 use anyhow::Result;
 use chrono::DateTime;
@@ -120,7 +120,8 @@ mod tests {
     fn test_zip() -> anyhow::Result<()> {
         use anyhow::anyhow;
         crate::test_util::setup_log();
-        let tz = chrono::FixedOffset::east_opt(0).ok_or_else(|| anyhow!("Failed to create timezone"))?;
+        let tz =
+            chrono::FixedOffset::east_opt(0).ok_or_else(|| anyhow!("Failed to create timezone"))?;
         let c = ZipFileSystem::new("test/Canon_40D.jpg.zip", tz)?;
         let index = scan_fs(&c);
         assert_eq!(index.len(), 2);

@@ -194,13 +194,15 @@ mod tests {
         // Test created timestamp
         info.created = Some(ts);
         info.modified = None;
-        let dt = best_guess_taken_dt(&info).ok_or_else(|| anyhow!("Should have a date from created"))?;
+        let dt =
+            best_guess_taken_dt(&info).ok_or_else(|| anyhow!("Should have a date from created"))?;
         assert_eq!(dt, "2001-09-09T01:46:40+00:00");
 
         // Test modified timestamp
         info.created = None;
         info.modified = Some(ts);
-        let dt = best_guess_taken_dt(&info).ok_or_else(|| anyhow!("Should have a date from modified"))?;
+        let dt = best_guess_taken_dt(&info)
+            .ok_or_else(|| anyhow!("Should have a date from modified"))?;
         assert_eq!(dt, "2001-09-09T01:46:40+00:00");
         Ok(())
     }
@@ -237,14 +239,18 @@ mod tests {
     fn test_perf_benchmark_zip_read() -> anyhow::Result<()> {
         use anyhow::anyhow;
         crate::test_util::setup_log();
-        let tz = chrono::FixedOffset::east_opt(0).ok_or_else(|| anyhow!("Failed to create timezone"))?;
+        let tz =
+            chrono::FixedOffset::east_opt(0).ok_or_else(|| anyhow!("Failed to create timezone"))?;
         // Ensure test file exists
         let zip_path = "test/Canon_40D.jpg.zip";
         let fs = crate::fs::ZipFileSystem::new(zip_path, tz)?;
 
         let file_path = "Canon_40D.jpg";
         let si = ScanInfo::new(file_path.to_string(), None, None, 0);
-        let hash_info = HashInfo { short_checksum: "dummy".to_string(), long_checksum: "dummy".to_string() };
+        let hash_info = HashInfo {
+            short_checksum: "dummy".to_string(),
+            long_checksum: "dummy".to_string(),
+        };
 
         let start = std::time::Instant::now();
         for _ in 0..100 {
@@ -276,7 +282,6 @@ impl MediaFileInfo {
         }
     }
 }
-
 
 #[cfg(test)]
 impl MediaFileDerivedInfo {
