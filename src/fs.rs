@@ -12,6 +12,9 @@ use zip::ZipArchive;
 pub trait ReadSeek: Read + Seek {}
 impl<T: Read + Seek> ReadSeek for T {}
 
+// 512 MB limit for zip file members to prevent DoS
+const MAX_ZIP_MEMBER_SIZE: u64 = 512 * 1024 * 1024;
+
 #[derive(Debug, Clone)]
 pub struct FileMetadata {
     #[allow(dead_code)]
@@ -228,11 +231,26 @@ impl ZipFileSystem {
 impl FileSystem for ZipFileSystem {
     fn open(&self, path: &str) -> Result<Box<dyn ReadSeek>> {
         let mut zip = self.zip.lock().unwrap();
-        let mut file = zip
+        let file = zip
             .by_name(path)
             .map_err(|_| anyhow!("File not found in zip: {}", path))?;
-        let mut buffer = Vec::new();
-        file.read_to_end(&mut buffer)?;
+
+        if file.is_dir() {
+             return Err(anyhow!("File is a directory: {}", path));
+        }
+
+        if file.size() > MAX_ZIP_MEMBER_SIZE {
+             return Err(anyhow!("File {} is too large to read from zip ({} bytes > {} limit). Unzip the archive and process the directory instead.", path, file.size(), MAX_ZIP_MEMBER_SIZE));
+        }
+
+        let mut buffer = Vec::with_capacity(file.size() as usize);
+        let mut take = file.take(MAX_ZIP_MEMBER_SIZE + 1);
+        take.read_to_end(&mut buffer)?;
+
+        if buffer.len() as u64 > MAX_ZIP_MEMBER_SIZE {
+             return Err(anyhow!("File {} in zip exceeded size limit of {} bytes", path, MAX_ZIP_MEMBER_SIZE));
+        }
+
         Ok(Box::new(Cursor::new(buffer)))
     }
 
@@ -249,5 +267,38 @@ impl FileSystem for ZipFileSystem {
             .get(path)
             .cloned()
             .ok_or_else(|| anyhow!("File not found in zip metadata cache: {}", path))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use zip::write::FileOptions;
+    use std::io::Write;
+
+    #[test]
+    fn test_zip_read_limit() -> Result<()> {
+        let temp_dir = std::env::temp_dir();
+        let zip_path = temp_dir.join("test_limit.zip");
+        let file = File::create(&zip_path)?;
+        let mut zip = zip::ZipWriter::new(file);
+
+        let options = FileOptions::<()>::default().compression_method(zip::CompressionMethod::Stored);
+        zip.start_file("small.txt", options)?;
+        zip.write_all(b"hello world")?;
+        zip.finish()?;
+
+        let tz = FixedOffset::east_opt(0).unwrap();
+        let fs = ZipFileSystem::new(zip_path.to_str().unwrap(), tz)?;
+
+        // Test reading small file works
+        let mut reader = fs.open("small.txt")?;
+        let mut content = String::new();
+        reader.read_to_string(&mut content)?;
+        assert_eq!(content, "hello world");
+
+        // Clean up
+        std::fs::remove_file(zip_path)?;
+        Ok(())
     }
 }
