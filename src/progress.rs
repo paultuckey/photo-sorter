@@ -1,41 +1,37 @@
-use status_line::StatusLine;
-use std::fmt::{Display, Formatter};
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Arc;
+use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
+use std::sync::OnceLock;
+
+static MULTI_PROGRESS: OnceLock<MultiProgress> = OnceLock::new();
+
+pub fn get_multi_progress() -> &'static MultiProgress {
+    MULTI_PROGRESS.get_or_init(MultiProgress::new)
+}
 
 #[derive(Clone)]
 pub(crate) struct Progress {
-    total: u64,
-    current: Arc<AtomicU64>,
+    pb: ProgressBar,
 }
+
 impl Progress {
-    pub(crate) fn new(total: u64) -> StatusLine<Progress> {
-        StatusLine::new(Progress {
-            current: Arc::new(AtomicU64::new(0)),
-            total,
-        })
+    pub(crate) fn new(total: u64) -> Self {
+        let mp = get_multi_progress();
+        let pb = mp.add(ProgressBar::new(total));
+        pb.set_style(
+            ProgressStyle::with_template("[{bar:20}] {pos} of {len}")
+                .unwrap()
+                .progress_chars("=> "),
+        );
+        Progress { pb }
     }
+
     pub(crate) fn inc(&self) {
-        self.current.fetch_add(1, Ordering::Relaxed);
+        self.pb.inc(1);
     }
 }
 
-impl Display for Progress {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        let current = self.current.load(Ordering::Relaxed);
-        let progress_bar_char_width = 19; // plus on for arrow head
-
-        let pos = if self.total == 0 {
-            0
-        } else {
-            (progress_bar_char_width * current / self.total).min(progress_bar_char_width)
-        };
-
-        let bar_done = "=".repeat(pos as usize);
-        let bar_not_done = " ".repeat(progress_bar_char_width as usize - pos as usize);
-        let x_of_y = format!("{} of {}", current, self.total);
-        write!(f, "[{bar_done}>{bar_not_done}] {x_of_y}")?;
-        Ok(())
+impl Drop for Progress {
+    fn drop(&mut self) {
+        self.pb.finish_and_clear();
     }
 }
 
@@ -62,72 +58,5 @@ mod tests {
             thread::sleep(delay);
         }
         Ok(())
-    }
-
-    #[test]
-    fn test_display_basic() {
-        // 0%
-        let p = Progress {
-            current: Arc::new(AtomicU64::new(0)),
-            total: 100,
-        };
-        assert_eq!(
-            format!("{}", p),
-            "[>                   ] 0 of 100"
-        );
-
-        // 50%
-        let p = Progress {
-            current: Arc::new(AtomicU64::new(50)),
-            total: 100,
-        };
-        // 19 * 50 / 100 = 9.5 -> 9
-        // [========= >          ] ?
-        // pos=9.
-        // done: 9 "="
-        // not done: 10 " "
-        assert_eq!(
-            format!("{}", p),
-            "[=========>          ] 50 of 100"
-        );
-
-        // 100%
-        let p = Progress {
-            current: Arc::new(AtomicU64::new(100)),
-            total: 100,
-        };
-        // pos=19
-        // done: 19 "="
-        // not done: 0 " "
-        assert_eq!(
-            format!("{}", p),
-            "[===================>] 100 of 100"
-        );
-    }
-
-    #[test]
-    fn test_display_zero_total() {
-        let p = Progress {
-            current: Arc::new(AtomicU64::new(0)),
-            total: 0,
-        };
-        // Should handle total=0 gracefully (0% progress)
-        assert_eq!(
-            format!("{}", p),
-            "[>                   ] 0 of 0"
-        );
-    }
-
-    #[test]
-    fn test_display_overflow() {
-        let p = Progress {
-            current: Arc::new(AtomicU64::new(150)),
-            total: 100,
-        };
-        // Should cap at 100% visual progress
-        assert_eq!(
-            format!("{}", p),
-            "[===================>] 150 of 100"
-        );
     }
 }

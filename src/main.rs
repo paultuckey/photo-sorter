@@ -143,11 +143,33 @@ fn go() -> anyhow::Result<()> {
     Ok(())
 }
 
+struct IndicatifWriter;
+
+impl std::io::Write for IndicatifWriter {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        progress::get_multi_progress().suspend(|| std::io::stderr().write(buf))
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        std::io::stderr().flush()
+    }
+}
+
+impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for IndicatifWriter {
+    type Writer = IndicatifWriter;
+
+    fn make_writer(&'a self) -> Self::Writer {
+        IndicatifWriter
+    }
+}
+
 fn enable_debug(debug: bool) {
     let filter = tracing_subscriber::filter::Targets::new()
         .with_default(if debug { Level::DEBUG } else { Level::INFO })
         .with_target("nom_exif", Level::ERROR);
-    let registry_layer = tracing_subscriber::fmt::layer().with_target(false);
+    let registry_layer = tracing_subscriber::fmt::layer()
+        .with_writer(IndicatifWriter)
+        .with_target(false);
     tracing_subscriber::registry()
         .with(registry_layer)
         .with(filter)
