@@ -332,7 +332,7 @@ mod tests {
   - list1
 "
         .to_string();
-        let yaml = merge_yaml(&Some(s), &get_mfi()).unwrap();
+        let yaml = merge_yaml(&Some(s), &get_mfi()).expect("Failed to merge yaml");
         assert_eq!(
             yaml,
             "foo:
@@ -352,7 +352,7 @@ original-paths:
         mfi.latitude = Some(12.3456);
         mfi.longitude = Some(-78.9012);
 
-        let yaml = merge_yaml(&None, &mfi).unwrap();
+        let yaml = merge_yaml(&None, &mfi).expect("Failed to merge yaml");
         assert!(yaml.contains("latitude: 12.3456"));
         assert!(yaml.contains("longitude: -78.9012"));
         assert!(yaml.contains("checksum: abcdefg"));
@@ -372,7 +372,7 @@ people:
 checksum: abcdefg
 "
         .to_string();
-        let yaml = merge_yaml(&Some(s), &get_mfi()).unwrap();
+        let yaml = merge_yaml(&Some(s), &get_mfi()).expect("Failed to merge yaml");
         assert_eq!(
             yaml,
             "foo:

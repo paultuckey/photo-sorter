@@ -152,9 +152,9 @@ mod tests {
         crate::test_util::setup_log();
         let c = OsFileSystem::new("test");
         let reader = c.open("Canon_40D.jpg")?;
-        let t = parse_exif_info(reader).unwrap().tags;
+        let t = parse_exif_info(reader).expect("Failed to parse exif").tags;
         assert_eq!(t.len(), 40);
-        let mut tag_names: Vec<String> = t.iter().map(|(t, _)| t.to_string()).collect();
+        let mut tag_names: Vec<String> = t.keys().map(|t| t.to_string()).collect();
         tag_names.sort();
 
         let mut expected_tags = vec![
@@ -203,11 +203,15 @@ mod tests {
 
         assert_eq!(tag_names, expected_tags);
 
-        let make_tag_value = t.get(&ExifTag::Make.to_string()).unwrap();
+        let make_tag_value = t
+            .get(&ExifTag::Make.to_string())
+            .expect("Make tag not found");
         assert_eq!(make_tag_value, &"Canon".to_string());
 
         // SubSecTimeOriginal
-        let sub_sec_time_original = t.get(&ExifTag::SubSecTimeOriginal.to_string()).unwrap();
+        let sub_sec_time_original = t
+            .get(&ExifTag::SubSecTimeOriginal.to_string())
+            .expect("SubSecTimeOriginal tag not found");
         assert_eq!(sub_sec_time_original.clone(), "00".to_string());
         Ok(())
     }

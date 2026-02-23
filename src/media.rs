@@ -208,8 +208,8 @@ mod tests {
         crate::test_util::setup_log();
         use crate::util::checksum_bytes;
 
-        let c = OsFileSystem::new(&"test".to_string());
-        let reader = c.open(&"Canon_40D.jpg".to_string()).unwrap();
+        let c = OsFileSystem::new("test");
+        let reader = c.open("Canon_40D.jpg").expect("Failed to open file");
         let short_checksum = checksum_bytes(reader)?.short_checksum;
 
         assert_eq!(
@@ -234,7 +234,7 @@ mod tests {
     #[ignore]
     fn test_perf_benchmark_zip_read() {
         crate::test_util::setup_log();
-        let tz = chrono::FixedOffset::east_opt(0).unwrap();
+        let tz = chrono::FixedOffset::east_opt(0).expect("Failed to create timezone");
         // Ensure test file exists
         let zip_path = "test/Canon_40D.jpg.zip";
         let fs = crate::fs::ZipFileSystem::new(zip_path, tz).expect("Failed to open zip");

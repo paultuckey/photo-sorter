@@ -165,8 +165,8 @@ mod tests {
         crate::test_util::setup_log();
         use crate::fs::OsFileSystem;
         let name = "Canon_40D.jpg".to_string();
-        let root = OsFileSystem::new(&"test".to_string());
-        let r = root.open(&name).unwrap();
+        let root = OsFileSystem::new("test");
+        let r = root.open(&name).expect("Failed to open file");
         assert_eq!(determine_file_type(r, &name), AccurateFileType::Jpg);
 
         let bad: Vec<u8> = vec![];

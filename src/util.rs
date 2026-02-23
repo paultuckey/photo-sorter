@@ -116,12 +116,15 @@ mod tests {
     #[test]
     fn test_zip() -> anyhow::Result<()> {
         crate::test_util::setup_log();
-        let tz = chrono::FixedOffset::east_opt(0).unwrap();
+        let tz = chrono::FixedOffset::east_opt(0).expect("Failed to create timezone");
         let c = ZipFileSystem::new("test/Canon_40D.jpg.zip", tz)?;
         let index = scan_fs(&c);
         assert_eq!(index.len(), 2);
         // Find Canon_40D.jpg
-        let si = index.iter().find(|i| i.file_path == "Canon_40D.jpg").unwrap();
+        let si = index
+            .iter()
+            .find(|i| i.file_path == "Canon_40D.jpg")
+            .expect("Canon_40D.jpg not found in zip");
         assert_eq!(si.modified_datetime, Some(1749917340000));
         Ok(())
     }
