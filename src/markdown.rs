@@ -326,13 +326,13 @@ mod tests {
     }
 
     #[test]
-    fn test_yaml_output() {
+    fn test_yaml_output() -> anyhow::Result<()> {
         crate::test_util::setup_log();
         let s = "foo:
   - list1
 "
         .to_string();
-        let yaml = merge_yaml(&Some(s), &get_mfi()).expect("Failed to merge yaml");
+        let yaml = merge_yaml(&Some(s), &get_mfi())?;
         assert_eq!(
             yaml,
             "foo:
@@ -343,23 +343,25 @@ original-paths:
   - p2
 "
         );
+        Ok(())
     }
 
     #[test]
-    fn test_yaml_output_with_gps() {
+    fn test_yaml_output_with_gps() -> anyhow::Result<()> {
         crate::test_util::setup_log();
         let mut mfi = get_mfi();
         mfi.latitude = Some(12.3456);
         mfi.longitude = Some(-78.9012);
 
-        let yaml = merge_yaml(&None, &mfi).expect("Failed to merge yaml");
+        let yaml = merge_yaml(&None, &mfi)?;
         assert!(yaml.contains("latitude: 12.3456"));
         assert!(yaml.contains("longitude: -78.9012"));
         assert!(yaml.contains("checksum: abcdefg"));
+        Ok(())
     }
 
     #[test]
-    fn test_yaml_output_existing() {
+    fn test_yaml_output_existing() -> anyhow::Result<()> {
         crate::test_util::setup_log();
         let s = "foo:
   - list1
@@ -372,7 +374,7 @@ people:
 checksum: abcdefg
 "
         .to_string();
-        let yaml = merge_yaml(&Some(s), &get_mfi()).expect("Failed to merge yaml");
+        let yaml = merge_yaml(&Some(s), &get_mfi())?;
         assert_eq!(
             yaml,
             "foo:
@@ -388,6 +390,7 @@ people:
 checksum: abcdefg
 "
         );
+        Ok(())
     }
 
     #[test]

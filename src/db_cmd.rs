@@ -264,9 +264,9 @@ mod tests {
             if path.is_file() {
                 let name = path
                     .file_name()
-                    .expect("No file name")
+                    .ok_or_else(|| anyhow!("No file name"))?
                     .to_str()
-                    .expect("Invalid UTF-8");
+                    .ok_or_else(|| anyhow!("Invalid UTF-8"))?;
                 zip.start_file(name, options)?;
                 let mut f = fs::File::open(&path)?;
                 std::io::copy(&mut f, &mut zip)?;
@@ -283,7 +283,7 @@ mod tests {
         create_zip_of_test_dir(zip_path)?;
 
         let conn = Connection::open_in_memory()?;
-        let tz = chrono::FixedOffset::east_opt(0).expect("Failed to create timezone");
+        let tz = chrono::FixedOffset::east_opt(0).ok_or_else(|| anyhow!("Failed to create timezone"))?;
         let mut container: Box<dyn FileSystem> = Box::new(ZipFileSystem::new(
             zip_path.to_string_lossy().as_ref(),
             tz,

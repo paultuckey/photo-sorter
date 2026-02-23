@@ -185,7 +185,8 @@ mod tests {
     use crate::fs::OsFileSystem;
 
     #[test]
-    fn test_best_guess_taken_dt_timestamps() {
+    fn test_best_guess_taken_dt_timestamps() -> anyhow::Result<()> {
+        use anyhow::anyhow;
         let mut info = MediaFileInfo::new_for_test();
         // 1000000000000 ms = 2001-09-09T01:46:40Z
         let ts = 1000000000000;
@@ -193,14 +194,15 @@ mod tests {
         // Test created timestamp
         info.created = Some(ts);
         info.modified = None;
-        let dt = best_guess_taken_dt(&info).expect("Should have a date from created");
+        let dt = best_guess_taken_dt(&info).ok_or_else(|| anyhow!("Should have a date from created"))?;
         assert_eq!(dt, "2001-09-09T01:46:40+00:00");
 
         // Test modified timestamp
         info.created = None;
         info.modified = Some(ts);
-        let dt = best_guess_taken_dt(&info).expect("Should have a date from modified");
+        let dt = best_guess_taken_dt(&info).ok_or_else(|| anyhow!("Should have a date from modified"))?;
         assert_eq!(dt, "2001-09-09T01:46:40+00:00");
+        Ok(())
     }
 
     #[test]
@@ -209,7 +211,7 @@ mod tests {
         use crate::util::checksum_bytes;
 
         let c = OsFileSystem::new("test");
-        let reader = c.open("Canon_40D.jpg").expect("Failed to open file");
+        let reader = c.open("Canon_40D.jpg")?;
         let short_checksum = checksum_bytes(reader)?.short_checksum;
 
         assert_eq!(
@@ -232,12 +234,13 @@ mod tests {
 
     #[test]
     #[ignore]
-    fn test_perf_benchmark_zip_read() {
+    fn test_perf_benchmark_zip_read() -> anyhow::Result<()> {
+        use anyhow::anyhow;
         crate::test_util::setup_log();
-        let tz = chrono::FixedOffset::east_opt(0).expect("Failed to create timezone");
+        let tz = chrono::FixedOffset::east_opt(0).ok_or_else(|| anyhow!("Failed to create timezone"))?;
         // Ensure test file exists
         let zip_path = "test/Canon_40D.jpg.zip";
-        let fs = crate::fs::ZipFileSystem::new(zip_path, tz).expect("Failed to open zip");
+        let fs = crate::fs::ZipFileSystem::new(zip_path, tz)?;
 
         let file_path = "Canon_40D.jpg";
         let si = ScanInfo::new(file_path.to_string(), None, None);
@@ -249,6 +252,7 @@ mod tests {
         }
         let duration = start.elapsed();
         println!("Time taken for 100 iterations: {:?}", duration);
+        Ok(())
     }
 }
 

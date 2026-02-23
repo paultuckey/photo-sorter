@@ -91,21 +91,22 @@ mod tests {
 
     #[test]
     fn test_parse_supp() -> anyhow::Result<()> {
+        use anyhow::anyhow;
         crate::test_util::setup_log();
         use std::path::Path;
         let file = Path::new("test/test1.jpeg.supplemental-metadata.json");
         let json_reader = File::open(file)?;
-        let r = parse_supplemental_info(json_reader).expect("Failed to parse supplemental info");
+        let r = parse_supplemental_info(json_reader).ok_or_else(|| anyhow!("Failed to parse supplemental info"))?;
         // long lat limited to 6 decimal places
-        let latitude = r.geo_data.clone().expect("Missing geo_data").latitude.expect("Missing latitude");
-        let longitude = r.geo_data.clone().expect("Missing geo_data").longitude.expect("Missing longitude");
+        let latitude = r.geo_data.clone().ok_or_else(|| anyhow!("Missing geo_data"))?.latitude.ok_or_else(|| anyhow!("Missing latitude"))?;
+        let longitude = r.geo_data.clone().ok_or_else(|| anyhow!("Missing geo_data"))?.longitude.ok_or_else(|| anyhow!("Missing longitude"))?;
         assert_eq!(format!("{latitude:.4}"), "-21.6303".to_string());
         assert_eq!(format!("{longitude:.4}"), "152.2605".to_string());
-        let p = r.people.clone().first().expect("Missing person").clone();
-        assert_eq!(p.name.expect("Missing name"), "Tim Tam");
-        let ct = r.creation_time.expect("Missing creation_time");
-        assert_eq!(ct.formatted.expect("Missing formatted date"), "24 May 2024, 08:39:28 UTC");
-        assert_eq!(ct.timestamp.expect("Missing timestamp"), "1716539968");
+        let p = r.people.clone().first().ok_or_else(|| anyhow!("Missing person"))?.clone();
+        assert_eq!(p.name.ok_or_else(|| anyhow!("Missing name"))?, "Tim Tam");
+        let ct = r.creation_time.ok_or_else(|| anyhow!("Missing creation_time"))?;
+        assert_eq!(ct.formatted.ok_or_else(|| anyhow!("Missing formatted date"))?, "24 May 2024, 08:39:28 UTC");
+        assert_eq!(ct.timestamp.ok_or_else(|| anyhow!("Missing timestamp"))?, "1716539968");
         Ok(())
     }
 }

@@ -96,10 +96,11 @@ mod tests {
 
     #[test]
     fn test_parse_track() -> anyhow::Result<()> {
+        use anyhow::anyhow;
         crate::test_util::setup_log();
         let c = OsFileSystem::new("test");
         let reader = c.open("Hello.mp4")?;
-        let meta = parse_track_info(reader).expect("Failed to parse track info");
+        let meta = parse_track_info(reader).ok_or_else(|| anyhow!("Failed to parse track info"))?;
         assert_eq!(meta.width, Some(854));
         assert_eq!(meta.height, Some(480));
         assert_eq!(meta.duration_ms, Some(5000));
