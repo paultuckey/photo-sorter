@@ -18,7 +18,7 @@ impl Progress {
         let pb = mp.add(ProgressBar::new(total));
         pb.set_style(
             ProgressStyle::with_template("[{bar:20}] {pos} of {len}")
-                .unwrap()
+                .expect("Invalid progress bar template")
                 .progress_chars("=> "),
         );
         Progress { pb }

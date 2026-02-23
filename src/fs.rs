@@ -52,8 +52,10 @@ impl OsFileSystem {
             debug!("Dry run: would write file {:?}", p);
             return;
         }
-        if let Err(e) = fs::create_dir_all(p.parent().unwrap()) {
-            error!("Unable to create directory {:?}: {}", p.parent(), e);
+        if let Some(parent) = p.parent()
+            && let Err(e) = fs::create_dir_all(parent)
+        {
+            error!("Unable to create directory {:?}: {}", parent, e);
             return;
         }
         let mut file = match File::create(&p) {
@@ -227,7 +229,7 @@ impl ZipFileSystem {
 
 impl FileSystem for ZipFileSystem {
     fn open(&self, path: &str) -> Result<Box<dyn ReadSeek>> {
-        let mut zip = self.zip.lock().unwrap();
+        let mut zip = self.zip.lock().map_err(|e| anyhow!("Zip lock failed: {}", e))?;
         let mut file = zip
             .by_name(path)
             .map_err(|_| anyhow!("File not found in zip: {}", path))?;

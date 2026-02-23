@@ -179,7 +179,7 @@ pub(crate) fn assemble_markdown(
     existing_yaml: &Option<String>,
     markdown_content: &str,
 ) -> anyhow::Result<AssembledMarkdown> {
-    let new_yaml = merge_yaml(existing_yaml, mfm);
+    let new_yaml = merge_yaml(existing_yaml, mfm)?;
     if new_yaml.is_empty() {
         warn!("Generated YAML is empty, returning markdown content");
         return Ok(AssembledMarkdown::Unchanged(markdown_content.to_string()));
@@ -198,22 +198,22 @@ pub(crate) fn assemble_markdown(
     Ok(AssembledMarkdown::Modified(s))
 }
 
-fn merge_yaml(s: &Option<String>, fm: &PhotoSorterFrontMatter) -> String {
+fn merge_yaml(s: &Option<String>, fm: &PhotoSorterFrontMatter) -> anyhow::Result<String> {
     let mut root: Hash;
     if let Some(s) = s {
         let yaml_docs_r = YamlLoader::load_from_str(s);
         let Ok(yaml_docs) = yaml_docs_r else {
             warn!("Could not parse YAML: {s}");
-            return s.to_string();
+            return Ok(s.to_string());
         };
         let yaml_doc_o = yaml_docs.first();
         let Some(yaml_doc) = yaml_doc_o else {
             warn!("No YAML document found in: {s}");
-            return s.to_string();
+            return Ok(s.to_string());
         };
         let Yaml::Hash(hash) = &yaml_doc else {
             warn!("Root YAML is not a hash {yaml_doc:?}");
-            return s.to_string();
+            return Ok(s.to_string());
         };
         root = hash.clone();
     } else {
@@ -248,13 +248,15 @@ fn merge_yaml(s: &Option<String>, fm: &PhotoSorterFrontMatter) -> String {
     {
         let mut emitter = YamlEmitter::new(&mut out_str);
         let yaml_hash = Yaml::Hash(root);
-        emitter.dump(&yaml_hash).unwrap();
+        emitter
+            .dump(&yaml_hash)
+            .map_err(|e| anyhow!("YAML dump failed: {:?}", e))?;
     }
     out_str = out_str.trim_start_matches("---").to_string();
     out_str = out_str.trim_start_matches("\n").to_string();
     out_str = out_str.trim_end_matches("\n").to_string();
     out_str += "\n";
-    out_str
+    Ok(out_str)
 }
 
 fn yaml_array_merge(root: &mut Hash, key: &String, arr: &Vec<String>) {
@@ -330,7 +332,7 @@ mod tests {
   - list1
 "
         .to_string();
-        let yaml = merge_yaml(&Some(s), &get_mfi());
+        let yaml = merge_yaml(&Some(s), &get_mfi()).unwrap();
         assert_eq!(
             yaml,
             "foo:
@@ -350,7 +352,7 @@ original-paths:
         mfi.latitude = Some(12.3456);
         mfi.longitude = Some(-78.9012);
 
-        let yaml = merge_yaml(&None, &mfi);
+        let yaml = merge_yaml(&None, &mfi).unwrap();
         assert!(yaml.contains("latitude: 12.3456"));
         assert!(yaml.contains("longitude: -78.9012"));
         assert!(yaml.contains("checksum: abcdefg"));
@@ -370,7 +372,7 @@ people:
 checksum: abcdefg
 "
         .to_string();
-        let yaml = merge_yaml(&Some(s), &get_mfi());
+        let yaml = merge_yaml(&Some(s), &get_mfi()).unwrap();
         assert_eq!(
             yaml,
             "foo:
