@@ -12,6 +12,7 @@ mod supplemental_info;
 mod sync_cmd;
 mod test_util;
 mod track_util;
+mod ui_cmd;
 mod util;
 
 use clap::{Parser, Subcommand};
@@ -92,6 +93,16 @@ enum Commands {
         #[arg(long)]
         skip_albums: bool,
     },
+    /// Browse photos in a full screen UI
+    Ui {
+        /// Turn debugging information on
+        #[arg(short, long)]
+        debug: bool,
+
+        /// The takeout or iCloud zip/directory
+        #[arg(short, long)]
+        input: String,
+    },
 }
 
 fn main() {
@@ -138,6 +149,10 @@ fn go() -> anyhow::Result<()> {
                 skip_media,
                 skip_albums,
             )?;
+        }
+        Commands::Ui { debug, input } => {
+            enable_debug(debug);
+            ui_cmd::main(&input)?
         }
     }
     Ok(())
