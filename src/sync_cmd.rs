@@ -1,12 +1,12 @@
 use crate::album::{build_album_md, parse_album};
 use crate::file_type::QuickFileType;
+use crate::fs::{FileSystem, OsFileSystem, ZipFileSystem};
 use crate::markdown::sync_markdown;
 use crate::media::{
     MediaFileDerivedInfo, MediaFileInfo, media_file_derived_from_media_info,
     media_file_info_from_readable,
 };
 use crate::progress::Progress;
-use crate::fs::{FileSystem, OsFileSystem, ZipFileSystem};
 use crate::supplemental_info::{
     PsSupplementalInfo, detect_supplemental_info, load_supplemental_info,
 };
@@ -82,8 +82,13 @@ pub(crate) fn main(
             for media in all_media.values() {
                 prog.inc();
                 let derived = media_file_derived_from_media_info(media)?;
-                let write_r =
-                    write_media(media, &derived, dry_run, container.as_ref(), output_container);
+                let write_r = write_media(
+                    media,
+                    &derived,
+                    dry_run,
+                    container.as_ref(),
+                    output_container,
+                );
                 match write_r {
                     Ok(final_path) => {
                         let long_checksum = &media.hash_info.long_checksum;

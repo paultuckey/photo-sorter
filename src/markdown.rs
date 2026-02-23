@@ -311,7 +311,11 @@ mod tests {
 
     fn assert_split(text: &str, expected_fm: &str, expected_md: &str) {
         let (fm, md) = split_frontmatter(text);
-        assert_eq!(fm, expected_fm, "Frontmatter mismatch for input: {:?}", text);
+        assert_eq!(
+            fm, expected_fm,
+            "Frontmatter mismatch for input: {:?}",
+            text
+        );
         assert_eq!(md, expected_md, "Markdown mismatch for input: {:?}", text);
     }
 

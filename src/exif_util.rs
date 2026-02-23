@@ -153,7 +153,9 @@ mod tests {
         crate::test_util::setup_log();
         let c = OsFileSystem::new("test");
         let reader = c.open("Canon_40D.jpg")?;
-        let t = parse_exif_info(reader).ok_or_else(|| anyhow!("Failed to parse exif"))?.tags;
+        let t = parse_exif_info(reader)
+            .ok_or_else(|| anyhow!("Failed to parse exif"))?
+            .tags;
         assert_eq!(t.len(), 40);
         let mut tag_names: Vec<String> = t.keys().map(|t| t.to_string()).collect();
         tag_names.sort();

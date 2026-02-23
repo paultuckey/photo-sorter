@@ -228,18 +228,17 @@ mod tests {
             None,
             0,
         );
-        let si1 = ScanInfo::new(
-            "Google Photos/album1/test1.jpg".to_string(),
-            None,
-            None,
-            0,
-        );
+        let si1 = ScanInfo::new("Google Photos/album1/test1.jpg".to_string(), None, None, 0);
         let si2 = ScanInfo::new("different/test2.jpg".to_string(), None, None, 0);
-        let a = parse_album(&c, &qsf, &[si1, si2]).ok_or_else(|| anyhow!("Failed to parse album"))?;
+        let a =
+            parse_album(&c, &qsf, &[si1, si2]).ok_or_else(|| anyhow!("Failed to parse album"))?;
         assert_eq!(a.title, "Some album title".to_string());
         assert_eq!(a.files.len(), 1);
         assert_eq!(
-            a.files.first().ok_or_else(|| anyhow!("Album empty"))?.to_string(),
+            a.files
+                .first()
+                .ok_or_else(|| anyhow!("Album empty"))?
+                .to_string(),
             "Google Photos/album1/test1.jpg".to_string()
         );
         Ok(())
@@ -275,7 +274,12 @@ mod tests {
         let mut final_path_by_checksum = HashMap::new();
         final_path_by_checksum.insert("longhash1".to_string(), "2023/01/file1.jpg".to_string());
 
-        let md = build_album_md(&album, Some(&all_media), "../media/", Some(&final_path_by_checksum));
+        let md = build_album_md(
+            &album,
+            Some(&all_media),
+            "../media/",
+            Some(&final_path_by_checksum),
+        );
         assert!(md.contains("# Test Album"));
         assert!(md.contains("![Photo](../media/2023/01/file1.jpg)"));
     }
@@ -290,7 +294,12 @@ mod tests {
         let all_media = HashMap::new(); // Empty
         let final_path_by_checksum = HashMap::new();
 
-        let md = build_album_md(&album, Some(&all_media), "../media/", Some(&final_path_by_checksum));
+        let md = build_album_md(
+            &album,
+            Some(&all_media),
+            "../media/",
+            Some(&final_path_by_checksum),
+        );
         assert!(md.contains("# Test Album"));
         assert!(!md.contains("![Photo]")); // Should be skipped
     }
@@ -311,7 +320,12 @@ mod tests {
 
         let final_path_by_checksum = HashMap::new(); // Empty, so lookup fails
 
-        let md = build_album_md(&album, Some(&all_media), "../media/", Some(&final_path_by_checksum));
+        let md = build_album_md(
+            &album,
+            Some(&all_media),
+            "../media/",
+            Some(&final_path_by_checksum),
+        );
         assert!(md.contains("# Test Album"));
         assert!(!md.contains("![Photo]")); // Should be skipped
     }

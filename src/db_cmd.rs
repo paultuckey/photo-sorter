@@ -339,11 +339,10 @@ mod tests {
         create_zip_of_test_dir(zip_path)?;
 
         let conn = Connection::open_in_memory()?;
-        let tz = chrono::FixedOffset::east_opt(0).ok_or_else(|| anyhow!("Failed to create timezone"))?;
-        let mut container: Box<dyn FileSystem> = Box::new(ZipFileSystem::new(
-            zip_path.to_string_lossy().as_ref(),
-            tz,
-        )?);
+        let tz =
+            chrono::FixedOffset::east_opt(0).ok_or_else(|| anyhow!("Failed to create timezone"))?;
+        let mut container: Box<dyn FileSystem> =
+            Box::new(ZipFileSystem::new(zip_path.to_string_lossy().as_ref(), tz)?);
 
         run_db_scan(&mut container, &conn)?;
 
@@ -396,7 +395,8 @@ mod tests {
         writeln!(file, "Canon_40D.jpg")?;
 
         let conn = Connection::open_in_memory()?;
-        let mut container: Box<dyn FileSystem> = Box::new(OsFileSystem::new(test_dir.to_str().unwrap()));
+        let mut container: Box<dyn FileSystem> =
+            Box::new(OsFileSystem::new(test_dir.to_str().unwrap()));
         run_db_scan(&mut container, &conn)?;
 
         // Verify Album
