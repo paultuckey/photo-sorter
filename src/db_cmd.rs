@@ -11,6 +11,8 @@ use serde::{Deserialize, Serialize};
 use std::path::Path;
 use tracing::{debug, info};
 
+const DB_BATCH_SIZE: usize = 100;
+
 pub(crate) fn main(input: &String, output: &str) -> anyhow::Result<()> {
     debug!("Inspecting: {input}");
     let path = Path::new(input);
@@ -64,9 +66,19 @@ fn run_db_scan(container: &mut Box<dyn FileSystem>, conn: &Connection) -> anyhow
             });
         });
 
+        // Commit in batches to avoid the per-row fsync of autocommit
+        let mut db_tx = conn.unchecked_transaction()?;
+        let mut batch_count = 0;
         for info in rx {
-            db_record(conn, &info)?;
+            db_record(&db_tx, &info)?;
+            batch_count += 1;
+            if batch_count >= DB_BATCH_SIZE {
+                db_tx.commit()?;
+                db_tx = conn.unchecked_transaction()?;
+                batch_count = 0;
+            }
         }
+        db_tx.commit()?;
         Ok::<(), anyhow::Error>(())
     })?;
 
@@ -85,16 +97,18 @@ fn run_db_scan(container: &mut Box<dyn FileSystem>, conn: &Connection) -> anyhow
     info!("Inspecting {} album files", album_si_files.len());
     let prog_albums = Progress::new(album_si_files.len() as u64);
 
+    let album_tx = conn.unchecked_transaction()?;
     for album_si in album_si_files {
         if let Some(album) = crate::album::parse_album(container.as_ref(), album_si, &files) {
-            conn.execute(DB_ALBUM_INSERT, (&album.title, &album_si.file_path))?;
-            let album_id = conn.last_insert_rowid();
+            album_tx.execute(DB_ALBUM_INSERT, (&album.title, &album_si.file_path))?;
+            let album_id = album_tx.last_insert_rowid();
             for file in album.files {
-                conn.execute(DB_ALBUM_FILE_INSERT, (album_id, &file))?;
+                album_tx.execute(DB_ALBUM_FILE_INSERT, (album_id, &file))?;
             }
         }
         prog_albums.inc();
     }
+    album_tx.commit()?;
     drop(prog_albums);
 
     info!("Done {} files", files.len());
@@ -154,20 +168,18 @@ fn db_record(conn: &Connection, info: &MediaFileInfo) -> anyhow::Result<()> {
         accurate_file_type: info.accurate_file_type.clone().to_string(),
         guessed_datetime,
     };
-    conn.execute(
-        DB_MEDIA_ITEM_INSERT,
-        (
-            &item.media_path,
-            &item.long_hash,
-            &item.short_hash,
-            &item.quick_file_type,
-            &item.accurate_file_type,
-            &item.media_info,
-            &item.guessed_datetime,
-            &item.modified_at,
-            &item.created_at,
-        ),
-    )?;
+    let mut stmt = conn.prepare_cached(DB_MEDIA_ITEM_INSERT)?;
+    stmt.execute((
+        &item.media_path,
+        &item.long_hash,
+        &item.short_hash,
+        &item.quick_file_type,
+        &item.accurate_file_type,
+        &item.media_info,
+        &item.guessed_datetime,
+        &item.modified_at,
+        &item.created_at,
+    ))?;
 
     Ok(())
 }
