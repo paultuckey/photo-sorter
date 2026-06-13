@@ -1,109 +1,39 @@
-use crate::fs::{FileSystem, OsFileSystem, ZipFileSystem};
-use crate::util::scan_fs;
-use anyhow::anyhow;
+//! Classification of the dirs/files in a google takeout or icloud directory/zip.
+//!
+//! Naming is pretty loose, especially in google takeout. This module uses the strictest possible regex to identify
+//! dirs/files that match known patterns. The classification is consumed by the
+//! `db` command, which stores the result for every scanned path.
+//!
+//! Open questions:
+//!  - How do we relate albums to corresponding photos/videos?
+//!  - How do we relate photos/videos to separate corresponding metadata files?
+//!  - Do dirs change names for other languages? eg, es:fotos zh:照片?
+//!  - Fo file prefixes/suffixes change for other languages? eg, is `image_001.jpg` different in ES?
+//!
+//! Out of scope:
+//!  - relate edits/animations/originals together
+//!    - this requires too much knowledge of icloud and google takeout structure
+
 use regex::Regex;
-use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::sync::LazyLock;
 use strum_macros::Display;
-use tracing::{debug, info, warn};
+use tracing::warn;
 
-///
-/// Do we understand all the dirs/files in a google takeout or icloud directory/zip?
-/// Naming is pretty loose, especially in google takeout where this command is not overly useful.
-/// It uses the strictest possible regex to identify dirs/files that match known patterns.
-///
-/// TODO:
-///  - how to relate albums to corresponding photos/videos
-///  - relating photos/videos to corresponding metadata
-///
-/// Out of scope:
-///  - relate edits/animations/originals together
-///    - this requires too much knowledge of icloud and google takeout structure
-///
-pub(crate) fn main(input: &String) -> anyhow::Result<()> {
-    debug!("Inspecting: {input}");
-    let path = Path::new(input);
-    if !path.exists() {
-        return Err(anyhow!("Input path does not exist: {}", input));
-    }
-    let container: Box<dyn FileSystem> = if path.is_dir() {
-        info!("Input directory: {input}");
-        Box::new(OsFileSystem::new(input))
-    } else {
-        info!("Input zip: {input}");
-        let tz = chrono::Local::now().offset().to_owned();
-        Box::new(ZipFileSystem::new(input, tz)?)
-    };
-    let idx = scan_fs(container.as_ref());
+/// Classify a single file by its path. Returns the first matching pattern, or
+/// `None` if the file does not match any known pattern.
+pub(crate) fn classify_file(file_path: &str) -> Option<KnownFileType> {
+    find_known_files(file_path).into_iter().next()
+}
 
-    let mut distinct_dirs: HashSet<String> = HashSet::new();
-    for si in &idx {
-        let p = Path::new(&si.file_path);
-        if let Some(parent_path) = p.parent()
-            && let Some(pp_s) = parent_path.to_str()
-        {
-            if pp_s.is_empty() {
-                continue;
-            }
-            distinct_dirs.insert(pp_s.to_string());
-        }
-    }
-
-    let mut dir_matches: HashMap<String, i32> = HashMap::new();
-    let mut unmatched_dirs = vec![];
-    for dd in &distinct_dirs {
-        let known_dirs = find_known_dirs(dd);
-        if known_dirs.is_empty() {
-            unmatched_dirs.push(dd);
-        }
-        for known_dir in known_dirs {
-            if let Some(score) = dir_matches.get_mut(&known_dir.to_string()) {
-                *score += 1;
-            } else {
-                dir_matches.insert(known_dir.to_string().clone(), 1);
-            }
-        }
-    }
-
-    let mut file_matches: HashMap<String, i32> = HashMap::new();
-    let mut unmatched_files = vec![];
-    for si in &idx {
-        let known_files = find_known_files(&si.file_path);
-        if known_files.is_empty() {
-            unmatched_files.push(si);
-        }
-        for known_file in known_files {
-            if let Some(score) = file_matches.get_mut(&known_file.to_string()) {
-                *score += 1;
-            } else {
-                file_matches.insert(known_file.to_string().clone(), 1);
-            }
-        }
-    }
-    info!("Matched dirs:");
-    for (known_dir, count) in dir_matches.iter() {
-        info!("  {known_dir}: {count}");
-    }
-    info!("Unmatched dirs: {}", unmatched_dirs.len());
-    for d in &unmatched_dirs {
-        debug!("unmatches dir: {d}");
-    }
-
-    info!("Matched files:");
-    for (known_file_type, count) in file_matches.iter() {
-        info!("  {known_file_type}: {count}");
-    }
-    info!("Unmatched files: {}", unmatched_files.len());
-    for si in &unmatched_files {
-        debug!("unmatched file: {}", si.file_path);
-    }
-    Ok(())
+/// Classify a single directory by its path. Returns the first matching pattern,
+/// or `None` if the directory does not match any known pattern.
+pub(crate) fn classify_dir(dir_path: &str) -> Option<KnownDir> {
+    find_known_dirs(dir_path).into_iter().next()
 }
 
 #[derive(Debug, Clone, Display, PartialEq)]
-enum KnownDir {
-    // todo: do dirs change names for other languages? eg, es:fotos zh:照片?
+pub(crate) enum KnownDir {
     GpPhotosFromYear(String),
     GpArchive,
     GpBin,
@@ -114,10 +44,19 @@ enum KnownDir {
     IcpRecentlyDeleted,
 }
 
-#[derive(Debug, Clone, Display, PartialEq)]
-enum KnownFileType {
-    // todo: do file prefixes change for other languages?
+impl KnownDir {
+    /// The captured value (e.g. the year for `GpPhotosFromYear`), if the variant
+    /// carries one. Stored alongside the variant name in the database.
+    pub(crate) fn value(&self) -> Option<String> {
+        match self {
+            KnownDir::GpPhotosFromYear(v) => Some(v.clone()),
+            _ => None,
+        }
+    }
+}
 
+#[derive(Debug, Clone, Display, PartialEq)]
+pub(crate) enum KnownFileType {
     // can be in either provider
     Photo(String),
     Ignored, // any file where we know it's file pattern and we know we don't need it
@@ -137,6 +76,23 @@ enum KnownFileType {
     // typically in icloud photos
     IcpAlbumCsv(String),
     IcpSharedAlbumsZip,
+}
+
+impl KnownFileType {
+    /// The captured value (e.g. the photo id) if the variant carries one.
+    /// Stored alongside the variant name in the database.
+    pub(crate) fn value(&self) -> Option<String> {
+        match self {
+            KnownFileType::Photo(v)
+            | KnownFileType::GpMetadataJson(v)
+            | KnownFileType::GpPicasaSyncMetadataJson(v)
+            | KnownFileType::PhotoWithGuid(v)
+            | KnownFileType::GpCollage(v)
+            | KnownFileType::GpAnimation(v)
+            | KnownFileType::IcpAlbumCsv(v) => Some(v.clone()),
+            _ => None,
+        }
+    }
 }
 
 fn match_re(haystack: &str, re: &Regex) -> Option<PatternMatch> {

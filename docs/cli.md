@@ -9,11 +9,10 @@
 Usage: photo-sorter <COMMAND>
 
 Commands:
-  info   Show info for an individual photo or video
-  index  Scan files in an archive or directory and output known patterns
-  db     Scan files in an archive or directory and collect meta info into a sqlite database
-  sync   Sync files in an archive or directory into a standardised directory structure
-  help   Print this message or the help of the given subcommand(s)
+  info  Show info for an individual photo or video
+  db    Scan files in an archive or directory and collect meta info into a sqlite database
+  sync  Sync files in an archive or directory into a standardised directory structure
+  help  Print this message or the help of the given subcommand(s)
 
 Options:
   -h, --help     Print help
@@ -31,19 +30,6 @@ Options:
   -d, --debug          Turn debugging information on
   -r, --root <ROOT>    The takeout or iCloud zip/directory
   -i, --input <INPUT>  Photo, video or album to view info for
-  -h, --help           Print help
-```
-
-## photo-sorter index
-
-```
-Scan files in an archive or directory and output known patterns
-
-Usage: photo-sorter index [OPTIONS] --input <INPUT>
-
-Options:
-  -d, --debug          Turn debugging information on
-  -i, --input <INPUT>  The takeout or iCloud zip/directory
   -h, --help           Print help
 ```
 

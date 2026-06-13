@@ -41,9 +41,9 @@ The source code is located in `src/`:
 -   **`main.rs`**: Entry point. Defines the CLI structure using `clap` and orchestrates subcommands.
 -   **`*_cmd.rs`**: Implementations for specific CLI commands:
     -   `sync_cmd.rs`: Core logic for syncing files, deduplication, and writing to the output directory.
-    -   `db_cmd.rs`: Logic for scanning files and populating a SQLite database with metadata.
-    -   `index_cmd.rs`: Analyzes input directories/zips to identify known file and directory patterns using regex.
+    -   `db_cmd.rs`: Logic for scanning files and populating a SQLite database with metadata. Also stores each file/directory's known-pattern classification (via `classify.rs`) in the `classified_file`/`classified_dir` tables.
     -   `info_cmd.rs`: Inspects and displays details for a single file.
+-   **`classify.rs`**: Classifies input directory/zip paths against known Google Takeout / iCloud file and directory patterns using regex. Consumed by `db_cmd.rs` (not a standalone command).
 -   **`media.rs`**: Core data structures (`MediaFileInfo`, `MediaFileDerivedInfo`) and logic for extracting metadata, calculating checksums, and deriving target paths/dates.
 -   **`album.rs`**: Logic for parsing album metadata (from CSV or JSON) and generating album Markdown files.
 -   **`markdown.rs`**: Utilities for reading/writing Markdown files and managing YAML frontmatter.

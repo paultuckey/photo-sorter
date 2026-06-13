@@ -1,9 +1,9 @@
 mod album;
+mod classify;
 mod db_cmd;
 mod exif_util;
 mod file_type;
 mod fs;
-mod index_cmd;
 mod info_cmd;
 mod markdown;
 mod media;
@@ -39,16 +39,6 @@ enum Commands {
         root: String,
 
         /// Photo, video or album to view info for
-        #[arg(short, long)]
-        input: String,
-    },
-    /// Scan files in an archive or directory and output known patterns
-    Index {
-        /// Turn debugging information on
-        #[arg(short, long)]
-        debug: bool,
-
-        /// The takeout or iCloud zip/directory
         #[arg(short, long)]
         input: String,
     },
@@ -114,10 +104,6 @@ fn go() -> anyhow::Result<()> {
         Commands::Info { debug, root, input } => {
             enable_debug(debug);
             info_cmd::main(&input, &root)?
-        }
-        Commands::Index { debug, input } => {
-            enable_debug(debug);
-            index_cmd::main(&input)?
         }
         Commands::Db {
             debug,
