@@ -1,3 +1,4 @@
+use crate::classify::{classify_dir, classify_file};
 use crate::file_type::QuickFileType;
 use crate::fs::{FileSystem, OsFileSystem, ZipFileSystem};
 use crate::media::{MediaFileInfo, best_guess_taken_dt, media_file_info_from_readable};
@@ -8,6 +9,7 @@ use anyhow::anyhow;
 use rayon::prelude::*;
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 use std::path::Path;
 use tracing::{debug, info};
 
@@ -41,6 +43,8 @@ fn run_db_scan(container: &mut Box<dyn FileSystem>, conn: &Connection) -> anyhow
 
     let files = scan_fs(container.as_ref());
     info!("Found {} files in input", files.len());
+
+    db_classify_paths(conn, &files)?;
 
     let media_si_files = files
         .iter()
@@ -112,6 +116,58 @@ fn run_db_scan(container: &mut Box<dyn FileSystem>, conn: &Connection) -> anyhow
     drop(prog_albums);
 
     info!("Done {} files", files.len());
+    Ok(())
+}
+
+fn db_classify_paths(conn: &Connection, files: &[ScanInfo]) -> anyhow::Result<()> {
+    info!("Classifying {} files against known patterns", files.len());
+
+    let tx = conn.unchecked_transaction()?;
+    {
+        let mut matched_files = 0usize;
+        let mut stmt_file = tx.prepare_cached(DB_CLASSIFIED_FILE_INSERT)?;
+        for si in files {
+            let known = classify_file(&si.file_path);
+            if known.is_some() {
+                matched_files += 1;
+            }
+            stmt_file.execute((
+                &si.file_path,
+                si.quick_file_type.to_string(),
+                known.as_ref().map(|k| k.to_string()),
+                known.as_ref().and_then(|k| k.value()),
+            ))?;
+        }
+
+        let mut matched_dirs = 0usize;
+        let mut seen_dirs: HashSet<&str> = HashSet::new();
+        let mut stmt_dir = tx.prepare_cached(DB_CLASSIFIED_DIR_INSERT)?;
+        for si in files {
+            let Some(parent) = Path::new(&si.file_path).parent().and_then(|p| p.to_str()) else {
+                continue;
+            };
+            if parent.is_empty() || !seen_dirs.insert(parent) {
+                continue;
+            }
+            let known = classify_dir(parent);
+            if known.is_some() {
+                matched_dirs += 1;
+            }
+            stmt_dir.execute((
+                parent,
+                known.as_ref().map(|k| k.to_string()),
+                known.as_ref().and_then(|k| k.value()),
+            ))?;
+        }
+        info!(
+            "Matched {}/{} files, {}/{} dirs against known patterns",
+            matched_files,
+            files.len(),
+            matched_dirs,
+            seen_dirs.len()
+        );
+    }
+    tx.commit()?;
     Ok(())
 }
 
@@ -247,6 +303,35 @@ const DB_ALBUM_FILE_INSERT: &str = "
 const DB_ALBUM_DELETE_ALL: &str = "DELETE FROM album";
 const DB_ALBUM_FILE_DELETE_ALL: &str = "DELETE FROM album_file";
 
+const DB_CLASSIFIED_FILE_CREATE: &str = "
+    CREATE TABLE IF NOT EXISTS classified_file (
+        classified_file_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        file_path TEXT NOT NULL,
+        quick_file_type TEXT,
+        known_file_type TEXT, -- matched pattern variant, NULL if unmatched
+        known_file_type_value TEXT -- captured value (e.g. photo id), if any
+    )
+";
+const DB_CLASSIFIED_FILE_INSERT: &str = "
+    INSERT INTO classified_file (file_path, quick_file_type, known_file_type, known_file_type_value)
+    VALUES (?1, ?2, ?3, ?4)
+";
+const DB_CLASSIFIED_FILE_DELETE_ALL: &str = "DELETE FROM classified_file";
+
+const DB_CLASSIFIED_DIR_CREATE: &str = "
+    CREATE TABLE IF NOT EXISTS classified_dir (
+        classified_dir_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        dir_path TEXT NOT NULL,
+        known_dir_type TEXT, -- matched pattern variant, NULL if unmatched
+        known_dir_value TEXT -- captured value (e.g. year), if any
+    )
+";
+const DB_CLASSIFIED_DIR_INSERT: &str = "
+    INSERT INTO classified_dir (dir_path, known_dir_type, known_dir_value)
+    VALUES (?1, ?2, ?3)
+";
+const DB_CLASSIFIED_DIR_DELETE_ALL: &str = "DELETE FROM classified_dir";
+
 fn db_conn(path: &str) -> anyhow::Result<Connection> {
     Ok(Connection::open(path)?)
 }
@@ -260,6 +345,12 @@ fn db_prepare(conn: &Connection) -> anyhow::Result<()> {
 
     conn.execute(DB_ALBUM_FILE_CREATE, ())?;
     conn.execute(DB_ALBUM_FILE_DELETE_ALL, ())?;
+
+    conn.execute(DB_CLASSIFIED_FILE_CREATE, ())?;
+    conn.execute(DB_CLASSIFIED_FILE_DELETE_ALL, ())?;
+
+    conn.execute(DB_CLASSIFIED_DIR_CREATE, ())?;
+    conn.execute(DB_CLASSIFIED_DIR_DELETE_ALL, ())?;
     Ok(())
 }
 
@@ -315,6 +406,37 @@ mod tests {
                 .iter()
                 .any(|(path, ftype)| path == "Hello.mp4" && ftype == "Media")
         );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_db_scan_classifies_paths() -> anyhow::Result<()> {
+        crate::test_util::setup_log();
+        let conn = Connection::open_in_memory()?;
+        let mut container: Box<dyn FileSystem> = Box::new(OsFileSystem::new("test"));
+        run_db_scan(&mut container, &conn)?;
+
+        // Every scanned file is recorded, matched or not.
+        let file_count: i64 =
+            conn.query_row("SELECT COUNT(*) FROM classified_file", [], |r| r.get(0))?;
+        assert!(file_count > 0, "expected classified_file rows");
+
+        // A csv is classified as an iCloud album csv.
+        let known: Option<String> = conn.query_row(
+            "SELECT known_file_type FROM classified_file WHERE file_path = ?1",
+            ["ic-album-sample.csv"],
+            |r| r.get(0),
+        )?;
+        assert_eq!(known.as_deref(), Some("IcpAlbumCsv"));
+
+        // Canon_40D.jpg matches no known pattern, so it is stored unmatched.
+        let unmatched: Option<String> = conn.query_row(
+            "SELECT known_file_type FROM classified_file WHERE file_path = ?1",
+            ["Canon_40D.jpg"],
+            |r| r.get(0),
+        )?;
+        assert_eq!(unmatched, None);
 
         Ok(())
     }
