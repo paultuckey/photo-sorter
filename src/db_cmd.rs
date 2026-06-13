@@ -1,16 +1,16 @@
 use crate::classify::{classify_dir, classify_file};
 use crate::file_type::QuickFileType;
 use crate::fs::{FileSystem, OsFileSystem, ZipFileSystem};
-use crate::media::{MediaFileInfo, best_guess_taken_dt, media_file_info_from_readable};
+use crate::inspect::inspect_media_files;
+use crate::media::{MediaFileInfo, best_guess_taken_dt};
 use crate::progress::Progress;
-use crate::supplemental_info::{detect_supplemental_info, load_supplemental_info};
-use crate::util::{ScanInfo, checksum_bytes, scan_fs};
+use crate::util::{ScanInfo, scan_fs};
 use anyhow::anyhow;
-use rayon::prelude::*;
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::path::Path;
+use std::sync::Arc;
 use tracing::{debug, info};
 
 const DB_BATCH_SIZE: usize = 100;
@@ -21,24 +21,23 @@ pub(crate) fn main(input: &String, output: &str) -> anyhow::Result<()> {
     if !path.exists() {
         return Err(anyhow!("Input path does not exist: {}", input));
     }
-    let mut container: Box<dyn FileSystem>;
-    if path.is_dir() {
+    let container: Arc<dyn FileSystem> = if path.is_dir() {
         info!("Input directory: {input}");
-        container = Box::new(OsFileSystem::new(input));
+        Arc::new(OsFileSystem::new(input))
     } else {
         info!("Input zip: {input}");
         let tz = chrono::Local::now().offset().to_owned();
-        container = Box::new(ZipFileSystem::new(input, tz)?);
-    }
+        Arc::new(ZipFileSystem::new(input, tz)?)
+    };
 
     info!("Writing database: {output}");
     let conn = db_conn(output)?;
-    run_db_scan(&mut container, &conn)?;
+    run_db_scan(container, &conn)?;
     conn.close().unwrap_or(());
     Ok(())
 }
 
-fn run_db_scan(container: &mut Box<dyn FileSystem>, conn: &Connection) -> anyhow::Result<()> {
+fn run_db_scan(container: Arc<dyn FileSystem>, conn: &Connection) -> anyhow::Result<()> {
     db_prepare(conn)?;
 
     let files = scan_fs(container.as_ref());
@@ -46,45 +45,28 @@ fn run_db_scan(container: &mut Box<dyn FileSystem>, conn: &Connection) -> anyhow
 
     db_classify_paths(conn, &files)?;
 
-    let media_si_files = files
+    let media_si_files: Vec<ScanInfo> = files
         .iter()
         .filter(|m| m.quick_file_type == QuickFileType::Media)
-        .collect::<Vec<&ScanInfo>>();
+        .cloned()
+        .collect();
     info!("Inspecting {} photo and video files", media_si_files.len());
-    let prog = Progress::new(media_si_files.len() as u64);
+    let prog = Arc::new(Progress::new(media_si_files.len() as u64));
 
-    std::thread::scope(|s| {
-        // Bound the channel so fast parallel producers can't outrun the single
-        // consumer and pile up in memory.
-        let channel_capacity = rayon::current_num_threads().saturating_mul(4).max(1);
-        let (tx, rx) = std::sync::mpsc::sync_channel(channel_capacity);
-        let container_ref = container.as_ref();
-        let prog_ref = &prog;
-
-        s.spawn(move || {
-            media_si_files.par_iter().for_each(|media_si| {
-                if let Ok(Some(info)) = analyze_file(container_ref, media_si) {
-                    let _ = tx.send(info);
-                }
-                prog_ref.inc();
-            });
-        });
-
-        // Commit in batches to avoid the per-row fsync of autocommit
-        let mut db_tx = conn.unchecked_transaction()?;
-        let mut batch_count = 0;
-        for info in rx {
-            db_record(&db_tx, &info)?;
-            batch_count += 1;
-            if batch_count >= DB_BATCH_SIZE {
-                db_tx.commit()?;
-                db_tx = conn.unchecked_transaction()?;
-                batch_count = 0;
-            }
+    // Inspect in parallel and stream the results straight into sqlite, committing
+    // in batches to avoid the per-row fsync of autocommit.
+    let mut db_tx = conn.unchecked_transaction()?;
+    let mut batch_count = 0;
+    for info in inspect_media_files(container.clone(), media_si_files, prog.clone()) {
+        db_record(&db_tx, &info)?;
+        batch_count += 1;
+        if batch_count >= DB_BATCH_SIZE {
+            db_tx.commit()?;
+            db_tx = conn.unchecked_transaction()?;
+            batch_count = 0;
         }
-        db_tx.commit()?;
-        Ok::<(), anyhow::Error>(())
-    })?;
+    }
+    db_tx.commit()?;
 
     drop(prog);
 
@@ -169,36 +151,6 @@ fn db_classify_paths(conn: &Connection, files: &[ScanInfo]) -> anyhow::Result<()
     }
     tx.commit()?;
     Ok(())
-}
-
-fn analyze_file(
-    root: &dyn FileSystem,
-    media_si: &ScanInfo,
-) -> anyhow::Result<Option<MediaFileInfo>> {
-    let mut supp_info_o = None;
-    let supp_info_path_o = detect_supplemental_info(&media_si.file_path.clone(), root);
-    if let Some(supp_info_path) = supp_info_path_o {
-        supp_info_o = load_supplemental_info(&supp_info_path, root);
-    }
-
-    let reader = root.open(&media_si.file_path.clone())?;
-    let hash_info_o = checksum_bytes(reader).ok();
-    let Some(hash_info) = hash_info_o else {
-        debug!(
-            "Could not calculate checksum for file: {:?}",
-            media_si.file_path
-        );
-        return Err(anyhow!(
-            "Could not calculate checksum for file: {:?}",
-            media_si.file_path
-        ));
-    };
-
-    let media_info_r = media_file_info_from_readable(media_si, root, &supp_info_o, &hash_info);
-    match media_info_r {
-        Ok(media_info) => Ok(Some(media_info)),
-        Err(_) => Ok(None),
-    }
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
@@ -382,8 +334,8 @@ mod tests {
     fn test_db_scan() -> anyhow::Result<()> {
         crate::test_util::setup_log();
         let conn = Connection::open_in_memory()?;
-        let mut container: Box<dyn FileSystem> = Box::new(OsFileSystem::new("test"));
-        run_db_scan(&mut container, &conn)?;
+        let container: Arc<dyn FileSystem> = Arc::new(OsFileSystem::new("test"));
+        run_db_scan(container, &conn)?;
 
         let mut stmt =
             conn.prepare("SELECT media_path, quick_file_type FROM media_item ORDER BY media_path")?;
@@ -414,8 +366,8 @@ mod tests {
     fn test_db_scan_classifies_paths() -> anyhow::Result<()> {
         crate::test_util::setup_log();
         let conn = Connection::open_in_memory()?;
-        let mut container: Box<dyn FileSystem> = Box::new(OsFileSystem::new("test"));
-        run_db_scan(&mut container, &conn)?;
+        let container: Arc<dyn FileSystem> = Arc::new(OsFileSystem::new("test"));
+        run_db_scan(container, &conn)?;
 
         // Every scanned file is recorded, matched or not.
         let file_count: i64 =
@@ -479,10 +431,10 @@ mod tests {
         let conn = Connection::open_in_memory()?;
         let tz =
             chrono::FixedOffset::east_opt(0).ok_or_else(|| anyhow!("Failed to create timezone"))?;
-        let mut container: Box<dyn FileSystem> =
-            Box::new(ZipFileSystem::new(zip_path.to_string_lossy().as_ref(), tz)?);
+        let container: Arc<dyn FileSystem> =
+            Arc::new(ZipFileSystem::new(zip_path.to_string_lossy().as_ref(), tz)?);
 
-        run_db_scan(&mut container, &conn)?;
+        run_db_scan(container, &conn)?;
 
         let mut stmt =
             conn.prepare("SELECT media_path, quick_file_type FROM media_item ORDER BY media_path")?;
@@ -533,9 +485,9 @@ mod tests {
         writeln!(file, "Canon_40D.jpg")?;
 
         let conn = Connection::open_in_memory()?;
-        let mut container: Box<dyn FileSystem> =
-            Box::new(OsFileSystem::new(test_dir.to_str().unwrap()));
-        run_db_scan(&mut container, &conn)?;
+        let container: Arc<dyn FileSystem> =
+            Arc::new(OsFileSystem::new(test_dir.to_str().unwrap()));
+        run_db_scan(container, &conn)?;
 
         // Verify Album
         let mut stmt = conn.prepare("SELECT title, album_path FROM album")?;

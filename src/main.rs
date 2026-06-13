@@ -5,6 +5,7 @@ mod exif_util;
 mod file_type;
 mod fs;
 mod info_cmd;
+mod inspect;
 mod markdown;
 mod media;
 mod progress;

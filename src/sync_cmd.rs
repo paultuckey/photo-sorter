@@ -1,21 +1,17 @@
 use crate::album::{build_album_md, parse_album};
 use crate::file_type::QuickFileType;
 use crate::fs::{FileSystem, OsFileSystem, ZipFileSystem};
+use crate::inspect::inspect_media_files;
 use crate::markdown::sync_markdown;
-use crate::media::{
-    MediaFileDerivedInfo, MediaFileInfo, media_file_derived_from_media_info,
-    media_file_info_from_readable,
-};
+use crate::media::{MediaFileDerivedInfo, MediaFileInfo, media_file_derived_from_media_info};
 use crate::progress::Progress;
-use crate::supplemental_info::{
-    PsSupplementalInfo, detect_supplemental_info, load_supplemental_info,
-};
 use crate::sync_cmd::DeDuplicationResult::{SkipWrite, WritePath};
-use crate::util::{ScanInfo, checksum_bytes, is_existing_file_same, scan_fs};
+use crate::util::{ScanInfo, is_existing_file_same, scan_fs};
 use anyhow::anyhow;
 use std::collections::HashMap;
 use std::io::Cursor;
 use std::path::Path;
+use std::sync::Arc;
 use tracing::{debug, info, warn};
 
 const MAX_DUPLICATE_CHECK_ATTEMPTS: i32 = 5;
@@ -32,13 +28,13 @@ pub(crate) fn main(
     if !path.exists() {
         return Err(anyhow!("Input path does not exist: {}", input));
     }
-    let container: Box<dyn FileSystem> = if path.is_dir() {
+    let container: Arc<dyn FileSystem> = if path.is_dir() {
         info!("Input directory: {input}");
-        Box::new(OsFileSystem::new(input))
+        Arc::new(OsFileSystem::new(input))
     } else {
         info!("Input zip: {input}");
         let tz = chrono::Local::now().offset().to_owned();
-        Box::new(ZipFileSystem::new(input, tz)?)
+        Arc::new(ZipFileSystem::new(input, tz)?)
     };
 
     let files = scan_fs(container.as_ref());
@@ -57,22 +53,24 @@ pub(crate) fn main(
     let mut final_path_by_original_path = HashMap::<String, String>::new();
 
     if !skip_media {
-        let media_si_files = files
+        let media_si_files: Vec<ScanInfo> = files
             .iter()
             .filter(|m| m.quick_file_type == QuickFileType::Media)
-            .collect::<Vec<&ScanInfo>>();
+            .cloned()
+            .collect();
         info!("Inspecting {} photo and video files", media_si_files.len());
-        let prog = Progress::new(media_si_files.len() as u64);
-        for media_si in media_si_files {
-            prog.inc();
-
-            let mut supp_info_o = None;
-            let supp_info_path_o =
-                detect_supplemental_info(&media_si.file_path.clone(), container.as_ref());
-            if let Some(supp_info_path) = supp_info_path_o {
-                supp_info_o = load_supplemental_info(&supp_info_path, container.as_ref());
+        let prog = Arc::new(Progress::new(media_si_files.len() as u64));
+        // Inspection (hashing + metadata) runs in parallel; dedup must stay on
+        // this thread since it mutates the shared map. Files with the same
+        // content hash collapse into one entry, recording each original path.
+        for media in inspect_media_files(container.clone(), media_si_files, prog.clone()) {
+            if let Some(existing) = all_media.get_mut(&media.hash_info.long_checksum) {
+                existing
+                    .original_path
+                    .push(media.original_file_this_run.clone());
+            } else {
+                all_media.insert(media.hash_info.long_checksum.clone(), media);
             }
-            let _ = inspect_media(media_si, container.as_ref(), &mut all_media, &supp_info_o);
         }
         drop(prog);
 
@@ -158,42 +156,6 @@ pub(crate) fn main(
     }
 
     Ok(())
-}
-
-/// Take a media file and:
-/// - generate a checksum
-/// - check if it already exists in the media map
-/// - capture extra_info
-/// - populate exif data
-pub(crate) fn inspect_media(
-    si: &ScanInfo,
-    root: &dyn FileSystem,
-    all_media: &mut HashMap<String, MediaFileInfo>,
-    supp_info: &Option<PsSupplementalInfo>,
-) -> anyhow::Result<MediaFileInfo> {
-    info!("Inspect: {}", si.file_path);
-    let reader = root.open(&si.file_path.to_string())?;
-    let hash_info_o = checksum_bytes(reader).ok();
-    let Some(hash_info) = hash_info_o else {
-        warn!("Could not calculate checksum for: {:?}", si.file_path);
-        return Err(anyhow!(
-            "Could not calculate checksum for file: {:?}",
-            si.file_path
-        ));
-    };
-
-    debug!("  Checksum calculated: {}", hash_info.long_checksum);
-    if let Some(m) = all_media.get_mut(&hash_info.long_checksum) {
-        m.original_path.push(si.file_path.clone());
-        return Ok(m.clone());
-    }
-    let media_file_info_res = media_file_info_from_readable(si, root, supp_info, &hash_info);
-    let Ok(media_file) = media_file_info_res else {
-        warn!("Could not calculate info for: {:?}", si.file_path);
-        return Err(anyhow!("File type unsupported: {:?}", si.file_path));
-    };
-    all_media.insert(hash_info.long_checksum.clone(), media_file.clone());
-    Ok(media_file)
 }
 
 pub(crate) fn write_media(
