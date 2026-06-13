@@ -48,7 +48,10 @@ fn run_db_scan(container: &mut Box<dyn FileSystem>, conn: &Connection) -> anyhow
     let prog = Progress::new(media_si_files.len() as u64);
 
     std::thread::scope(|s| {
-        let (tx, rx) = std::sync::mpsc::channel();
+        // Bound the channel so fast parallel producers can't outrun the single
+        // consumer and pile up in memory.
+        let channel_capacity = rayon::current_num_threads().saturating_mul(4).max(1);
+        let (tx, rx) = std::sync::mpsc::sync_channel(channel_capacity);
         let container_ref = container.as_ref();
         let prog_ref = &prog;
 
