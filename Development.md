@@ -132,6 +132,14 @@ exiftool "input/Takeout/Google Photos/Photos from 2024/IMG_3986.HEIC" > a.txt
 exiftool "input/iCloud Photos/Photos/IMG_3986.HEIC" > b.txt
 ```
 
+## Update docs
+
+Update `docs/cli.md`:
+
+```shell
+UPDATE_CLI_DOCS=1 cargo test
+```
+
 ## Notes
 
 The same photo from different sources give different sizes:

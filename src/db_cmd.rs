@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use std::path::Path;
 use tracing::{debug, info};
 
-pub(crate) fn main(input: &String) -> anyhow::Result<()> {
+pub(crate) fn main(input: &String, output: &str) -> anyhow::Result<()> {
     debug!("Inspecting: {input}");
     let path = Path::new(input);
     if !path.exists() {
@@ -27,7 +27,8 @@ pub(crate) fn main(input: &String) -> anyhow::Result<()> {
         container = Box::new(ZipFileSystem::new(input, tz)?);
     }
 
-    let conn = db_conn()?;
+    info!("Writing database: {output}");
+    let conn = db_conn(output)?;
     run_db_scan(&mut container, &conn)?;
     conn.close().unwrap_or(());
     Ok(())
@@ -231,8 +232,8 @@ const DB_ALBUM_FILE_INSERT: &str = "
 const DB_ALBUM_DELETE_ALL: &str = "DELETE FROM album";
 const DB_ALBUM_FILE_DELETE_ALL: &str = "DELETE FROM album_file";
 
-fn db_conn() -> anyhow::Result<Connection> {
-    Ok(Connection::open("db.sqlite")?)
+fn db_conn(path: &str) -> anyhow::Result<Connection> {
+    Ok(Connection::open(path)?)
 }
 
 fn db_prepare(conn: &Connection) -> anyhow::Result<()> {
@@ -261,7 +262,7 @@ mod tests {
     #[ignore]
     fn test_select_all() -> anyhow::Result<()> {
         crate::test_util::setup_log();
-        let conn = db_conn()?;
+        let conn = db_conn("db.sqlite")?;
         let mut res = conn.prepare(DB_MEDIA_ITEM_SELECT_ALL)?;
         let mut rows = res.query(())?;
         while let Some(row) = rows.next()? {
