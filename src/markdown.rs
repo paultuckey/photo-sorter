@@ -53,7 +53,7 @@ fn non_null_island(lat: Option<f64>, long: Option<f64>) -> Option<(f64, f64)> {
     }
 }
 
-/// People (face tags) from Google supplemental metadata, rendered as wikilinks 
+/// People (face tags) from Google supplemental metadata, rendered as wikilinks
 fn people_links(media_info: &MediaFileInfo) -> Vec<String> {
     let Some(supp) = &media_info.supp_info else {
         return vec![];
