@@ -1,7 +1,9 @@
 use crate::fs::FileSystem;
 use crate::media::{MediaFileInfo, media_file_info_from_readable};
 use crate::progress::Progress;
-use crate::supplemental_info::{PsSupplementalInfo, detect_supplemental_info, load_supplemental_info};
+use crate::supplemental_info::{
+    PsSupplementalInfo, detect_supplemental_info, load_supplemental_info,
+};
 use crate::util::{ScanInfo, checksum_bytes};
 use anyhow::anyhow;
 use rayon::prelude::*;
