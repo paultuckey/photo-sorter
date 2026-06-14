@@ -59,9 +59,11 @@ pub(crate) fn parse_exif_info<R: Read + Seek>(reader: R) -> Option<PsExifInfo> {
                 m.insert(tag_name, s);
             }
             if let Some(gps_info) = exif_iter.parse_gps().ok().flatten() {
-                ps_gps_info = Some(gps_info.to_iso6709());
                 lat = gps_info.latitude_decimal();
                 long = gps_info.longitude_decimal();
+                if lat.is_some() && long.is_some() {
+                    ps_gps_info = Some(gps_info.to_iso6709());
+                }
             }
         }
         Err(e) => {
@@ -200,6 +202,21 @@ mod tests {
             .get(&ExifTag::SubSecTimeOriginal.to_string())
             .ok_or_else(|| anyhow!("SubSecTimeOriginal tag not found"))?;
         assert_eq!(sub_sec_time_original.clone(), "00".to_string());
+        Ok(())
+    }
+
+    #[test]
+    fn test_gps_version_only_yields_no_coords() -> anyhow::Result<()> {
+        use anyhow::anyhow;
+        crate::test_util::setup_log();
+        // Canon_40D.jpg has a GPS sub-IFD with only GPSVersionID (no
+        // GPSLatitude/GPSLongitude)
+        let c = OsFileSystem::new("test");
+        let reader = c.open("Canon_40D.jpg")?;
+        let info = parse_exif_info(reader).ok_or_else(|| anyhow!("Failed to parse exif"))?;
+        assert_eq!(info.gps, None);
+        assert_eq!(info.latitude, None);
+        assert_eq!(info.longitude, None);
         Ok(())
     }
 }
