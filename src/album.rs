@@ -169,7 +169,7 @@ pub(crate) struct Album {
     pub(crate) files: Vec<String>,
 }
 
-/// Get the Markdown and the number of photos actually rendered into it. Callers use the count to 
+/// Get the Markdown and the number of photos actually rendered into it. Callers use the count to
 /// skip writing albums that resolved to no usable media
 pub(crate) fn build_album_md(
     album: &Album,
@@ -245,7 +245,10 @@ mod tests {
         .collect();
         let a = parse_album(&c, &qsf, &media).ok_or_else(|| anyhow!("Failed to parse album"))?;
         assert_eq!(a.title, "ic-album-sample".to_string());
-        assert_eq!(a.desired_album_md_path, "albums/ic-album-sample.md".to_string());
+        assert_eq!(
+            a.desired_album_md_path,
+            "albums/ic-album-sample.md".to_string()
+        );
         assert_eq!(a.files.len(), 5);
         assert_eq!(
             a.files.first().ok_or_else(|| anyhow!("Album empty"))?,
@@ -333,8 +336,7 @@ mod tests {
             None,
             0,
         );
-        let a =
-            parse_album(&c, &qsf, &[photo]).ok_or_else(|| anyhow!("Failed to parse album"))?;
+        let a = parse_album(&c, &qsf, &[photo]).ok_or_else(|| anyhow!("Failed to parse album"))?;
         assert_eq!(a.title, "empty-title-album".to_string());
         Ok(())
     }
