@@ -38,28 +38,28 @@ You will need to install Rust and Cargo, follow the instructions on the [Rust in
 Then build the project from source.
 
 ```shell
-cargo install --git https://github.com/paultuckey/photo-sorter.git photo-sorter
+cargo install --git https://github.com/paultuckey/tasync.git tasync
 ```
 
 ## Usage
 
 ```shell
-photo-sorter --help
+tasync --help
 ```
 
 ```shell
-photo-sorter info --debug --root "test" --input "Canon_40D.jpg"
+tasync info --debug --root "test" --input "Canon_40D.jpg"
 ```
 
 ```shell
-photo-sorter \
+tasync \
   sync --debug --dry-run \
     --input "input/takeout-20250614T030613Z-1-001.zip" \
     --output "output/archive"
 ```
 
 ```shell
-photo-sorter sync --debug --input "input/Takeout-small" --output "output/archive-small"
+tasync sync --debug --input "input/Takeout-small" --output "output/archive-small"
 ```
 
 ## FAQ

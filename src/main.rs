@@ -23,7 +23,7 @@ use tracing_subscriber::util::SubscriberInitExt;
 
 /// The binary / command name, used wherever the tool labels its own output
 /// (generated-file markers, docs, etc.).
-pub(crate) const COMMAND_NAME: &str = "photo-sorter";
+pub(crate) const COMMAND_NAME: &str = "tasync";
 
 #[derive(Parser)]
 #[command(version, about, long_about = None)]

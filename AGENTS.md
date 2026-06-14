@@ -1,10 +1,10 @@
 # AGENTS.md
 
-This file provides context and guidelines for AI agents and developers working on the `photo-sorter` codebase.
+This file provides context and guidelines for AI agents and developers working on the `tasync` codebase.
 
 ## Project Overview
 
-`photo-sorter` is a CLI tool designed to organize photos and videos from Google Takeout and iCloud archives. It standardizes directory structures (year/month/day), handles duplicates via checksums, and generates Markdown files with metadata for each media item and album.
+`tasync` (Takeout Archive Sync) is a CLI tool designed to organize photos and videos from Google Takeout and iCloud archives. It standardizes directory structures (year/month/day), handles duplicates via checksums, and generates Markdown files with metadata for each media item and album.
 
 ## Tech Stack
 
