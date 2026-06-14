@@ -5,7 +5,7 @@ use crate::fs::{FileSystem, OsFileSystem};
 use crate::markdown::{assemble_markdown, mfm_from_media_file_info};
 use crate::media::media_file_info_from_readable;
 use crate::supplemental_info::{detect_supplemental_info, load_supplemental_info};
-use crate::sync_cmd::inspect_media;
+use crate::inspect::inspect_media;
 use crate::util::{ScanInfo, checksum_bytes, scan_fs};
 use anyhow::anyhow;
 use std::collections::HashMap;
