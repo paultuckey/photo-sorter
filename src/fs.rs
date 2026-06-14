@@ -299,8 +299,12 @@ mod tests {
             zip_writer.finish()?;
         }
 
-        let path = temp_file.path().to_str().unwrap();
-        let fs = ZipFileSystem::new(path, FixedOffset::east_opt(0).unwrap())?;
+        let path = temp_file
+            .path()
+            .to_str()
+            .ok_or_else(|| anyhow!("temp file path is not valid UTF-8"))?;
+        let offset = FixedOffset::east_opt(0).ok_or_else(|| anyhow!("invalid timezone offset"))?;
+        let fs = ZipFileSystem::new(path, offset)?;
 
         // Test large file (should stream)
         let mut reader = fs.open("large.txt")?;

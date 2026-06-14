@@ -184,16 +184,18 @@ mod cli_docs {
 
     /// Render the exact text `<args>` would print, by driving clap the same way
     /// the real binary does and capturing the resulting help "error".
-    fn render_help(args: &[&str]) -> String {
-        let err = Cli::command()
+    fn render_help(args: &[&str]) -> anyhow::Result<String> {
+        match Cli::command()
             .color(clap::ColorChoice::Never)
             .term_width(DOC_WIDTH)
             .try_get_matches_from(args.iter().copied())
-            .expect_err("--help should produce a DisplayHelp error");
-        err.render().to_string()
+        {
+            Ok(_) => anyhow::bail!("--help should produce a DisplayHelp error"),
+            Err(err) => Ok(err.render().to_string()),
+        }
     }
 
-    fn generate() -> String {
+    fn generate() -> anyhow::Result<String> {
         let mut out = String::new();
         out.push_str("# CLI reference\n\n");
         out.push_str(&format!(
@@ -204,7 +206,7 @@ mod cli_docs {
         );
 
         out.push_str(&format!("## {BIN}\n\n```\n"));
-        out.push_str(render_help(&[BIN, "--help"]).trim_end());
+        out.push_str(render_help(&[BIN, "--help"])?.trim_end());
         out.push_str("\n```\n");
 
         // Discover subcommands from the command model so new commands are
@@ -217,22 +219,22 @@ mod cli_docs {
 
         for sub in subcommands {
             out.push_str(&format!("\n## {BIN} {sub}\n\n```\n"));
-            out.push_str(render_help(&[BIN, &sub, "--help"]).trim_end());
+            out.push_str(render_help(&[BIN, &sub, "--help"])?.trim_end());
             out.push_str("\n```\n");
         }
-        out
+        Ok(out)
     }
 
     #[test]
-    fn cli_docs_up_to_date() {
-        let generated = generate();
+    fn cli_docs_up_to_date() -> anyhow::Result<()> {
+        let generated = generate()?;
 
         if std::env::var_os("UPDATE_DOCS").is_some() {
             if let Some(dir) = std::path::Path::new(DOC_PATH).parent() {
-                std::fs::create_dir_all(dir).expect("create docs dir");
+                std::fs::create_dir_all(dir)?;
             }
-            std::fs::write(DOC_PATH, &generated).expect("write docs/cli.md");
-            return;
+            std::fs::write(DOC_PATH, &generated)?;
+            return Ok(());
         }
 
         let existing = std::fs::read_to_string(DOC_PATH).unwrap_or_default();
@@ -240,5 +242,6 @@ mod cli_docs {
             existing, generated,
             "{DOC_PATH} is out of date. Regenerate with:\n\n    UPDATE_DOCS=1 cargo test\n"
         );
+        Ok(())
     }
 }

@@ -189,7 +189,7 @@ mod tests {
     #[test]
     fn test_resolve_no_collision_uses_bare_name() -> anyhow::Result<()> {
         // Nothing exists at the desired path, so it is written as-is.
-        let c = OsFileSystem::new(&"test".to_string());
+        let c = OsFileSystem::new("test");
         let mfi = MediaFileInfo::new_for_test();
         let derived =
             MediaFileDerivedInfo::new_for_test(Some("duplicates/fresh-name".to_string()), "txt");
@@ -205,7 +205,7 @@ mod tests {
     fn test_resolve_base_collision_uses_short_checksum() -> anyhow::Result<()> {
         // `duplicates/one.txt` exists with different content, so we go straight
         // to the short-checksum suffix (no -1/-2 counter).
-        let c = OsFileSystem::new(&"test".to_string());
+        let c = OsFileSystem::new("test");
         let mfi = MediaFileInfo::new_for_test();
         let derived = MediaFileDerivedInfo::new_for_test(Some("duplicates/one".to_string()), "txt");
         let res = Deduplicator::resolve_output_path(&mfi, &derived, &c)?;
@@ -220,7 +220,7 @@ mod tests {
     fn test_resolve_short_checksum_collision_falls_back_to_long() -> anyhow::Result<()> {
         // Both `short-clash.txt` and `short-clash-tsc.txt` exist with different
         // content, so the long checksum is used.
-        let c = OsFileSystem::new(&"test".to_string());
+        let c = OsFileSystem::new("test");
         let mfi = MediaFileInfo::new_for_test();
         let derived =
             MediaFileDerivedInfo::new_for_test(Some("duplicates/short-clash".to_string()), "txt");
@@ -236,7 +236,7 @@ mod tests {
     fn test_resolve_all_candidates_taken_errors() -> anyhow::Result<()> {
         // The bare, short- and long-checksum names all exist with different
         // content, so there is nowhere to write.
-        let c = OsFileSystem::new(&"test".to_string());
+        let c = OsFileSystem::new("test");
         let mfi = MediaFileInfo::new_for_test();
         let derived =
             MediaFileDerivedInfo::new_for_test(Some("duplicates/too-many".to_string()), "txt");
@@ -249,7 +249,7 @@ mod tests {
     fn test_resolve_skips_when_identical_file_exists() -> anyhow::Result<()> {
         // The desired path already holds a byte-identical file (matching long
         // checksum), so there is nothing to write.
-        let c = OsFileSystem::new(&"test".to_string());
+        let c = OsFileSystem::new("test");
         let mut mfi = MediaFileInfo::new_for_test();
         mfi.hash_info = HashInfo {
             short_checksum: "6bfdabd".to_string(),

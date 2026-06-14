@@ -140,10 +140,10 @@ mod tests {
     #[test]
     fn test_parse_exif_mp4() -> anyhow::Result<()> {
         crate::test_util::setup_log();
-        let c = OsFileSystem::new(&"test".to_string());
-        let reader = c.open(&"Hello.mp4".to_string())?;
+        let c = OsFileSystem::new("test");
+        let reader = c.open("Hello.mp4")?;
         let t = parse_exif_info(reader);
-        assert_eq!(t.is_none(), true);
+        assert!(t.is_none());
         Ok(())
     }
 

@@ -82,16 +82,21 @@ fn between(s: &str, open: char, close: char) -> &str {
     &s[start..end]
 }
 
-fn parse_table(create_sql: &str) -> Table {
+fn parse_table(create_sql: &str) -> anyhow::Result<Table> {
+    use anyhow::anyhow;
     let sql = strip_comments(create_sql);
-    let open = sql.find('(').expect("CREATE TABLE has an opening paren");
-    let close = sql.rfind(')').expect("CREATE TABLE has a closing paren");
+    let open = sql
+        .find('(')
+        .ok_or_else(|| anyhow!("CREATE TABLE has an opening paren"))?;
+    let close = sql
+        .rfind(')')
+        .ok_or_else(|| anyhow!("CREATE TABLE has a closing paren"))?;
 
     // The table name is the last whitespace-delimited token before `(`.
     let name = sql[..open]
         .split_whitespace()
         .last()
-        .expect("table name")
+        .ok_or_else(|| anyhow!("table name"))?
         .to_string();
 
     let mut columns = Vec::new();
@@ -102,7 +107,10 @@ fn parse_table(create_sql: &str) -> Table {
         if upper.starts_with("FOREIGN KEY") {
             // FOREIGN KEY(col) REFERENCES ref_table(ref_col)
             let column = between(&part, '(', ')').trim().to_string();
-            let after = &part[upper.find("REFERENCES").unwrap() + "REFERENCES".len()..];
+            let references = upper
+                .find("REFERENCES")
+                .ok_or_else(|| anyhow!("FOREIGN KEY clause missing REFERENCES"))?;
+            let after = &part[references + "REFERENCES".len()..];
             let ref_table = after
                 .trim_start()
                 .split(|c: char| c == '(' || c.is_whitespace())
@@ -149,15 +157,18 @@ fn parse_table(create_sql: &str) -> Table {
         }
     }
 
-    Table {
+    Ok(Table {
         name,
         columns,
         foreign_keys,
-    }
+    })
 }
 
-fn generate() -> String {
-    let tables: Vec<Table> = create_statements().iter().map(|s| parse_table(s)).collect();
+fn generate() -> anyhow::Result<String> {
+    let tables: Vec<Table> = create_statements()
+        .iter()
+        .map(|s| parse_table(s))
+        .collect::<anyhow::Result<_>>()?;
 
     let mut out = String::new();
     out.push_str("# Database schema\n\n");
@@ -191,19 +202,19 @@ fn generate() -> String {
         out.push_str("    }\n");
     }
     out.push_str("```\n");
-    out
+    Ok(out)
 }
 
 #[test]
-fn db_schema_docs_up_to_date() {
-    let generated = generate();
+fn db_schema_docs_up_to_date() -> anyhow::Result<()> {
+    let generated = generate()?;
 
     if std::env::var_os("UPDATE_DOCS").is_some() {
         if let Some(dir) = std::path::Path::new(DOC_PATH).parent() {
-            std::fs::create_dir_all(dir).expect("create docs dir");
+            std::fs::create_dir_all(dir)?;
         }
-        std::fs::write(DOC_PATH, &generated).expect("write docs/db-schema.md");
-        return;
+        std::fs::write(DOC_PATH, &generated)?;
+        return Ok(());
     }
 
     let existing = std::fs::read_to_string(DOC_PATH).unwrap_or_default();
@@ -211,4 +222,5 @@ fn db_schema_docs_up_to_date() {
         existing, generated,
         "{DOC_PATH} is out of date. Regenerate with:\n\n    UPDATE_DOCS=1 cargo test\n"
     );
+    Ok(())
 }
