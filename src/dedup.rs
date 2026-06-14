@@ -16,10 +16,10 @@ pub(crate) enum DeDuplicationResult {
 
 /// Collects inspected media and removes duplicates. It performs two jobs:
 ///
-/// 1. *Content dedup* — files that share a long (sha256) checksum are the same
+/// 1. *Content dedup* - files that share a long (sha256) checksum are the same
 ///    bytes. [`Deduplicator::add`] keeps a single entry per checksum and records every original
 ///    path that resolved to it.
-/// 2. *Path dedup* — [`Deduplicator::resolve_output_path`] finds a free name in
+/// 2. *Path dedup* - [`Deduplicator::resolve_output_path`] finds a free name in
 ///    the output directory, reusing an existing file when its checksum matches
 ///    and otherwise suffixing the name with the file's own checksum.
 ///
@@ -73,13 +73,13 @@ impl Deduplicator {
     /// in `output_container`.
     ///
     /// Candidate names are tried in this order:
-    ///   1. the bare desired path (`date/hhmm-ssms`) — keeps the readable name
+    ///   1. the bare desired path (`date/hhmm-ssms`) - keeps the readable name
     ///      for the common, no-collision case;
-    ///   2. desired path + `-<short checksum>` — used as soon as the bare name is
+    ///   2. desired path + `-<short checksum>` - used as soon as the bare name is
     ///      taken by *different* content. The suffix comes from the file's own
     ///      bytes, so a file's collision name never depends on processing order
     ///      or on what else happens to land on the same name;
-    ///   3. desired path + `-<long checksum>` — last resort for the
+    ///   3. desired path + `-<long checksum>` - last resort for the
     ///      (astronomically unlikely) case of two different files sharing a
     ///      short checksum.
     ///

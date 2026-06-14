@@ -111,7 +111,7 @@ fn parse_json_album(
 ) -> Option<Album> {
     let directory_path_str = dir_part(&si.file_path);
     // Google Takeout drops a `metadata.json` into every `Photos from YYYY`
-    // folder, but those are not real albums — they mirror the year-based
+    // folder, but those are not real albums - they mirror the year-based
     // directory structure we already produce. Treating them as albums would
     // make one giant album per year, so skip them.
     if let Some(KnownDir::GpPhotosFromYear(_)) = classify_dir(&directory_path_str) {
