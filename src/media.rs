@@ -183,6 +183,41 @@ pub(crate) fn get_desired_media_path(
 }
 
 #[cfg(test)]
+impl MediaFileInfo {
+    pub(crate) fn new_for_test() -> Self {
+        MediaFileInfo {
+            original_file_this_run: "".to_string(),
+            original_path: vec![],
+            quick_file_type: QuickFileType::Media,
+            exif_info: None,
+            track_info: None,
+            accurate_file_type: AccurateFileType::Jpg,
+            hash_info: HashInfo {
+                short_checksum: "tsc".to_string(),
+                long_checksum: "tlc".to_string(),
+            },
+            supp_info: None,
+            modified: None,
+            created: None,
+            file_size: 0,
+        }
+    }
+}
+
+#[cfg(test)]
+impl MediaFileDerivedInfo {
+    pub(crate) fn new_for_test(
+        desired_media_path: Option<String>,
+        desired_media_extension: &str,
+    ) -> Self {
+        MediaFileDerivedInfo {
+            desired_media_path,
+            desired_media_extension: desired_media_extension.to_string(),
+        }
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::fs::OsFileSystem;
@@ -262,40 +297,5 @@ mod tests {
         let duration = start.elapsed();
         println!("Time taken for 100 iterations: {:?}", duration);
         Ok(())
-    }
-}
-
-#[cfg(test)]
-impl MediaFileInfo {
-    pub(crate) fn new_for_test() -> Self {
-        MediaFileInfo {
-            original_file_this_run: "".to_string(),
-            original_path: vec![],
-            quick_file_type: QuickFileType::Media,
-            exif_info: None,
-            track_info: None,
-            accurate_file_type: AccurateFileType::Jpg,
-            hash_info: HashInfo {
-                short_checksum: "tsc".to_string(),
-                long_checksum: "tlc".to_string(),
-            },
-            supp_info: None,
-            modified: None,
-            created: None,
-            file_size: 0,
-        }
-    }
-}
-
-#[cfg(test)]
-impl MediaFileDerivedInfo {
-    pub(crate) fn new_for_test(
-        desired_media_path: Option<String>,
-        desired_media_extension: &str,
-    ) -> Self {
-        MediaFileDerivedInfo {
-            desired_media_path,
-            desired_media_extension: desired_media_extension.to_string(),
-        }
     }
 }
