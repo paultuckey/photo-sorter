@@ -132,7 +132,9 @@ fn parse_json_album(
         let title_res = j.get("title");
         if let Some(title_value) = title_res {
             debug!("  Found album title: {title_value}");
-            title = Some(title_value.as_str().unwrap_or("").to_string());
+            // An empty/whitespace title falls back to the directory name below.
+            let t = title_value.as_str().unwrap_or("").trim().to_string();
+            title = if t.is_empty() { None } else { Some(t) };
         } else {
             warn!("Title not found in JSON, skipping {:?}", &si.file_path);
             return None;
@@ -167,13 +169,16 @@ pub(crate) struct Album {
     pub(crate) files: Vec<String>,
 }
 
+/// Get the Markdown and the number of photos actually rendered into it. Callers use the count to 
+/// skip writing albums that resolved to no usable media
 pub(crate) fn build_album_md(
     album: &Album,
     all_media_o: Option<&HashMap<String, MediaFileInfo>>,
     media_relative_path: &str,
     final_path_by_checksum: Option<&HashMap<String, String>>,
-) -> String {
+) -> (String, usize) {
     let mut md = String::new();
+    let mut resolved_count = 0;
     let generated_warning =
         "\n\n\n[ This file is a GENERATED album, do NOT edit it directly ]: #\n\n\n";
     // todo: in yaml front matter for media link back to album
@@ -206,12 +211,13 @@ pub(crate) fn build_album_md(
             let alt_text = "Photo";
             let path = format!("{media_relative_path}{target_path}");
             md.push_str(&format!("\n![{alt_text}]({path})"));
+            resolved_count += 1;
         } else {
             warn!("Target path empty: {f}");
         }
     }
     md.push_str("\n\n");
-    md
+    (md, resolved_count)
 }
 
 #[cfg(test)]
@@ -309,13 +315,39 @@ mod tests {
     }
 
     #[test]
+    fn test_g_empty_title_falls_back_to_dir_name() -> anyhow::Result<()> {
+        use anyhow::anyhow;
+        crate::test_util::setup_log();
+        // The album's metadata.json has an empty title, so the album should
+        // be named after its containing directory rather than left blank.
+        let c = OsFileSystem::new("test/takeout1");
+        let qsf = ScanInfo::new(
+            "Google Photos/empty-title-album/metadata.json".to_string(),
+            None,
+            None,
+            0,
+        );
+        let photo = ScanInfo::new(
+            "Google Photos/empty-title-album/test1.jpg".to_string(),
+            None,
+            None,
+            0,
+        );
+        let a =
+            parse_album(&c, &qsf, &[photo]).ok_or_else(|| anyhow!("Failed to parse album"))?;
+        assert_eq!(a.title, "empty-title-album".to_string());
+        Ok(())
+    }
+
+    #[test]
     fn test_build_album_md_no_media_info() {
         let album = Album {
             desired_album_md_path: "albums/test.md".to_string(),
             title: "Test Album".to_string(),
             files: vec!["file1.jpg".to_string(), "file2.jpg".to_string()],
         };
-        let md = build_album_md(&album, None, "../media/", None);
+        let (md, rendered) = build_album_md(&album, None, "../media/", None);
+        assert_eq!(rendered, 2);
         assert!(md.contains("# Test Album"));
         assert!(md.contains("![Photo](../media/file1.jpg)"));
         assert!(md.contains("![Photo](../media/file2.jpg)"));
@@ -338,12 +370,13 @@ mod tests {
         let mut final_path_by_checksum = HashMap::new();
         final_path_by_checksum.insert("longhash1".to_string(), "2023/01/file1.jpg".to_string());
 
-        let md = build_album_md(
+        let (md, rendered) = build_album_md(
             &album,
             Some(&all_media),
             "../media/",
             Some(&final_path_by_checksum),
         );
+        assert_eq!(rendered, 1);
         assert!(md.contains("# Test Album"));
         assert!(md.contains("![Photo](../media/2023/01/file1.jpg)"));
     }
@@ -358,12 +391,13 @@ mod tests {
         let all_media = HashMap::new(); // Empty
         let final_path_by_checksum = HashMap::new();
 
-        let md = build_album_md(
+        let (md, rendered) = build_album_md(
             &album,
             Some(&all_media),
             "../media/",
             Some(&final_path_by_checksum),
         );
+        assert_eq!(rendered, 0);
         assert!(md.contains("# Test Album"));
         assert!(!md.contains("![Photo]")); // Should be skipped
     }
@@ -384,12 +418,13 @@ mod tests {
 
         let final_path_by_checksum = HashMap::new(); // Empty, so lookup fails
 
-        let md = build_album_md(
+        let (md, rendered) = build_album_md(
             &album,
             Some(&all_media),
             "../media/",
             Some(&final_path_by_checksum),
         );
+        assert_eq!(rendered, 0);
         assert!(md.contains("# Test Album"));
         assert!(!md.contains("![Photo]")); // Should be skipped
     }

@@ -48,7 +48,7 @@ pub(crate) fn main(
         output_container_o = Some(output_container);
     }
     let mut deduper = Deduplicator::new();
-    let mut final_path_by_original_path = HashMap::<String, String>::new();
+    let mut final_path_by_checksum = HashMap::<String, String>::new();
 
     if !skip_media {
         let media_si_files: Vec<ScanInfo> = files
@@ -84,8 +84,7 @@ pub(crate) fn main(
                 match write_r {
                     Ok(final_path) => {
                         let long_checksum = &media.hash_info.long_checksum;
-                        final_path_by_original_path
-                            .insert(long_checksum.clone(), final_path.clone());
+                        final_path_by_checksum.insert(long_checksum.clone(), final_path.clone());
                         if !skip_markdown {
                             let sync_md_r =
                                 sync_markdown(dry_run, media, &derived, output_container);
@@ -119,7 +118,7 @@ pub(crate) fn main(
             .collect::<Vec<&ScanInfo>>();
         info!("Inspecting {} album files", scan_info_albums.len());
         let mut albums = vec![];
-        let prog = Progress::new(deduper.count() as u64);
+        let prog = Progress::new(scan_info_albums.len() as u64);
         for si in scan_info_albums {
             prog.inc();
             let album_o = parse_album(container.as_ref(), si, &files);
@@ -133,17 +132,21 @@ pub(crate) fn main(
         if let Some(ref output_container) = output_container_o {
             info!("Outputting {} albums", albums.len());
             for album in albums {
-                let a_s = build_album_md(
+                let (md, resolved_count) = build_album_md(
                     &album,
                     Some(deduper.by_checksum()),
                     "../",
-                    Some(&final_path_by_original_path),
+                    Some(&final_path_by_checksum),
                 );
                 let output_path = &album.desired_album_md_path;
+                if resolved_count == 0 {
+                    warn!("Skipping album with no resolvable photos: {output_path:?}");
+                    continue;
+                }
                 if output_container.exists(&album.desired_album_md_path) {
                     debug!("  Album markdown file already exists, clobbering, at {output_path:?}");
                 }
-                let bytes = a_s.as_bytes().to_vec();
+                let bytes = md.as_bytes().to_vec();
                 output_container.write(dry_run, output_path, Cursor::new(bytes));
             }
         }

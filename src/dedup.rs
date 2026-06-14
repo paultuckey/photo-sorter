@@ -51,11 +51,6 @@ impl Deduplicator {
         }
     }
 
-    /// Number of unique (deduplicated) media files collected so far.
-    pub(crate) fn count(&self) -> usize {
-        self.by_checksum.len()
-    }
-
     /// The deduplicated media keyed by long checksum, for callers (albums) that
     /// look entries up by content hash.
     pub(crate) fn by_checksum(&self) -> &HashMap<String, MediaFileInfo> {
@@ -276,7 +271,7 @@ mod tests {
         d.add(media_with("a/photo.jpg", "hashX"));
         d.add(media_with("b/photo.jpg", "hashX"));
 
-        assert_eq!(d.count(), 1);
+        assert_eq!(d.by_checksum().len(), 1);
         let entry = d
             .by_checksum()
             .get("hashX")
