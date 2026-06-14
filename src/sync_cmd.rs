@@ -1,4 +1,4 @@
-use crate::album::{build_album_md, parse_album};
+use crate::album::{Album, build_album_md, parse_album, split_album_notes};
 use crate::dedup::{DeDuplicationResult, Deduplicator};
 use crate::file_type::QuickFileType;
 use crate::fs::{FileSystem, OsFileSystem, ZipFileSystem};
@@ -9,7 +9,7 @@ use crate::progress::Progress;
 use crate::util::{ScanInfo, scan_fs};
 use anyhow::anyhow;
 use std::collections::HashMap;
-use std::io::Cursor;
+use std::io::{Cursor, Read};
 use std::path::Path;
 use std::sync::Arc;
 use tracing::{debug, info, warn};
@@ -50,6 +50,16 @@ pub(crate) fn main(
     let mut deduper = Deduplicator::new();
     let mut final_path_by_checksum = HashMap::<String, String>::new();
 
+    // Albums are parsed up front so each photo's sidecar can record the albums it
+    // belongs to. The album markdown files themselves are written later, once the
+    // final media output paths are known.
+    let albums = if skip_albums {
+        Vec::new()
+    } else {
+        parse_albums(container.as_ref(), &files)
+    };
+    let album_names_by_path = build_album_membership(&albums);
+
     if !skip_media {
         let media_si_files: Vec<ScanInfo> = files
             .iter()
@@ -86,8 +96,15 @@ pub(crate) fn main(
                         let long_checksum = &media.hash_info.long_checksum;
                         final_path_by_checksum.insert(long_checksum.clone(), final_path.clone());
                         if !skip_markdown {
-                            let sync_md_r =
-                                sync_markdown(dry_run, media, &derived, output_container);
+                            let album_names =
+                                album_names_for(&album_names_by_path, &media.original_path);
+                            let sync_md_r = sync_markdown(
+                                dry_run,
+                                media,
+                                &derived,
+                                &album_names,
+                                output_container,
+                            );
                             if let Err(e) = sync_md_r {
                                 warn!(
                                     "Error writing markdown file: {:?}, error: {}",
@@ -108,51 +125,112 @@ pub(crate) fn main(
         }
     }
 
-    if !skip_albums {
-        let scan_info_albums = files
-            .iter()
-            .filter(|m| {
-                m.quick_file_type == QuickFileType::AlbumCsv
-                    || m.quick_file_type == QuickFileType::AlbumJson
-            })
-            .collect::<Vec<&ScanInfo>>();
-        info!("Inspecting {} album files", scan_info_albums.len());
-        let mut albums = vec![];
-        let prog = Progress::new(scan_info_albums.len() as u64);
-        for si in scan_info_albums {
-            prog.inc();
-            let album_o = parse_album(container.as_ref(), si, &files);
-            let Some(album) = album_o else {
+    if !skip_albums && let Some(ref output_container) = output_container_o {
+        info!("Outputting {} albums", albums.len());
+        for album in &albums {
+            let output_path = &album.desired_album_md_path;
+            // Preserve any notes the user wrote below the marker before rebuilding.
+            let existing_notes = read_album_notes(output_container, output_path);
+            let (md, resolved_count) = build_album_md(
+                album,
+                Some(deduper.by_checksum()),
+                "../",
+                Some(&final_path_by_checksum),
+                &existing_notes,
+            );
+            if resolved_count == 0 {
+                warn!("Skipping album with no resolvable photos: {output_path:?}");
                 continue;
-            };
-            albums.push(album);
-        }
-        drop(prog);
-
-        if let Some(ref output_container) = output_container_o {
-            info!("Outputting {} albums", albums.len());
-            for album in albums {
-                let (md, resolved_count) = build_album_md(
-                    &album,
-                    Some(deduper.by_checksum()),
-                    "../",
-                    Some(&final_path_by_checksum),
-                );
-                let output_path = &album.desired_album_md_path;
-                if resolved_count == 0 {
-                    warn!("Skipping album with no resolvable photos: {output_path:?}");
-                    continue;
-                }
-                if output_container.exists(&album.desired_album_md_path) {
-                    debug!("  Album markdown file already exists, clobbering, at {output_path:?}");
-                }
-                let bytes = md.as_bytes().to_vec();
-                output_container.write(dry_run, output_path, Cursor::new(bytes));
             }
+            if output_container.exists(output_path) {
+                debug!(
+                    "  Album markdown file already exists, rewriting (notes preserved) at {output_path:?}"
+                );
+            }
+            let bytes = md.as_bytes().to_vec();
+            output_container.write(dry_run, output_path, Cursor::new(bytes));
         }
     }
 
     Ok(())
+}
+
+/// Parse all album files in the scan into `Album`s, logging progress.
+fn parse_albums(container: &dyn FileSystem, files: &[ScanInfo]) -> Vec<Album> {
+    let scan_info_albums = files
+        .iter()
+        .filter(|m| {
+            m.quick_file_type == QuickFileType::AlbumCsv
+                || m.quick_file_type == QuickFileType::AlbumJson
+        })
+        .collect::<Vec<&ScanInfo>>();
+    info!("Inspecting {} album files", scan_info_albums.len());
+    let prog = Progress::new(scan_info_albums.len() as u64);
+    let mut albums = Vec::new();
+    for si in scan_info_albums {
+        prog.inc();
+        if let Some(album) = parse_album(container, si, files) {
+            albums.push(album);
+        }
+    }
+    drop(prog);
+    albums
+}
+
+/// Map each original (source) media path to the album link names it belongs to,
+/// so a photo's sidecar can list the albums it is part of.
+fn build_album_membership(albums: &[Album]) -> HashMap<String, Vec<String>> {
+    let mut by_path: HashMap<String, Vec<String>> = HashMap::new();
+    for album in albums {
+        let name = album_link_name(&album.desired_album_md_path);
+        for file in &album.files {
+            by_path.entry(file.clone()).or_default().push(name.clone());
+        }
+    }
+    by_path
+}
+
+/// The album's vault link name: its file basename without the `albums/` folder or
+/// `.md` extension (e.g. `albums/Trip.md` -> `Trip`).
+fn album_link_name(desired_album_md_path: &str) -> String {
+    let name = desired_album_md_path
+        .strip_prefix("albums/")
+        .unwrap_or(desired_album_md_path);
+    name.strip_suffix(".md").unwrap_or(name).to_string()
+}
+
+/// Album names (deduplicated, order preserved) for a media file given all of its
+/// original paths.
+fn album_names_for(
+    album_names_by_path: &HashMap<String, Vec<String>>,
+    original_paths: &[String],
+) -> Vec<String> {
+    let mut names: Vec<String> = Vec::new();
+    for path in original_paths {
+        if let Some(album_names) = album_names_by_path.get(path) {
+            for name in album_names {
+                if !names.contains(name) {
+                    names.push(name.clone());
+                }
+            }
+        }
+    }
+    names
+}
+
+/// Read the user-authored notes section from an existing album file, if any.
+fn read_album_notes(output_container: &OsFileSystem, path: &str) -> String {
+    if !output_container.exists(path) {
+        return String::new();
+    }
+    let Ok(mut reader) = output_container.open(path) else {
+        return String::new();
+    };
+    let mut bytes = Vec::new();
+    if reader.read_to_end(&mut bytes).is_err() {
+        return String::new();
+    }
+    split_album_notes(&String::from_utf8_lossy(&bytes))
 }
 
 pub(crate) fn write_media(
@@ -162,13 +240,12 @@ pub(crate) fn write_media(
     input_container: &dyn FileSystem,
     output_container: &OsFileSystem,
 ) -> anyhow::Result<String> {
-    info!("Output {:?}", derived.desired_media_path);
-
     let desired_output_path_with_ext =
         match Deduplicator::resolve_output_path(media_file, derived, output_container)? {
             DeDuplicationResult::SkipWrite(path) => return Ok(path),
             DeDuplicationResult::WritePath(path) => path,
         };
+    info!("Output {:?}", desired_output_path_with_ext);
     let reader = input_container.open(&media_file.original_file_this_run)?;
     output_container.write(dry_run, &desired_output_path_with_ext.clone(), reader);
     output_container.set_modified(

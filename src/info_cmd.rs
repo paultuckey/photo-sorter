@@ -34,10 +34,18 @@ pub(crate) fn media(si: &ScanInfo, root: &dyn FileSystem) -> anyhow::Result<Stri
 
     let mut out = String::new();
     writeln!(out, "Hash info:")?;
-    writeln!(out, " short checksum: {}", media_file_info.hash_info.short_checksum)?;
-    writeln!(out, " long checksum: {}", media_file_info.hash_info.long_checksum)?;
+    writeln!(
+        out,
+        " short checksum: {}",
+        media_file_info.hash_info.short_checksum
+    )?;
+    writeln!(
+        out,
+        " long checksum: {}",
+        media_file_info.hash_info.long_checksum
+    )?;
 
-    let mfm = mfm_from_media_file_info(&media_file_info);
+    let mfm = mfm_from_media_file_info(&media_file_info, &[]);
     let s = assemble_markdown(&mfm, &None, "")?.into_string();
     writeln!(out, "Markdown:")?;
     writeln!(out, "{s}")?;
@@ -81,7 +89,7 @@ pub(crate) fn album(si: &ScanInfo, root: &dyn FileSystem) -> anyhow::Result<Stri
     // The markdown links to the media's original paths (see `build_album_md`'s
     // `None` branch), so there's no need to inspect/hash the referenced media.
     writeln!(out, "Markdown:")?;
-    let (md, _) = build_album_md(&album, None, "", None);
+    let (md, _) = build_album_md(&album, None, "", None, "");
     writeln!(out, "{md}")?;
 
     Ok(out)
@@ -107,7 +115,12 @@ mod tests {
     fn test_info_album_google_takeout() -> anyhow::Result<()> {
         crate::test_util::setup_log();
         let root = OsFileSystem::new("test/takeout1");
-        let si = ScanInfo::new("Google Photos/album1/metadata.json".to_string(), None, None, 0);
+        let si = ScanInfo::new(
+            "Google Photos/album1/metadata.json".to_string(),
+            None,
+            None,
+            0,
+        );
         let out = album(&si, &root)?;
         assert!(out.contains("Album:"));
         assert!(out.contains("title: Some album title"));
