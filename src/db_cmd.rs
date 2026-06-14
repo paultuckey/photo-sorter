@@ -562,3 +562,8 @@ mod tests {
         Ok(())
     }
 }
+
+/// Test-only: generates `docs/db-schema.md` from the `CREATE TABLE` statements
+/// above and verifies the committed copy is current.
+#[cfg(test)]
+mod db_schema_docs;

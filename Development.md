@@ -24,7 +24,7 @@ cargo fmt
 ```
 
 ```shell
-cargo clippy
+cargo clippy --tests
 ```
 
 ```shell
@@ -131,10 +131,10 @@ exiftool "input/iCloud Photos/Photos/IMG_3986.HEIC" > b.txt
 
 ## Update docs
 
-Update `docs/cli.md`:
+Update `docs/cli.md` and `docs/db-schema.md`:
 
 ```shell
-UPDATE_CLI_DOCS=1 cargo test
+UPDATE_DOCS=1 cargo test
 ```
 
 ## Notes
