@@ -118,6 +118,7 @@ fn db_classify_paths(conn: &Connection, files: &[ScanInfo]) -> anyhow::Result<()
                 si.quick_file_type.to_string(),
                 known.as_ref().map(|k| k.to_string()),
                 known.as_ref().and_then(|k| k.value()),
+                si.file_size as i64,
             ))?;
         }
 
@@ -175,6 +176,7 @@ fn db_record(conn: &Connection, info: &MediaFileInfo) -> anyhow::Result<()> {
         quick_file_type: info.quick_file_type.clone().to_string(),
         accurate_file_type: info.accurate_file_type.clone().to_string(),
         guessed_datetime,
+        file_size: info.file_size as i64,
     };
     let mut stmt = conn.prepare_cached(DB_MEDIA_ITEM_INSERT)?;
     stmt.execute((
@@ -187,6 +189,7 @@ fn db_record(conn: &Connection, info: &MediaFileInfo) -> anyhow::Result<()> {
         &item.guessed_datetime,
         &item.modified_at,
         &item.created_at,
+        &item.file_size,
     ))?;
 
     Ok(())
@@ -204,6 +207,8 @@ struct DbMediaItem {
     guessed_datetime: Option<String>,
     modified_at: i64,
     created_at: i64,
+    // file size in bytes
+    file_size: i64,
 }
 const DB_MEDIA_ITEM_CREATE: &str = "
     CREATE TABLE IF NOT EXISTS media_item  (
@@ -216,13 +221,14 @@ const DB_MEDIA_ITEM_CREATE: &str = "
         media_info TEXT,
         guessed_datetime DATETIME,
         modified_at DATETIME DEFAULT CURRENT_TIMESTAMP, -- file last modified
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP -- file created
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP, -- file created
+        file_size INTEGER -- size of the file in bytes
     )
 ";
 const DB_MEDIA_ITEM_INSERT: &str = "
     INSERT INTO media_item (media_path, long_hash, short_hash, quick_file_type,
-        accurate_file_type, media_info, guessed_datetime, modified_at, created_at)
-    VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+        accurate_file_type, media_info, guessed_datetime, modified_at, created_at, file_size)
+    VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
 ";
 const DB_MEDIA_ITEM_DELETE_ALL: &str = "
     DELETE FROM media_item
@@ -261,12 +267,13 @@ const DB_CLASSIFIED_FILE_CREATE: &str = "
         file_path TEXT NOT NULL,
         quick_file_type TEXT,
         known_file_type TEXT, -- matched pattern variant, NULL if unmatched
-        known_file_type_value TEXT -- captured value (e.g. photo id), if any
+        known_file_type_value TEXT, -- captured value (e.g. photo id), if any
+        file_size INTEGER -- size of the file in bytes
     )
 ";
 const DB_CLASSIFIED_FILE_INSERT: &str = "
-    INSERT INTO classified_file (file_path, quick_file_type, known_file_type, known_file_type_value)
-    VALUES (?1, ?2, ?3, ?4)
+    INSERT INTO classified_file (file_path, quick_file_type, known_file_type, known_file_type_value, file_size)
+    VALUES (?1, ?2, ?3, ?4, ?5)
 ";
 const DB_CLASSIFIED_FILE_DELETE_ALL: &str = "DELETE FROM classified_file";
 
