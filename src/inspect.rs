@@ -1,17 +1,14 @@
 use crate::fs::FileSystem;
 use crate::media::{MediaFileInfo, media_file_info_from_readable};
 use crate::progress::Progress;
-use crate::supplemental_info::{
-    PsSupplementalInfo, detect_supplemental_info, load_supplemental_info,
-};
+use crate::supplemental_info::{detect_supplemental_info, load_supplemental_info};
 use crate::util::{ScanInfo, checksum_bytes};
 use anyhow::anyhow;
 use rayon::prelude::*;
-use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::mpsc::Receiver;
 use std::thread::JoinHandle;
-use tracing::{debug, info, warn};
+use tracing::debug;
 
 /// Hash and parse media files in parallel, yielding a [`MediaFileInfo`] as each
 /// one finishes.
@@ -93,7 +90,7 @@ impl Drop for InspectMediaIter {
 /// Inspect a single media file: load any supplemental info, checksum the bytes,
 /// then derive its type and metadata. Returns `Ok(None)` when the file isn't a
 /// supported media type, and `Err` when it can't be read or hashed.
-fn analyze_file(
+pub(crate) fn analyze_file(
     root: &dyn FileSystem,
     media_si: &ScanInfo,
 ) -> anyhow::Result<Option<MediaFileInfo>> {
@@ -121,42 +118,6 @@ fn analyze_file(
         Ok(media_info) => Ok(Some(media_info)),
         Err(_) => Ok(None),
     }
-}
-
-/// Take a media file and:
-/// - generate a checksum
-/// - check if it already exists in the media map
-/// - capture extra_info
-/// - populate exif data
-pub(crate) fn inspect_media(
-    si: &ScanInfo,
-    root: &dyn FileSystem,
-    all_media: &mut HashMap<String, MediaFileInfo>,
-    supp_info: &Option<PsSupplementalInfo>,
-) -> anyhow::Result<MediaFileInfo> {
-    info!("Inspect: {}", si.file_path);
-    let reader = root.open(&si.file_path.to_string())?;
-    let hash_info_o = checksum_bytes(reader).ok();
-    let Some(hash_info) = hash_info_o else {
-        warn!("Could not calculate checksum for: {:?}", si.file_path);
-        return Err(anyhow!(
-            "Could not calculate checksum for file: {:?}",
-            si.file_path
-        ));
-    };
-
-    debug!("  Checksum calculated: {}", hash_info.long_checksum);
-    if let Some(m) = all_media.get_mut(&hash_info.long_checksum) {
-        m.original_path.push(si.file_path.clone());
-        return Ok(m.clone());
-    }
-    let media_file_info_res = media_file_info_from_readable(si, root, supp_info, &hash_info);
-    let Ok(media_file) = media_file_info_res else {
-        warn!("Could not calculate info for: {:?}", si.file_path);
-        return Err(anyhow!("File type unsupported: {:?}", si.file_path));
-    };
-    all_media.insert(hash_info.long_checksum.clone(), media_file.clone());
-    Ok(media_file)
 }
 
 #[cfg(test)]
