@@ -1,4 +1,4 @@
-use nom_exif::{ExifIter, ExifTag, MediaParser, MediaSource, ParsedExifEntry};
+use nom_exif::{ExifIter, ExifIterEntry, ExifTag, MediaKind, MediaParser, MediaSource};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::io::{Read, Seek};
@@ -32,20 +32,20 @@ pub(crate) fn parse_exif_info<R: Read + Seek>(reader: R) -> Option<PsExifInfo> {
         debug!("Could not create MediaSource");
         return None;
     };
-    if !ms.has_exif() {
+    if ms.kind() != MediaKind::Image {
         debug!("File does not mave exif metadata");
         return None;
     }
     let mut m = HashMap::new();
     let mut parser = MediaParser::new();
-    let exif_iter_r: nom_exif::Result<ExifIter> = parser.parse(ms);
+    let exif_iter_r: nom_exif::Result<ExifIter> = parser.parse_exif(ms);
     let mut ps_gps_info = None;
     let mut lat = None;
     let mut long = None;
     match exif_iter_r {
         Ok(exif_iter) => {
             for entry in exif_iter.clone() {
-                let Some(tag_enum) = entry.tag() else {
+                let Some(tag_enum) = entry.tag().tag() else {
                     continue; // skip unrecognised tags
                 };
                 let tag_name = tag_enum.to_string();
@@ -58,27 +58,10 @@ pub(crate) fn parse_exif_info<R: Read + Seek>(reader: R) -> Option<PsExifInfo> {
                 }
                 m.insert(tag_name, s);
             }
-            if let Some(gps_info) = exif_iter.parse_gps_info().ok().flatten() {
-                ps_gps_info = Some(gps_info.format_iso6709());
-                let lat_val = gps_info.latitude.0.as_float()
-                    + gps_info.latitude.1.as_float() / 60.0
-                    + gps_info.latitude.2.as_float() / 3600.0;
-                let lat_sign = if gps_info.latitude_ref == 'N' {
-                    1.0
-                } else {
-                    -1.0
-                };
-                lat = Some(lat_val * lat_sign);
-
-                let long_val = gps_info.longitude.0.as_float()
-                    + gps_info.longitude.1.as_float() / 60.0
-                    + gps_info.longitude.2.as_float() / 3600.0;
-                let long_sign = if gps_info.longitude_ref == 'E' {
-                    1.0
-                } else {
-                    -1.0
-                };
-                long = Some(long_val * long_sign);
+            if let Some(gps_info) = exif_iter.parse_gps().ok().flatten() {
+                ps_gps_info = Some(gps_info.to_iso6709());
+                lat = gps_info.latitude_decimal();
+                long = gps_info.longitude_decimal();
             }
         }
         Err(e) => {
@@ -93,8 +76,8 @@ pub(crate) fn parse_exif_info<R: Read + Seek>(reader: R) -> Option<PsExifInfo> {
     })
 }
 
-fn field_to_opt_string(field: &ParsedExifEntry) -> Option<String> {
-    if let Ok(value) = field.clone().take_result() {
+fn field_to_opt_string(field: &ExifIterEntry) -> Option<String> {
+    if let Ok(value) = field.clone().into_result() {
         match value {
             nom_exif::EntryValue::Undefined(_) => {
                 // skip undefined values
@@ -156,7 +139,7 @@ mod tests {
         let t = parse_exif_info(reader)
             .ok_or_else(|| anyhow!("Failed to parse exif"))?
             .tags;
-        assert_eq!(t.len(), 40);
+        assert_eq!(t.len(), 41);
         let mut tag_names: Vec<String> = t.keys().map(|t| t.to_string()).collect();
         tag_names.sort();
 
@@ -181,6 +164,7 @@ mod tests {
             "FocalPlaneXResolution",
             "FocalPlaneYResolution",
             "GPSInfo",
+            "GPSVersionID",
             "ISOSpeedRatings",
             "InteropOffset",
             "Make",
