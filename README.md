@@ -23,13 +23,16 @@ app-independent archive you can back up anywhere, this is for you.
   photo exported twice is stored once.
 - **Sorted by date** - a `year/month/day` layout built for decades-long archiving, so you
   can act on whole years at a time.
-- **Plain-text & future-proof** - every photo gets a sibling Markdown file with its
-  metadata in [YAML](https://en.wikipedia.org/wiki/YAML) frontmatter, readable in any
+- **Plain-text & future-proof** - every photo and video gets a sibling Markdown file with
+  its metadata in [YAML](https://en.wikipedia.org/wiki/YAML) frontmatter, readable in any
   editor and friendly to tools like [Obsidian](https://obsidian.md/).
 - **Albums travel with you** - Google (JSON) and iCloud (CSV) albums become Markdown files
   under `albums/`.
 - **Non-destructive & repeatable** - additive only, and idempotent: running it again
   produces no changes.
+
+Supported formats: images (JPG, PNG, HEIC, GIF) and video (MP4, MOV). Other file types are
+skipped.
 
 > [!NOTE]
 > **Your originals are safe.** ptsync is *additive only*: it copies files **into** your
@@ -37,7 +40,6 @@ app-independent archive you can back up anywhere, this is for you.
 > write. Re-running on the same source changes nothing. (Album files are regenerated each
 > run, but any notes you add below the notes marker are preserved - see
 > [How it works](#how-it-works).)
-
 
 ## What you get
 
@@ -99,15 +101,15 @@ Add your own notes here - they survive every later run.
    ```shell
    ptsync sync --dry-run \
      --input "takeout-20250614.zip" \
-     --output "~/photo-archive"
+     --output ~/photo-archive
    ```
 
 4. **Run it for real** by dropping `--dry-run`. Point `--input` at each export in turn
    (zip or directory); the same `--output` accumulates everything:
 
    ```shell
-   ptsync sync --input "takeout-20250614.zip" --output "~/photo-archive"
-   ptsync sync --input "iCloud Photos"       --output "~/photo-archive"
+   ptsync sync --input "takeout-20250614.zip" --output ~/photo-archive
+   ptsync sync --input "iCloud Photos"        --output ~/photo-archive
    ```
 
 5. **Browse `~/photo-archive`.** Open it in any file manager, Markdown editor, or Obsidian.
@@ -169,6 +171,10 @@ a good trade-off between uniqueness and length.
 
 Two things: it lets you keep notes on each photo or album that won't be clobbered on later
 runs, and it stores metadata in a structured form that software can easily parse.
+
+## License
+
+[MIT](LICENSE) © Paul Tuckey
 
 ---
 
