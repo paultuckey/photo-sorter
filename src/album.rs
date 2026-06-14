@@ -1,3 +1,4 @@
+use crate::classify::{KnownDir, classify_dir};
 use crate::file_type::{AccurateFileType, QuickFileType};
 use crate::fs::FileSystem;
 use crate::media::MediaFileInfo;
@@ -13,13 +14,17 @@ pub(crate) fn parse_album(
     si_files: &[ScanInfo],
 ) -> Option<Album> {
     match si.quick_file_type {
-        QuickFileType::AlbumCsv => parse_csv_album(container, si),
+        QuickFileType::AlbumCsv => parse_csv_album(container, si, si_files),
         QuickFileType::AlbumJson => parse_json_album(container, si, si_files),
         _ => None,
     }
 }
 
-fn parse_csv_album(container: &dyn FileSystem, si: &ScanInfo) -> Option<Album> {
+fn parse_csv_album(
+    container: &dyn FileSystem,
+    si: &ScanInfo,
+    all_scanned_files: &[ScanInfo],
+) -> Option<Album> {
     info!("Parse CSV album: {:?}", &si.file_path);
     let reader_r = container.open(&si.file_path);
     let Ok(reader) = reader_r else {
@@ -59,15 +64,18 @@ fn parse_csv_album(container: &dyn FileSystem, si: &ScanInfo) -> Option<Album> {
             continue;
         };
 
-        // look for file with the original path {} + file_name
-        let directory_path_str = dir_part(&si.file_path);
-
-        let original_file = Path::new(&directory_path_str)
-            .join(file_name)
-            .to_string_lossy()
-            .to_string();
-
-        files.push(original_file);
+        // iCloud lists album members by bare filename, and the photos live in a
+        // separate directory (e.g. `Photos/`) from the album CSV (`Albums/`), so
+        // resolve each name against the scanned media rather than assuming it
+        // sits beside the CSV.
+        let resolved = all_scanned_files.iter().find(|f| {
+            f.quick_file_type == QuickFileType::Media
+                && name_part(&f.file_path).eq_ignore_ascii_case(file_name)
+        });
+        match resolved {
+            Some(f) => files.push(f.file_path.clone()),
+            None => warn!("Album member not found in scan, skipping: {file_name}"),
+        }
     }
     if files.is_empty() {
         debug!("Not an album: {name:?}");
@@ -90,8 +98,8 @@ fn parse_csv_album(container: &dyn FileSystem, si: &ScanInfo) -> Option<Album> {
         name
     );
     Some(Album {
+        desired_album_md_path: format!("albums/{name_without_ext}.md"),
         title: name_without_ext.clone(),
-        desired_album_md_path: name.clone(),
         files,
     })
 }
@@ -101,6 +109,18 @@ fn parse_json_album(
     si: &ScanInfo,
     all_scanned_files: &[ScanInfo],
 ) -> Option<Album> {
+    let directory_path_str = dir_part(&si.file_path);
+    // Google Takeout drops a `metadata.json` into every `Photos from YYYY`
+    // folder, but those are not real albums — they mirror the year-based
+    // directory structure we already produce. Treating them as albums would
+    // make one giant album per year, so skip them.
+    if let Some(KnownDir::GpPhotosFromYear(_)) = classify_dir(&directory_path_str) {
+        debug!(
+            "Skipping year-folder metadata.json, not a real album: {:?}",
+            &si.file_path
+        );
+        return None;
+    }
     let reader_r = container.open(&si.file_path);
     let Ok(reader) = reader_r else {
         warn!("No bytes for album: {:?}", &si.file_path);
@@ -122,8 +142,6 @@ fn parse_json_album(
         return None;
     }
     // all files in this directory are in the album
-    let directory_path_str = dir_part(&si.file_path);
-    // look up the media path in the media_path_map
     let same_dir_files = all_scanned_files
         .iter()
         .filter(|si| {
@@ -207,13 +225,59 @@ mod tests {
         crate::test_util::setup_log();
         let c = OsFileSystem::new("test");
         let qsf = ScanInfo::new("ic-album-sample.csv".to_string(), None, None, 0);
-        let a = parse_album(&c, &qsf, &[]).ok_or_else(|| anyhow!("Failed to parse album"))?;
+        // The CSV lists members by bare filename; the photos live in a separate
+        // `Photos/` directory, so resolution must match across directories.
+        let media: Vec<ScanInfo> = [
+            "Photos/35F8739B-30E0-4620-802C-0817AD7356F6.JPG",
+            "Photos/AECA2F1F-8308-4989-8149-89D45A5867FD.jpg",
+            "Photos/7AB0F3A2-9235-44D4-8AC9-C9B758CF15C0.jpg",
+            "Photos/6F00C466-8F35-499D-9346-554E3BC2F931.jpg",
+            "Photos/399E997B-A322-449A-80B5-F2F5AE98DAD5.JPG",
+        ]
+        .iter()
+        .map(|p| ScanInfo::new(p.to_string(), None, None, 0))
+        .collect();
+        let a = parse_album(&c, &qsf, &media).ok_or_else(|| anyhow!("Failed to parse album"))?;
         assert_eq!(a.title, "ic-album-sample".to_string());
+        assert_eq!(a.desired_album_md_path, "albums/ic-album-sample.md".to_string());
         assert_eq!(a.files.len(), 5);
         assert_eq!(
             a.files.first().ok_or_else(|| anyhow!("Album empty"))?,
-            "35F8739B-30E0-4620-802C-0817AD7356F6.JPG"
+            "Photos/35F8739B-30E0-4620-802C-0817AD7356F6.JPG"
         );
+        Ok(())
+    }
+
+    #[test]
+    fn test_ic_sample_unresolved_members_skipped() -> anyhow::Result<()> {
+        crate::test_util::setup_log();
+        // None of the CSV members are present in the scan, so the album has no
+        // resolvable files and is not treated as an album.
+        let c = OsFileSystem::new("test");
+        let qsf = ScanInfo::new("ic-album-sample.csv".to_string(), None, None, 0);
+        assert!(parse_album(&c, &qsf, &[]).is_none());
+        Ok(())
+    }
+
+    #[test]
+    fn test_g_year_folder_not_album() -> anyhow::Result<()> {
+        crate::test_util::setup_log();
+        // A `metadata.json` inside a `Photos from YYYY` folder is the year's own
+        // marker, not a real album, so it must not be parsed as one.
+        let c = OsFileSystem::new("test/takeout1");
+        let qsf = ScanInfo::new(
+            "Google Photos/Photos from 2012/metadata.json".to_string(),
+            None,
+            None,
+            0,
+        );
+        let photo = ScanInfo::new(
+            "Google Photos/Photos from 2012/IMG_1234.jpg".to_string(),
+            None,
+            None,
+            0,
+        );
+        assert!(parse_album(&c, &qsf, &[photo]).is_none());
         Ok(())
     }
 
