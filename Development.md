@@ -61,21 +61,18 @@ Test a single album file:
 cargo run -- info --debug --root "test/takeout1" --input "Google Photos/album1/metadata.json"
 ```
 
-Check the index:
-
-```shell
-cargo run -- index --debug --input "input/Takeout"
-```
-
-```shell
-cargo run -- index --debug --input "input/iCloud Photos"
-```
-
-Make a database:
+Make a database for takeout:
 
 ```shell
 cargo run -- db --debug --input "input/Takeout"
 ```
+
+Make a database for iCloud:
+
+```shell
+cargo run -- db --debug --input "input/iCloud Photos"
+```
+
 
 
 Dry run a sync operation:

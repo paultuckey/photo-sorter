@@ -290,18 +290,17 @@ fn db_conn(path: &str) -> anyhow::Result<Connection> {
 
 fn db_prepare(conn: &Connection) -> anyhow::Result<()> {
     conn.execute(DB_MEDIA_ITEM_CREATE, ())?;
-    conn.execute(DB_MEDIA_ITEM_DELETE_ALL, ())?;
-
     conn.execute(DB_ALBUM_CREATE, ())?;
-    conn.execute(DB_ALBUM_DELETE_ALL, ())?;
-
     conn.execute(DB_ALBUM_FILE_CREATE, ())?;
-    conn.execute(DB_ALBUM_FILE_DELETE_ALL, ())?;
-
     conn.execute(DB_CLASSIFIED_FILE_CREATE, ())?;
-    conn.execute(DB_CLASSIFIED_FILE_DELETE_ALL, ())?;
-
     conn.execute(DB_CLASSIFIED_DIR_CREATE, ())?;
+
+    // Clear existing rows before re-scanning. Delete children before parents so
+    // foreign keys hold.
+    conn.execute(DB_MEDIA_ITEM_DELETE_ALL, ())?;
+    conn.execute(DB_ALBUM_FILE_DELETE_ALL, ())?;
+    conn.execute(DB_ALBUM_DELETE_ALL, ())?;
+    conn.execute(DB_CLASSIFIED_FILE_DELETE_ALL, ())?;
     conn.execute(DB_CLASSIFIED_DIR_DELETE_ALL, ())?;
     Ok(())
 }
@@ -512,6 +511,46 @@ mod tests {
         }
 
         // Cleanup
+        fs::remove_dir_all(test_dir)?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_db_scan_rerun() -> anyhow::Result<()> {
+        use std::io::Write;
+        crate::test_util::setup_log();
+        let test_dir = Path::new("target/test_db_album_rerun");
+        if test_dir.exists() {
+            fs::remove_dir_all(test_dir)?;
+        }
+        fs::create_dir_all(test_dir)?;
+
+        // A media file plus an album CSV referencing it, so the first scan
+        // populates both album and album_file.
+        fs::copy("test/Canon_40D.jpg", test_dir.join("Canon_40D.jpg"))?;
+        let album_path = test_dir.join("album.csv");
+        let mut file = fs::File::create(&album_path)?;
+        writeln!(file, "Images")?;
+        writeln!(file, "Canon_40D.jpg")?;
+
+        let conn = Connection::open_in_memory()?;
+        let container: Arc<dyn FileSystem> =
+            Arc::new(OsFileSystem::new(test_dir.to_str().unwrap()));
+
+        // First run populates album (1 row) and album_file (1 row).
+        run_db_scan(container.clone(), &conn)?;
+
+        // Second run must not hit "FOREIGN KEY constraint failed" while clearing
+        // the previous run's rows.
+        run_db_scan(container, &conn)?;
+
+        // And the rebuild leaves exactly one of each, not duplicates.
+        let album_count: i64 = conn.query_row("SELECT COUNT(*) FROM album", [], |r| r.get(0))?;
+        assert_eq!(album_count, 1, "album rows after re-run");
+        let album_file_count: i64 =
+            conn.query_row("SELECT COUNT(*) FROM album_file", [], |r| r.get(0))?;
+        assert_eq!(album_file_count, 1, "album_file rows after re-run");
+
         fs::remove_dir_all(test_dir)?;
         Ok(())
     }
