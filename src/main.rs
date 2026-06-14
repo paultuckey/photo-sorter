@@ -1,6 +1,7 @@
 mod album;
 mod classify;
 mod db_cmd;
+mod dedup;
 mod exif_util;
 mod file_type;
 mod fs;

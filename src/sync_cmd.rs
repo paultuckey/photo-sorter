@@ -1,20 +1,18 @@
 use crate::album::{build_album_md, parse_album};
+use crate::dedup::{DeDuplicationResult, Deduplicator};
 use crate::file_type::QuickFileType;
 use crate::fs::{FileSystem, OsFileSystem, ZipFileSystem};
 use crate::inspect::inspect_media_files;
 use crate::markdown::sync_markdown;
 use crate::media::{MediaFileDerivedInfo, MediaFileInfo, media_file_derived_from_media_info};
 use crate::progress::Progress;
-use crate::sync_cmd::DeDuplicationResult::{SkipWrite, WritePath};
-use crate::util::{ScanInfo, is_existing_file_same, scan_fs};
+use crate::util::{ScanInfo, scan_fs};
 use anyhow::anyhow;
 use std::collections::HashMap;
 use std::io::Cursor;
 use std::path::Path;
 use std::sync::Arc;
 use tracing::{debug, info, warn};
-
-const MAX_DUPLICATE_CHECK_ATTEMPTS: i32 = 5;
 
 pub(crate) fn main(
     dry_run: bool,
@@ -49,7 +47,7 @@ pub(crate) fn main(
         }
         output_container_o = Some(output_container);
     }
-    let mut all_media = HashMap::<String, MediaFileInfo>::new();
+    let mut deduper = Deduplicator::new();
     let mut final_path_by_original_path = HashMap::<String, String>::new();
 
     if !skip_media {
@@ -61,23 +59,19 @@ pub(crate) fn main(
         info!("Inspecting {} photo and video files", media_si_files.len());
         let prog = Arc::new(Progress::new(media_si_files.len() as u64));
         // Inspection (hashing + metadata) runs in parallel; dedup must stay on
-        // this thread since it mutates the shared map. Files with the same
-        // content hash collapse into one entry, recording each original path.
+        // this thread since it mutates the shared collection. Files with the
+        // same content hash collapse into one entry, recording each original
+        // path (see `Deduplicator`).
         for media in inspect_media_files(container.clone(), media_si_files, prog.clone()) {
-            if let Some(existing) = all_media.get_mut(&media.hash_info.long_checksum) {
-                existing
-                    .original_path
-                    .push(media.original_file_this_run.clone());
-            } else {
-                all_media.insert(media.hash_info.long_checksum.clone(), media);
-            }
+            deduper.add(media);
         }
         drop(prog);
 
         if let Some(ref mut output_container) = output_container_o {
-            info!("Outputting {} photo and video files", all_media.len());
-            let prog = Progress::new(all_media.len() as u64);
-            for media in all_media.values() {
+            let media_to_write = deduper.sorted_media();
+            info!("Outputting {} photo and video files", media_to_write.len());
+            let prog = Progress::new(media_to_write.len() as u64);
+            for media in media_to_write {
                 prog.inc();
                 let derived = media_file_derived_from_media_info(media)?;
                 let write_r = write_media(
@@ -125,7 +119,7 @@ pub(crate) fn main(
             .collect::<Vec<&ScanInfo>>();
         info!("Inspecting {} album files", scan_info_albums.len());
         let mut albums = vec![];
-        let prog = Progress::new(all_media.len() as u64);
+        let prog = Progress::new(deduper.count() as u64);
         for si in scan_info_albums {
             prog.inc();
             let album_o = parse_album(container.as_ref(), si, &files);
@@ -141,7 +135,7 @@ pub(crate) fn main(
             for album in albums {
                 let a_s = build_album_md(
                     &album,
-                    Some(&all_media),
+                    Some(deduper.by_checksum()),
                     "../",
                     Some(&final_path_by_original_path),
                 );
@@ -168,9 +162,9 @@ pub(crate) fn write_media(
     info!("Output {:?}", derived.desired_media_path);
 
     let desired_output_path_with_ext =
-        match get_de_duplicated_path(media_file, derived, output_container)? {
-            SkipWrite(path) => return Ok(path),
-            WritePath(path) => path,
+        match Deduplicator::resolve_output_path(media_file, derived, output_container)? {
+            DeDuplicationResult::SkipWrite(path) => return Ok(path),
+            DeDuplicationResult::WritePath(path) => path,
         };
     let reader = input_container.open(&media_file.original_file_this_run)?;
     output_container.write(dry_run, &desired_output_path_with_ext.clone(), reader);
@@ -180,110 +174,4 @@ pub(crate) fn write_media(
         &media_file.modified,
     );
     Ok(desired_output_path_with_ext)
-}
-
-#[derive(Debug, PartialEq)]
-enum DeDuplicationResult {
-    WritePath(String),
-    SkipWrite(String),
-}
-
-fn get_de_duplicated_path(
-    media_file: &MediaFileInfo,
-    derived: &MediaFileDerivedInfo,
-    output_container: &OsFileSystem,
-) -> anyhow::Result<DeDuplicationResult> {
-    let Some(desired_output_path) = &derived.desired_media_path else {
-        debug!("  No desired media path for file: {media_file:?}");
-        return Err(anyhow!("No desired media path for file: {media_file:?}"));
-    };
-    for attempt in 0..MAX_DUPLICATE_CHECK_ATTEMPTS {
-        let short_checksum = &media_file.hash_info.short_checksum;
-        let long_checksum = &media_file.hash_info.long_checksum;
-        let suffix = match attempt {
-            0 => String::new(),
-            // second to last attempt, use short checksum as suffix, should be mostly unique
-            n if n == MAX_DUPLICATE_CHECK_ATTEMPTS - 2 => format!("-{}", short_checksum),
-            // last attempt, use long checksum as suffix, should be guaranteed unique
-            n if n == MAX_DUPLICATE_CHECK_ATTEMPTS - 1 => format!("-{}", long_checksum),
-            // on first retry add -1, then -2, etc
-            n => format!("-{n}"),
-        };
-        let desired_output_path_with_ext = format!(
-            "{}{}.{}",
-            desired_output_path, suffix, derived.desired_media_extension
-        );
-        if !output_container.exists(&desired_output_path_with_ext) {
-            return Ok(WritePath(desired_output_path_with_ext));
-        }
-        let long_checksum = &media_file.hash_info.long_checksum;
-        let es_o = is_existing_file_same(
-            output_container,
-            long_checksum,
-            &desired_output_path_with_ext,
-        );
-        match es_o {
-            Some(true) => {
-                debug!(
-                    "  No need to write, file already exists with same checksum: {desired_output_path_with_ext}"
-                );
-                return Ok(SkipWrite(desired_output_path_with_ext));
-            }
-            Some(false) => {
-                warn!(
-                    "  Existing file is different at, attempting with different suffix: {desired_output_path_with_ext}"
-                );
-                // continue with next attempt
-            }
-            None => {
-                warn!(
-                    "  Could not determine if existing file is same or different {desired_output_path_with_ext}",
-                );
-                return Err(anyhow!(
-                    "Could not determine if existing file is same or different: {desired_output_path:?}"
-                ));
-            }
-        }
-    }
-    Err(anyhow!(format!(
-        "Attempts to find a unique filename failed: {desired_output_path:?}"
-    )))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::fs::OsFileSystem;
-
-    #[test]
-    fn test_dedupe_one() -> anyhow::Result<()> {
-        let c = OsFileSystem::new(&"test".to_string());
-        let mfi = MediaFileInfo::new_for_test();
-        let derived = MediaFileDerivedInfo::new_for_test(Some("duplicates/one".to_string()), "txt");
-        let res = get_de_duplicated_path(&mfi, &derived, &c)?;
-        assert_eq!(res, WritePath("duplicates/one-1.txt".to_string()));
-        Ok(())
-    }
-
-    #[test]
-    fn test_dedupe_many() -> anyhow::Result<()> {
-        let c = OsFileSystem::new(&"test".to_string());
-        let mfi = MediaFileInfo::new_for_test();
-        let derived =
-            MediaFileDerivedInfo::new_for_test(Some("duplicates/many".to_string()), "txt");
-        let res = get_de_duplicated_path(&mfi, &derived, &c)?;
-        assert_eq!(res, WritePath("duplicates/many-tsc.txt".to_string()));
-        Ok(())
-    }
-
-    #[test]
-    fn test_dedupe_too_many() -> anyhow::Result<()> {
-        let c = OsFileSystem::new(&"test".to_string());
-        let mfi = MediaFileInfo::new_for_test();
-        let derived =
-            MediaFileDerivedInfo::new_for_test(Some("duplicates/too-many".to_string()), "txt");
-        let res = get_de_duplicated_path(&mfi, &derived, &c);
-        assert_eq!(res.ok(), None);
-        Ok(())
-    }
 }
