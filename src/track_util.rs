@@ -1,4 +1,4 @@
-use nom_exif::{MediaParser, MediaSource, TrackInfo, TrackInfoTag};
+use nom_exif::{MediaKind, MediaParser, MediaSource, TrackInfo, TrackInfoTag};
 use serde::{Deserialize, Serialize};
 use std::io::{Read, Seek};
 use tracing::{info, warn};
@@ -24,11 +24,11 @@ pub fn parse_track_info<R: Read + Seek>(reader: R) -> Option<PsTrackInfo> {
         warn!("Failed to read track media source");
         return None;
     };
-    if !ms.has_track() {
+    if ms.kind() != MediaKind::Track {
         return None;
     }
     let mut parser = MediaParser::new();
-    let info: nom_exif::Result<TrackInfo> = parser.parse(ms);
+    let info: nom_exif::Result<TrackInfo> = parser.parse_track(ms);
 
     match info {
         Err(e) => {
@@ -37,8 +37,8 @@ pub fn parse_track_info<R: Read + Seek>(reader: R) -> Option<PsTrackInfo> {
         }
         Ok(info) => {
             let ti = PsTrackInfo {
-                width: parse_to_o_u64(&info.get(TrackInfoTag::ImageWidth)),
-                height: parse_to_o_u64(&info.get(TrackInfoTag::ImageHeight)),
+                width: parse_to_o_u64(&info.get(TrackInfoTag::Width)),
+                height: parse_to_o_u64(&info.get(TrackInfoTag::Height)),
                 creation_time: parse_to_o_s(&info.get(TrackInfoTag::CreateDate)),
                 duration_ms: parse_to_o_u64(&info.get(TrackInfoTag::DurationMs)),
                 make: parse_to_o_s(&info.get(TrackInfoTag::Make)),
@@ -52,8 +52,8 @@ pub fn parse_track_info<R: Read + Seek>(reader: R) -> Option<PsTrackInfo> {
                 .filter(|(tag, _)| {
                     !matches!(
                         tag,
-                        TrackInfoTag::ImageWidth
-                            | TrackInfoTag::ImageHeight
+                        TrackInfoTag::Width
+                            | TrackInfoTag::Height
                             | TrackInfoTag::CreateDate
                             | TrackInfoTag::DurationMs
                             | TrackInfoTag::Make
