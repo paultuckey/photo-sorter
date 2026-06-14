@@ -91,4 +91,6 @@ Two reasons:
 
 ---
 
-Google is a trademark of Google LLC. iCloud is a trademark of Apple Inc.
+This project is an independent open-source tool and is not affiliated with, sponsored by, or endorsed by Google, Apple or Dynalist.
+
+Google is a trademark of Google LLC. iCloud is a trademark of Apple Inc. Obsidian is a trademark of Dynalist Inc. 
