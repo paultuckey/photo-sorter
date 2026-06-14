@@ -45,7 +45,7 @@ pub(crate) fn media(si: &ScanInfo, root: &dyn FileSystem) -> anyhow::Result<Stri
         media_file_info.hash_info.long_checksum
     )?;
 
-    let mfm = mfm_from_media_file_info(&media_file_info);
+    let mfm = mfm_from_media_file_info(&media_file_info, &[]);
     let s = assemble_markdown(&mfm, &None, "")?.into_string();
     writeln!(out, "Markdown:")?;
     writeln!(out, "{s}")?;
@@ -89,7 +89,7 @@ pub(crate) fn album(si: &ScanInfo, root: &dyn FileSystem) -> anyhow::Result<Stri
     // The markdown links to the media's original paths (see `build_album_md`'s
     // `None` branch), so there's no need to inspect/hash the referenced media.
     writeln!(out, "Markdown:")?;
-    let (md, _) = build_album_md(&album, None, "", None);
+    let (md, _) = build_album_md(&album, None, "", None, "");
     writeln!(out, "{md}")?;
 
     Ok(out)

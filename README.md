@@ -25,7 +25,7 @@ In detail:
   - Determine date and time taken based on EXIF tags or file modification time
 - Rename files with the wrong extension based on a inspecting bytes of the file
 - For each Album (Google uses JSON format, iCloud CSV) a Markdown file is produced under `albums/`
-  - Caveat: album files are overwritten on every run**, so they carry a "do not edit" banner — don't keep hand-written notes in them
+  - Caveat: album files are overwritten on every run**, so they carry a "do not edit" banner - don't keep hand-written notes in them
 - Input can be Google Takeout zip/directory or iCloud archive zip or directory
 - Sync photos/videos into existing directories without clobbering if the same file exists already
   - Additive only: your photos, videos and their editable Markdown file are never deleted or overwritten (albums are the one exception, see above)

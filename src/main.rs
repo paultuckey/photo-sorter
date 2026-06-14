@@ -21,6 +21,10 @@ use tracing::{Level, debug, error, info};
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 
+/// The binary / command name, used wherever the tool labels its own output
+/// (generated-file markers, docs, etc.).
+pub(crate) const COMMAND_NAME: &str = "photo-sorter";
+
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
 struct Cli {
@@ -173,7 +177,7 @@ mod cli_docs {
     use clap::CommandFactory;
 
     const DOC_PATH: &str = "docs/cli.md";
-    const BIN: &str = "photo-sorter";
+    const BIN: &str = super::COMMAND_NAME;
     /// Fixed width for the doc so it renders identically regardless of the
     /// terminal `cargo test` happens to run in.
     const DOC_WIDTH: usize = 100;
