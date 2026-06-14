@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::path::Path;
 use std::sync::Arc;
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
 const DB_BATCH_SIZE: usize = 100;
 
@@ -57,7 +57,8 @@ fn run_db_scan(container: Arc<dyn FileSystem>, conn: &Connection) -> anyhow::Res
     // in batches to avoid the per-row fsync of autocommit.
     let mut db_tx = conn.unchecked_transaction()?;
     let mut batch_count = 0;
-    for info in inspect_media_files(container.clone(), media_si_files, prog.clone()) {
+    let mut inspected = inspect_media_files(container.clone(), media_si_files, prog.clone());
+    for info in inspected.by_ref() {
         db_record(&db_tx, &info)?;
         batch_count += 1;
         if batch_count >= DB_BATCH_SIZE {
@@ -67,6 +68,11 @@ fn run_db_scan(container: Arc<dyn FileSystem>, conn: &Connection) -> anyhow::Res
         }
     }
     db_tx.commit()?;
+
+    let skipped = inspected.skipped_count();
+    if skipped > 0 {
+        warn!("{skipped} files could not be processed");
+    }
 
     drop(prog);
 

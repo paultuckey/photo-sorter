@@ -72,8 +72,13 @@ pub(crate) fn main(
         // this thread since it mutates the shared collection. Files with the
         // same content hash collapse into one entry, recording each original
         // path (see `Deduplicator`).
-        for media in inspect_media_files(container.clone(), media_si_files, prog.clone()) {
+        let mut inspected = inspect_media_files(container.clone(), media_si_files, prog.clone());
+        for media in inspected.by_ref() {
             deduper.add(media);
+        }
+        let skipped = inspected.skipped_count();
+        if skipped > 0 {
+            warn!("{skipped} files could not be processed");
         }
         drop(prog);
 

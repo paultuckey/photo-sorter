@@ -6,6 +6,7 @@ use crate::util::{ScanInfo, checksum_bytes};
 use anyhow::anyhow;
 use rayon::prelude::*;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::Receiver;
 use std::thread::JoinHandle;
 use tracing::debug;
@@ -22,20 +23,32 @@ use tracing::debug;
 /// `container` and `prog` are taken as [`Arc`]s because the worker thread
 /// outlives this call (it is owned by the returned iterator), so they can't be
 /// borrowed from the caller's stack.
+///
+/// Files that were classified as media but produce no [`MediaFileInfo`] (they
+/// turned out not to be valid media, or could not be read or hashed) are dropped
+/// from the stream but counted; read the total back with
+/// [`InspectMediaIter::skipped_count`] once the iterator is drained.
 pub(crate) fn inspect_media_files(
     container: Arc<dyn FileSystem>,
     media_si_files: Vec<ScanInfo>,
     prog: Arc<Progress>,
-) -> impl Iterator<Item = MediaFileInfo> {
+) -> InspectMediaIter {
     // Bound the channel so fast parallel producers can't outrun the single
     // consumer and pile up in memory.
     let channel_capacity = rayon::current_num_threads().saturating_mul(4).max(1);
     let (tx, rx) = std::sync::mpsc::sync_channel(channel_capacity);
 
+    let skipped = Arc::new(AtomicUsize::new(0));
+    let worker_skipped = Arc::clone(&skipped);
     let handle = std::thread::spawn(move || {
         media_si_files.par_iter().for_each(|media_si| {
-            if let Ok(Some(info)) = analyze_file(container.as_ref(), media_si) {
-                let _ = tx.send(info);
+            match analyze_file(container.as_ref(), media_si) {
+                Ok(Some(info)) => {
+                    let _ = tx.send(info);
+                }
+                Ok(None) | Err(_) => {
+                    worker_skipped.fetch_add(1, Ordering::Relaxed);
+                }
             }
             prog.inc();
         });
@@ -44,14 +57,26 @@ pub(crate) fn inspect_media_files(
     InspectMediaIter {
         rx,
         handle: Some(handle),
+        skipped,
     }
 }
 
 /// Iterator over inspected media that owns the producer thread, joining it once
 /// the channel drains (or on drop) so the worker never outlives the iterator.
-struct InspectMediaIter {
+pub(crate) struct InspectMediaIter {
     rx: Receiver<MediaFileInfo>,
     handle: Option<JoinHandle<()>>,
+    skipped: Arc<AtomicUsize>,
+}
+
+impl InspectMediaIter {
+    /// Number of media-classified files that yielded no [`MediaFileInfo`] and so
+    /// were dropped from the output. Only final once the iterator is fully
+    /// drained — the producer thread is joined on the last `next`, which
+    /// publishes every worker's increment to this thread.
+    pub(crate) fn skipped_count(&self) -> usize {
+        self.skipped.load(Ordering::Relaxed)
+    }
 }
 
 impl Iterator for InspectMediaIter {
@@ -150,6 +175,51 @@ mod tests {
                 .iter()
                 .any(|m| m.original_file_this_run == "Hello.mp4")
         );
+        Ok(())
+    }
+
+    #[test]
+    fn test_inspect_counts_unprocessable_files() -> anyhow::Result<()> {
+        use std::fs;
+        use std::io::Write;
+        crate::test_util::setup_log();
+
+        // Isolated input dir so the skipped count is deterministic: one valid
+        // media file plus one that looks like media by extension but isn't.
+        let test_dir = std::path::Path::new("target/test_inspect_skipped");
+        if test_dir.exists() {
+            fs::remove_dir_all(test_dir)?;
+        }
+        fs::create_dir_all(test_dir)?;
+        fs::copy("test/Canon_40D.jpg", test_dir.join("good.jpg"))?;
+        // A .jpg extension over plain-text bytes: classified as media, but not a
+        // valid image, so inspection drops it rather than emitting a MediaFileInfo.
+        let mut bad = fs::File::create(test_dir.join("bad.jpg"))?;
+        bad.write_all(b"this is not an image")?;
+
+        let test_dir_str = test_dir
+            .to_str()
+            .ok_or_else(|| anyhow!("test_dir path is not valid UTF-8"))?;
+        let container: Arc<dyn FileSystem> = Arc::new(OsFileSystem::new(test_dir_str));
+        let media_si_files: Vec<ScanInfo> = scan_fs(container.as_ref())
+            .into_iter()
+            .filter(|m| m.quick_file_type == QuickFileType::Media)
+            .collect();
+        assert_eq!(media_si_files.len(), 2, "both files classify as media");
+
+        let prog = Arc::new(Progress::new(media_si_files.len() as u64));
+        let mut inspected = inspect_media_files(container, media_si_files, prog);
+        let results: Vec<MediaFileInfo> = inspected.by_ref().collect();
+
+        assert_eq!(results.len(), 1, "only the valid media file is yielded");
+        assert_eq!(results[0].original_file_this_run, "good.jpg");
+        assert_eq!(
+            inspected.skipped_count(),
+            1,
+            "the invalid media file is counted as could-not-process"
+        );
+
+        fs::remove_dir_all(test_dir)?;
         Ok(())
     }
 }
