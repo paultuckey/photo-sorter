@@ -1,5 +1,5 @@
 [package]
-name = "tasync"
+name = "ptsync"
 version = "0.1.0"
 edition = "2024"
 

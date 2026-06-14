@@ -912,6 +912,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "ptsync"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "clap",
+ "csv",
+ "file-format",
+ "hex",
+ "indicatif",
+ "nom-exif",
+ "rayon",
+ "regex",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "sha2",
+ "strum_macros",
+ "tempfile",
+ "tracing",
+ "tracing-subscriber",
+ "yaml-rust2",
+ "zip",
+]
+
+[[package]]
 name = "quote"
 version = "1.0.45"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1159,32 +1185,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "unicode-ident",
-]
-
-[[package]]
-name = "tasync"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "chrono",
- "clap",
- "csv",
- "file-format",
- "hex",
- "indicatif",
- "nom-exif",
- "rayon",
- "regex",
- "rusqlite",
- "serde",
- "serde_json",
- "sha2",
- "strum_macros",
- "tempfile",
- "tracing",
- "tracing-subscriber",
- "yaml-rust2",
- "zip",
 ]
 
 [[package]]
