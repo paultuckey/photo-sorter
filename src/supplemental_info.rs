@@ -71,6 +71,7 @@ impl SupplementalInfoDateTime {
 pub(crate) struct PsSupplementalInfo {
     pub(crate) geo_data: Option<SupplementalInfoGeoData>,
     pub(crate) geo_data_exif: Option<SupplementalInfoGeoData>,
+    #[serde(default)]
     pub(crate) people: Vec<SupplementalInfoPerson>,
     pub(crate) photo_taken_time: Option<SupplementalInfoDateTime>,
     pub(crate) creation_time: Option<SupplementalInfoDateTime>,
@@ -131,6 +132,33 @@ mod tests {
         assert_eq!(
             ct.timestamp.ok_or_else(|| anyhow!("Missing timestamp"))?,
             "1716539968"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn test_parse_supp_without_people() -> anyhow::Result<()> {
+        use anyhow::anyhow;
+        crate::test_util::setup_log();
+        let json = r#"{
+            "title": "IMG_0001.jpg",
+            "description": "",
+            "photoTakenTime": {
+                "timestamp": "1716337071",
+                "formatted": "22 May 2024, 00:17:51 UTC"
+            }
+        }"#;
+        let r = parse_supplemental_info(json.as_bytes())
+            .ok_or_else(|| anyhow!("supplemental json without `people` failed to parse"))?;
+        assert!(r.people.is_empty());
+        let taken = r
+            .photo_taken_time
+            .ok_or_else(|| anyhow!("Missing photo_taken_time"))?;
+        assert_eq!(
+            taken
+                .timestamp_s_as_iso_8601()
+                .ok_or_else(|| anyhow!("Missing iso 8601"))?,
+            "2024-05-22T00:17:51+00:00"
         );
         Ok(())
     }
