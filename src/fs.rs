@@ -1,5 +1,4 @@
 use anyhow::{Result, anyhow};
-use chrono::FixedOffset;
 use std::collections::HashMap;
 use std::fs::{self, File};
 use std::io::{Cursor, Read, Seek, SeekFrom};
@@ -7,7 +6,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::{Duration, SystemTime};
 use tracing::{debug, error};
-use zip::ZipArchive;
+use zip::{ExtraField, ZipArchive};
 
 #[cfg(not(test))]
 const MAX_MEM_THRESHOLD: u64 = 100 * 1024 * 1024; // 100MB
@@ -169,14 +168,12 @@ pub struct ZipFileSystem {
     #[allow(dead_code)]
     zip_file: String,
     zip: Mutex<ZipArchive<File>>,
-    #[allow(dead_code)]
-    tz: FixedOffset,
     file_names: Vec<String>,
     metadata_cache: HashMap<String, FileMetadata>,
 }
 
 impl ZipFileSystem {
-    pub fn new(zip_file: &str, tz: FixedOffset) -> Result<Self> {
+    pub fn new(zip_file: &str) -> Result<Self> {
         let f = File::open(zip_file)?;
         let mut zip = ZipArchive::new(f)?;
         let mut file_names = Vec::new();
@@ -198,17 +195,13 @@ impl ZipFileSystem {
             let name_s = name.to_string();
             file_names.push(name_s.clone());
 
-            let mut modified = None;
-            if let Some(lm) = file.last_modified() {
-                modified = chrono::NaiveDate::from_ymd_opt(
-                    lm.year() as i32,
-                    lm.month() as u32,
-                    lm.day() as u32,
-                )
-                .and_then(|date| date.and_hms_opt(lm.hour() as u32, lm.minute() as u32, 0))
-                .and_then(|naive_dt| naive_dt.and_local_timezone(tz).single())
-                .map(|dt| dt.timestamp_millis());
-            }
+            // We only trust timestamps from the 0x5455 "extended timestamp" extra
+            // field, which records real UTC epoch seconds. The bare MS-DOS
+            // timestamp (`file.last_modified()`) carries no timezone, so we'd have
+            // to guess an offset to turn it into an instant - deliberately not
+            // done. A zip entry without the extra field therefore reports no
+            // times, and the date logic falls through to `undated/`.
+            let (modified, created) = zip_extra_field_times(&file);
 
             metadata_cache.insert(
                 name_s,
@@ -216,18 +209,34 @@ impl ZipFileSystem {
                     len: file.size(),
                     is_dir: false,
                     modified,
-                    created: None,
+                    created,
                 },
             );
         }
         Ok(Self {
             zip_file: zip_file.to_string(),
             zip: Mutex::new(zip),
-            tz,
             file_names,
             metadata_cache,
         })
     }
+}
+
+/// Modified and created times for a zip entry, in epoch milliseconds, taken only
+/// from the 0x5455 extended-timestamp extra field (UTC epoch seconds). Returns
+/// `(None, None)` when the entry carries no such field. Most archives only store
+/// the modification time there, so `created` is usually `None`.
+fn zip_extra_field_times<R: std::io::Read>(
+    file: &zip::read::ZipFile<'_, R>,
+) -> (Option<i64>, Option<i64>) {
+    for ef in file.extra_data_fields() {
+        if let ExtraField::ExtendedTimestamp(ts) = ef {
+            let modified = ts.mod_time().map(|s| s as i64 * 1000);
+            let created = ts.cr_time().map(|s| s as i64 * 1000);
+            return (modified, created);
+        }
+    }
+    (None, None)
 }
 
 impl FileSystem for ZipFileSystem {
@@ -303,8 +312,7 @@ mod tests {
             .path()
             .to_str()
             .ok_or_else(|| anyhow!("temp file path is not valid UTF-8"))?;
-        let offset = FixedOffset::east_opt(0).ok_or_else(|| anyhow!("invalid timezone offset"))?;
-        let fs = ZipFileSystem::new(path, offset)?;
+        let fs = ZipFileSystem::new(path)?;
 
         // Test large file (should stream)
         let mut reader = fs.open("large.txt")?;

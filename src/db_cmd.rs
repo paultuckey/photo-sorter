@@ -26,8 +26,7 @@ pub(crate) fn main(input: &String, output: &str) -> anyhow::Result<()> {
         Arc::new(OsFileSystem::new(input))
     } else {
         info!("Input zip: {input}");
-        let tz = chrono::Local::now().offset().to_owned();
-        Arc::new(ZipFileSystem::new(input, tz)?)
+        Arc::new(ZipFileSystem::new(input)?)
     };
 
     info!("Writing database: {output}");
@@ -441,10 +440,8 @@ mod tests {
         create_zip_of_test_dir(zip_path)?;
 
         let conn = Connection::open_in_memory()?;
-        let tz =
-            chrono::FixedOffset::east_opt(0).ok_or_else(|| anyhow!("Failed to create timezone"))?;
         let container: Arc<dyn FileSystem> =
-            Arc::new(ZipFileSystem::new(zip_path.to_string_lossy().as_ref(), tz)?);
+            Arc::new(ZipFileSystem::new(zip_path.to_string_lossy().as_ref())?);
 
         run_db_scan(container, &conn)?;
 
