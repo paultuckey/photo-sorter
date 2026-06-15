@@ -275,13 +275,10 @@ mod tests {
     #[test]
     #[ignore]
     fn test_perf_benchmark_zip_read() -> anyhow::Result<()> {
-        use anyhow::anyhow;
         crate::test_util::setup_log();
-        let tz =
-            chrono::FixedOffset::east_opt(0).ok_or_else(|| anyhow!("Failed to create timezone"))?;
         // Ensure test file exists
         let zip_path = "test/Canon_40D.jpg.zip";
-        let fs = crate::fs::ZipFileSystem::new(zip_path, tz)?;
+        let fs = crate::fs::ZipFileSystem::new(zip_path)?;
 
         let file_path = "Canon_40D.jpg";
         let si = ScanInfo::new(file_path.to_string(), None, None, 0);

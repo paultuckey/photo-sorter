@@ -120,9 +120,7 @@ mod tests {
     fn test_zip() -> anyhow::Result<()> {
         use anyhow::anyhow;
         crate::test_util::setup_log();
-        let tz =
-            chrono::FixedOffset::east_opt(0).ok_or_else(|| anyhow!("Failed to create timezone"))?;
-        let c = ZipFileSystem::new("test/Canon_40D.jpg.zip", tz)?;
+        let c = ZipFileSystem::new("test/Canon_40D.jpg.zip")?;
         let index = scan_fs(&c);
         assert_eq!(index.len(), 2);
         // Find Canon_40D.jpg
@@ -130,7 +128,11 @@ mod tests {
             .iter()
             .find(|i| i.file_path == "Canon_40D.jpg")
             .ok_or_else(|| anyhow!("Canon_40D.jpg not found in zip"))?;
-        assert_eq!(si.modified_datetime, Some(1749917340000));
+        // The fixture's 0x5455 extended-timestamp field records the mtime as
+        // 2025-06-14T04:09:22Z; we read that UTC instant, not the zoneless DOS
+        // time. The field carries no creation time, so `created` stays absent.
+        assert_eq!(si.modified_datetime, Some(1749874162000));
+        assert_eq!(si.created_datetime, None);
         Ok(())
     }
 

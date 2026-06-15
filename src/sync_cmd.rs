@@ -31,8 +31,7 @@ pub(crate) fn main(
         Arc::new(OsFileSystem::new(input))
     } else {
         info!("Input zip: {input}");
-        let tz = chrono::Local::now().offset().to_owned();
-        Arc::new(ZipFileSystem::new(input, tz)?)
+        Arc::new(ZipFileSystem::new(input)?)
     };
 
     let files = scan_fs(container.as_ref());
