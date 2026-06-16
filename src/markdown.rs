@@ -668,6 +668,27 @@ checksum: abcdefg
     }
 
     #[test]
+    fn test_assemble_markdown_unchanged_on_rerun_skips_write() -> anyhow::Result<()> {
+        crate::test_util::setup_log();
+        // First try yields Modified output that sync_markdown would write to disk.
+        let mfm = get_mfi();
+        let first = assemble_markdown(&mfm, &None, "\n![](x.jpg)\n")?;
+        let AssembledMarkdown::Modified(full) = first else {
+            return Err(anyhow!("first assembly should be Modified"));
+        };
+        // Re-run: split the on-disk file exactly as sync_markdown does, then
+        // re-assemble. With nothing changed it must report Unchanged, which is how
+        // sync_markdown knows to skip the write (a true no-op, not identical bytes).
+        let (yaml, body) = split_frontmatter(&full);
+        let second = assemble_markdown(&mfm, &Some(yaml), &body)?;
+        assert!(
+            matches!(second, AssembledMarkdown::Unchanged(_)),
+            "re-running over current frontmatter must not rewrite the sidecar"
+        );
+        Ok(())
+    }
+
+    #[test]
     fn test_malformed_frontmatter_errors_rather_than_dropping_metadata() {
         crate::test_util::setup_log();
         // Unparseable YAML must surface as an error so the caller leaves the file

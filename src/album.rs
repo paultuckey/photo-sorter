@@ -496,4 +496,24 @@ mod tests {
     fn test_split_album_notes_no_marker() {
         assert_eq!(split_album_notes("# Just a heading\n"), "");
     }
+
+    #[test]
+    fn test_album_rerun_is_a_no_op_write() -> anyhow::Result<()> {
+        crate::test_util::setup_log();
+        let dir = tempfile::tempdir()?;
+        let out = OsFileSystem::new(&dir.path().to_string_lossy());
+        let album = Album {
+            desired_album_md_path: "albums/test.md".to_string(),
+            title: "Test Album".to_string(),
+            files: vec!["file1.jpg".to_string()],
+        };
+        let (md, _) = build_album_md(&album, None, "../", None, "");
+        assert!(out.write_if_changed(false, &album.desired_album_md_path, md.as_bytes()));
+
+        // Re-run: identical content regenerated from the same inputs.
+        let (md2, _) = build_album_md(&album, None, "../", None, "");
+        assert_eq!(md, md2);
+        assert!(!out.write_if_changed(false, &album.desired_album_md_path, md2.as_bytes()));
+        Ok(())
+    }
 }

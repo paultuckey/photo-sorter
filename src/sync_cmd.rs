@@ -9,10 +9,10 @@ use crate::progress::Progress;
 use crate::util::{ScanInfo, scan_fs};
 use anyhow::anyhow;
 use std::collections::HashMap;
-use std::io::{Cursor, Read};
+use std::io::Read;
 use std::path::Path;
 use std::sync::Arc;
-use tracing::{debug, info, warn};
+use tracing::{info, warn};
 
 pub(crate) fn main(
     dry_run: bool,
@@ -146,13 +146,10 @@ pub(crate) fn main(
                 warn!("Skipping album with no resolvable photos: {output_path:?}");
                 continue;
             }
-            if output_container.exists(output_path) {
-                debug!(
-                    "  Album markdown file already exists, rewriting (notes preserved) at {output_path:?}"
-                );
-            }
-            let bytes = md.as_bytes().to_vec();
-            output_container.write(dry_run, output_path, Cursor::new(bytes));
+            // The photo list is regenerated every run. An unchanged album
+            // yields identical content; only write when it actually differs
+            // so a re-run leaves the file (and its mtime) untouched.
+            output_container.write_if_changed(dry_run, output_path, md.as_bytes());
         }
     }
 
@@ -295,6 +292,20 @@ mod tests {
         Ok(tree)
     }
 
+    /// Relative path -> modified time for every file under `archive`. Used to
+    /// prove a re-run rewrites nothing: an untouched file keeps its mtime.
+    fn mtimes_under(archive: &Path) -> anyhow::Result<BTreeMap<String, std::time::SystemTime>> {
+        let mut tree = BTreeMap::new();
+        for path in files_under(archive)? {
+            let rel = path
+                .strip_prefix(archive)?
+                .to_string_lossy()
+                .replace(std::path::MAIN_SEPARATOR, "/");
+            tree.insert(rel, fs::metadata(&path)?.modified()?);
+        }
+        Ok(tree)
+    }
+
     /// Every regular file under `dir`, recursing into subdirectories.
     fn files_under(dir: &Path) -> anyhow::Result<Vec<PathBuf>> {
         let mut out = Vec::new();
@@ -345,6 +356,37 @@ mod tests {
         assert!(album.contains("](../2024/05/22/0017-51000.jpg)"));
         let photo_md = read_to_string(archive.join("2024/05/22/0017-51000.md"))?;
         assert!(photo_md.contains("[[Holiday]]"));
+        Ok(())
+    }
+
+    #[test]
+    fn sync_rerun_rewrites_nothing() -> anyhow::Result<()> {
+        crate::test_util::setup_log();
+        let temp = tempfile::tempdir()?;
+        let archive = temp.path().join("archive");
+        let output = Some(archive.to_string_lossy().to_string());
+        let input = TAKEOUT_BASIC.to_string();
+
+        // First run populates the archive: media files, markdown sidecars and
+        // album files.
+        main(false, &input, &output, false, false, false)?;
+        let first = mtimes_under(&archive)?;
+        assert!(
+            first.contains_key("albums/Holiday.md")
+                && first.contains_key("2024/05/22/0017-51000.md")
+                && first.contains_key("2024/05/22/0017-51000.jpg"),
+            "first run should have written media, sidecar and album files"
+        );
+
+        // Re-running over identical input must be a no-op in writes: every
+        // file keeps its modified time because nothing was rewritten - not even
+        // the album and markdown files that are regenerated in memory each run.
+        main(false, &input, &output, false, false, false)?;
+        let second = mtimes_under(&archive)?;
+        assert_eq!(
+            first, second,
+            "re-running over unchanged input must not rewrite any output file"
+        );
         Ok(())
     }
 

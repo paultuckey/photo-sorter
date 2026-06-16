@@ -76,6 +76,37 @@ impl OsFileSystem {
         debug!("Wrote file {p:?}");
     }
 
+    /// Write `bytes` to `path`, but only when they differ from what is already on
+    /// disk. Returns whether write was performed - under `dry_run`, whether one would
+    /// have been.
+    pub fn write_if_changed(&self, dry_run: bool, path: &str, bytes: &[u8]) -> bool {
+        if self.file_has_contents(path, bytes) {
+            debug!("Unchanged, skipping write of {:?}", self.root.join(path));
+            return false;
+        }
+        self.write(dry_run, path, Cursor::new(bytes));
+        true
+    }
+
+    /// True when `path` exists and its contents are exactly `bytes`. The length
+    /// is checked so an obviously different file is rejected without reading it all into memory.
+    fn file_has_contents(&self, path: &str, bytes: &[u8]) -> bool {
+        let p = self.root.join(path);
+        let Ok(mut f) = File::open(&p) else {
+            return false;
+        };
+        match f.metadata() {
+            Ok(m) if m.len() != bytes.len() as u64 => return false,
+            Ok(_) => {}
+            Err(_) => return false,
+        }
+        let mut existing = Vec::with_capacity(bytes.len());
+        if f.read_to_end(&mut existing).is_err() {
+            return false;
+        }
+        existing == bytes
+    }
+
     pub fn set_modified(&self, dry_run: bool, path: &str, modified_datetime: &Option<i64>) {
         let p = self.root.join(path);
         let Some(dt) = modified_datetime else {
@@ -313,11 +344,7 @@ mod tests {
             zip_writer.finish()?;
         }
 
-        let path = temp_file
-            .path()
-            .to_str()
-            .ok_or_else(|| anyhow!("temp file path is not valid UTF-8"))?;
-        let fs = ZipFileSystem::new(path)?;
+        let fs = ZipFileSystem::new(&temp_file.path().to_string_lossy())?;
 
         // Test large file (should stream)
         let mut reader = fs.open("large.txt")?;
@@ -333,6 +360,41 @@ mod tests {
         assert_eq!(content.len(), 50);
         assert_eq!(content, vec![b'b'; 50]);
 
+        Ok(())
+    }
+
+    #[test]
+    fn test_write_if_changed_skips_identical_bytes() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let fs = OsFileSystem::new(&dir.path().to_string_lossy());
+        // Nested path also exercises parent-directory creation.
+        let path = "albums/trip.md";
+        let on_disk = dir.path().join(path);
+
+        // First write creates the file and reports that it wrote.
+        assert!(fs.write_if_changed(false, path, b"hello"));
+        let mtime_after_create = fs::metadata(&on_disk)?.modified()?;
+
+        // Re-writing identical bytes is a no-op: nothing is written and the
+        // file's modified time is untouched.
+        assert!(!fs.write_if_changed(false, path, b"hello"));
+        assert_eq!(mtime_after_create, fs::metadata(&on_disk)?.modified()?);
+
+        // Changed content is written through.
+        assert!(fs.write_if_changed(false, path, b"hello world"));
+        assert_eq!(fs::read(&on_disk)?, b"hello world");
+        Ok(())
+    }
+
+    #[test]
+    fn test_write_if_changed_dry_run_writes_nothing() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let fs = OsFileSystem::new(&dir.path().to_string_lossy());
+
+        // A dry run reports it would write (content differs from the absent file)
+        // but must not actually create it.
+        assert!(fs.write_if_changed(true, "albums/trip.md", b"hello"));
+        assert!(!dir.path().join("albums/trip.md").exists());
         Ok(())
     }
 }
