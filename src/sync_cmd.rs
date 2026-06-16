@@ -263,27 +263,36 @@ pub(crate) fn write_media(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_util::build_zip;
+    use std::collections::BTreeMap;
     use std::fs;
+    use std::fs::read_to_string;
     use std::path::{Path, PathBuf};
 
-    /// A tiny committed Google Takeout. Every media file has a `.supplemental-metadata.json`
+    /// Tiny Google Takeout. Every media file has a `.supplemental-metadata.json`
     /// with a fixed `photoTakenTime`, so dates are derived in UTC and identical on every machine.
-    const FIXTURE: &str = "test/takeout_basic";
+    const TAKEOUT_BASIC: &str = "test/takeout_basic";
 
-    /// Run a full sync of the fixture into a fresh temp directory and return the
-    /// temp-dir guard (keep it alive for the duration of the test) plus the
-    /// archive root that was written.
-    fn sync_fixture() -> anyhow::Result<(tempfile::TempDir, PathBuf)> {
+    fn run_sync(input: &str) -> anyhow::Result<(tempfile::TempDir, PathBuf)> {
         crate::test_util::setup_log();
         let temp = tempfile::tempdir()?;
         let archive = temp.path().join("archive");
         let output = Some(archive.to_string_lossy().to_string());
-        main(false, &FIXTURE.to_string(), &output, false, false, false)?;
+        main(false, &input.to_string(), &output, false, false, false)?;
         Ok((temp, archive))
     }
 
-    fn read(path: &Path) -> anyhow::Result<String> {
-        Ok(fs::read_to_string(path)?)
+    fn output_tree(archive: &Path) -> anyhow::Result<BTreeMap<String, String>> {
+        let mut tree = BTreeMap::new();
+        for path in files_under(archive)? {
+            let rel = path
+                .strip_prefix(archive)?
+                .to_string_lossy()
+                .replace(std::path::MAIN_SEPARATOR, "/");
+            let cs = format!("{:x}", md5::compute(&fs::read(&path)?));
+            tree.insert(rel, cs);
+        }
+        Ok(tree)
     }
 
     /// Every regular file under `dir`, recursing into subdirectories.
@@ -300,85 +309,60 @@ mod tests {
         Ok(out)
     }
 
-    /// A photo and a video are filed under `year/month/day` taken straight from
-    /// their supplemental `photoTakenTime`, and nothing lands in `undated/`.
     #[test]
     fn sync_dates_media_from_supplemental_metadata() -> anyhow::Result<()> {
-        let (_temp, archive) = sync_fixture()?;
-
-        assert!(
-            archive.join("2024/05/22/0017-51000.jpg").exists(),
-            "photo should be filed under its photoTakenTime date 2024/05/22"
-        );
-        assert!(
-            archive.join("2023/11/02/0930-00000.mp4").exists(),
-            "video should be filed under its photoTakenTime date 2023/11/02"
-        );
-        assert!(
-            !archive.join("undated").exists(),
-            "no media should fall back to undated/ when a supplemental date exists"
-        );
-
-        let md = read(&archive.join("2024/05/22/0017-51000.md"))?;
-        assert!(
-            md.contains("datetime: \"2024-05-22T00:17:51+00:00\""),
-            "sidecar should record the UTC taken-time, got:\n{md}"
-        );
+        let (_temp, archive) = run_sync(TAKEOUT_BASIC)?;
+        assert!(archive.join("2024/05/22/0017-51000.jpg").exists());
+        assert!(archive.join("2023/11/02/0930-00000.mp4").exists());
+        assert!(!archive.join("undated").exists());
+        let md = read_to_string(archive.join("2024/05/22/0017-51000.md"))?;
+        assert!(md.contains("datetime: \"2024-05-22T00:17:51+00:00\""));
         Ok(())
     }
 
-    /// The same photo bytes appear in two source folders; they must collapse to a
-    /// single output file whose sidecar records both original paths.
     #[test]
     fn sync_deduplicates_identical_photo() -> anyhow::Result<()> {
-        let (_temp, archive) = sync_fixture()?;
-
+        let (_temp, archive) = run_sync(TAKEOUT_BASIC)?;
         let jpgs: Vec<_> = files_under(&archive)?
             .into_iter()
             .filter(|p| p.extension().is_some_and(|e| e == "jpg"))
             .collect();
-        assert_eq!(
-            jpgs.len(),
-            1,
-            "identical photo from two folders should be stored once, found: {jpgs:?}"
-        );
-
-        let md = read(&archive.join("2024/05/22/0017-51000.md"))?;
-        assert!(
-            md.contains(
-                "checksum: 6bfdabd4fc33d112283c147acccc574e770bbe6fbdbc3d4da968ba7b606ecc2f"
-            ),
-            "sidecar should carry the content checksum, got:\n{md}"
-        );
-        assert!(
-            md.contains("- Google Photos/Holiday/Canon_40D.jpg")
-                && md.contains("- Google Photos/Photos from 2024/Canon_40D.jpg"),
-            "deduped sidecar should list both source paths, got:\n{md}"
-        );
+        assert_eq!(jpgs.len(), 1);
+        let md = read_to_string(archive.join("2024/05/22/0017-51000.md"))?;
+        assert!(md.contains(
+            "checksum: 6bfdabd4fc33d112283c147acccc574e770bbe6fbdbc3d4da968ba7b606ecc2f"
+        ));
+        assert!(md.contains("- Google Photos/Holiday/Canon_40D.jpg"));
+        assert!(md.contains("- Google Photos/Photos from 2024/Canon_40D.jpg"));
         Ok(())
     }
 
-    /// A Google album becomes an `albums/<dir>.md` titled from its metadata and
-    /// linking the photo, and the photo's sidecar links back to the album.
     #[test]
     fn sync_writes_album_and_membership() -> anyhow::Result<()> {
-        let (_temp, archive) = sync_fixture()?;
+        let (_temp, archive) = run_sync(TAKEOUT_BASIC)?;
+        let album = read_to_string(archive.join("albums/Holiday.md"))?;
+        assert!(album.contains("# Holiday Snaps"));
+        assert!(album.contains("](../2024/05/22/0017-51000.jpg)"));
+        let photo_md = read_to_string(archive.join("2024/05/22/0017-51000.md"))?;
+        assert!(photo_md.contains("[[Holiday]]"));
+        Ok(())
+    }
 
-        let album = read(&archive.join("albums/Holiday.md"))?;
-        assert!(
-            album.contains("# Holiday Snaps"),
-            "album title should come from metadata.json, got:\n{album}"
-        );
-        assert!(
-            album.contains("](../2024/05/22/0017-51000.jpg)"),
-            "album should link to the photo's final path, got:\n{album}"
-        );
+    #[test]
+    fn sync_zip_and_directory_produce_identical_output() -> anyhow::Result<()> {
+        let (_dir_temp, dir_archive) = run_sync(TAKEOUT_BASIC)?;
+        let _zip = build_zip(TAKEOUT_BASIC)?;
+        let zip_path = _zip.path().to_string_lossy().to_string();
+        let (_zip_temp, zip_archive) = run_sync(&zip_path)?;
 
-        let photo_md = read(&archive.join("2024/05/22/0017-51000.md"))?;
+        let dir_tree = output_tree(&dir_archive)?;
+        let zip_tree = output_tree(&zip_archive)?;
         assert!(
-            photo_md.contains("[[Holiday]]"),
-            "photo sidecar should link back to its album, got:\n{photo_md}"
+            dir_tree.contains_key("2024/05/22/0017-51000.jpg")
+                && dir_tree.contains_key("2024/05/22/0017-51000.md")
+                && dir_tree.contains_key("albums/Holiday.md")
         );
+        assert_eq!(dir_tree, zip_tree);
         Ok(())
     }
 }
