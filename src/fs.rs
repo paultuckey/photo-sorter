@@ -157,7 +157,12 @@ fn scan_dir_recursively(files: &mut Vec<String>, dir_path: &Path, root_path: &Pa
         if path.is_file() {
             // trim root path from the file path
             let relative_path = path.strip_prefix(root_path).unwrap_or(&path);
-            files.push(relative_path.to_string_lossy().to_string());
+            // Always record paths with `/` separators so a directory scan matches
+            // the zip scan (which uses `/`) and the output stays portable across Windows and Unix.
+            let relative = relative_path
+                .to_string_lossy()
+                .replace(std::path::MAIN_SEPARATOR, "/");
+            files.push(relative);
         } else if path.is_dir() {
             scan_dir_recursively(files, &path, root_path);
         }
