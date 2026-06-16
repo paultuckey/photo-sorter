@@ -228,7 +228,9 @@ impl ZipFileSystem {
             let Some(name) = enclosed_name.to_str() else {
                 continue;
             };
-            let name_s = name.to_string();
+            // `enclosed_name` on Windows comes back with `\` separators. Normalize to `/`
+            // keeping output identical across platforms. On Unix this is a no-op.
+            let name_s = name.replace(std::path::MAIN_SEPARATOR, "/");
             file_names.push(name_s.clone());
 
             // We only trust timestamps from the 0x5455 "extended timestamp" extra
@@ -360,6 +362,31 @@ mod tests {
         assert_eq!(content.len(), 50);
         assert_eq!(content, vec![b'b'; 50]);
 
+        Ok(())
+    }
+
+    #[test]
+    fn test_zip_nested_entries_walk_with_slashes_and_open() -> Result<()> {
+        let mut temp_file = tempfile::NamedTempFile::new()?;
+        {
+            let mut zip_writer = zip::ZipWriter::new(&mut temp_file);
+            let options =
+                FileOptions::<()>::default().compression_method(zip::CompressionMethod::Stored);
+            zip_writer.start_file("Photos/Holiday/img.txt", options)?;
+            zip_writer.write_all(b"hello")?;
+            zip_writer.finish()?;
+        }
+        let fs = ZipFileSystem::new(&temp_file.path().to_string_lossy())?;
+        // walk() must report `/`-separated names on every platform: `enclosed_name`
+        let names = fs.walk();
+        assert!(names.contains(&"Photos/Holiday/img.txt".to_string()));
+        // Every walked name must round-trip back through open().
+        for name in &names {
+            let mut reader = fs.open(name)?;
+            let mut content = Vec::new();
+            reader.read_to_end(&mut content)?;
+            assert_eq!(content, b"hello");
+        }
         Ok(())
     }
 
