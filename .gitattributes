@@ -1,0 +1,9 @@
+# Normalize all text files to LF in the working tree on every platform. Without
+# this, Git's autocrlf checks out CRLF on Windows and the byte-for-byte doc
+# comparison tests (docs/cli.md, docs/db-schema.md) fail there.
+* text=auto eol=lf
+
+# Older git versions try to fix line endings on images and videos, this prevents it.
+*.jpg binary
+*.mp4 binary
+*.zip binary

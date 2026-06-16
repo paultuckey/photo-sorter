@@ -494,10 +494,8 @@ mod tests {
         writeln!(file, "Canon_40D.jpg")?;
 
         let conn = Connection::open_in_memory()?;
-        let test_dir_str = test_dir
-            .to_str()
-            .ok_or_else(|| anyhow::anyhow!("test_dir path is not valid UTF-8"))?;
-        let container: Arc<dyn FileSystem> = Arc::new(OsFileSystem::new(test_dir_str));
+        let test_dir_str = test_dir.to_string_lossy();
+        let container: Arc<dyn FileSystem> = Arc::new(OsFileSystem::new(&test_dir_str));
         run_db_scan(container, &conn)?;
 
         // Verify Album
@@ -546,10 +544,8 @@ mod tests {
         writeln!(file, "Canon_40D.jpg")?;
 
         let conn = Connection::open_in_memory()?;
-        let test_dir_str = test_dir
-            .to_str()
-            .ok_or_else(|| anyhow::anyhow!("test_dir path is not valid UTF-8"))?;
-        let container: Arc<dyn FileSystem> = Arc::new(OsFileSystem::new(test_dir_str));
+        let test_dir_str = test_dir.to_string_lossy();
+        let container: Arc<dyn FileSystem> = Arc::new(OsFileSystem::new(&test_dir_str));
 
         // First run populates album (1 row) and album_file (1 row).
         run_db_scan(container.clone(), &conn)?;

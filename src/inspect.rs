@@ -197,10 +197,8 @@ mod tests {
         let mut bad = fs::File::create(test_dir.join("bad.jpg"))?;
         bad.write_all(b"this is not an image")?;
 
-        let test_dir_str = test_dir
-            .to_str()
-            .ok_or_else(|| anyhow!("test_dir path is not valid UTF-8"))?;
-        let container: Arc<dyn FileSystem> = Arc::new(OsFileSystem::new(test_dir_str));
+        let test_dir_str = test_dir.to_string_lossy();
+        let container: Arc<dyn FileSystem> = Arc::new(OsFileSystem::new(&test_dir_str));
         let media_si_files: Vec<ScanInfo> = scan_fs(container.as_ref())
             .into_iter()
             .filter(|m| m.quick_file_type == QuickFileType::Media)
