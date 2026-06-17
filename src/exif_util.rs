@@ -2,7 +2,7 @@ use nom_exif::{ExifIter, ExifIterEntry, ExifTag, MediaKind, MediaParser, MediaSo
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::io::{Read, Seek};
-use tracing::{debug, warn};
+use tracing::{debug};
 
 /*
 
@@ -67,7 +67,7 @@ pub(crate) fn parse_exif_info<R: Read + Seek>(reader: R) -> Option<PsExifInfo> {
             }
         }
         Err(e) => {
-            warn!("Could not read EXIF data: {e}");
+            debug!("Could not read EXIF data: {e}");
         }
     }
     Some(PsExifInfo {
