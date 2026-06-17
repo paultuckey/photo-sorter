@@ -10,7 +10,7 @@ use crate::util::ScanInfo;
 use anyhow::anyhow;
 use chrono::{DateTime, Datelike, Timelike};
 use serde::{Deserialize, Serialize};
-use std::io::{Read, Seek, SeekFrom};
+use std::io::{Read, Seek};
 use tracing::warn;
 
 #[derive(Deserialize, Serialize, Debug, Clone)]

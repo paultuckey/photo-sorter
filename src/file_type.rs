@@ -99,7 +99,10 @@ pub(crate) fn file_type_from_content_type(ct: &str) -> AccurateFileType {
     }
 }
 
-pub(crate) fn determine_file_type<R: Read + Seek>(mut reader: R, name: &String) -> anyhow::Result<AccurateFileType> {
+pub(crate) fn determine_file_type<R: Read + Seek>(
+    mut reader: R,
+    name: &String,
+) -> anyhow::Result<AccurateFileType> {
     // take json files at face value
     if name.to_lowercase().ends_with(".json") {
         return Ok(AccurateFileType::Json);

@@ -2,7 +2,7 @@ use nom_exif::{ExifIter, ExifIterEntry, ExifTag, MediaKind, MediaParser, MediaSo
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::io::{Read, Seek, SeekFrom};
-use tracing::{debug};
+use tracing::debug;
 
 /*
 

@@ -9,7 +9,7 @@ use std::path::Path;
 use tracing::{debug, warn};
 
 /// Similar to github generate a short and long hash from the bytes
-pub(crate) fn checksum_bytes<R: Read+Seek>(reader: &mut R) -> Result<HashInfo> {
+pub(crate) fn checksum_bytes<R: Read + Seek>(reader: &mut R) -> Result<HashInfo> {
     let mut hasher = Sha256::new();
     let mut buffer = [0; 64 * 1024]; // Read in 64KB chunks
     reader.seek(SeekFrom::Start(0))?;
