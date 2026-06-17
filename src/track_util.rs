@@ -1,6 +1,6 @@
 use nom_exif::{MediaKind, MediaParser, MediaSource, TrackInfo, TrackInfoTag};
 use serde::{Deserialize, Serialize};
-use std::io::{Read, Seek};
+use std::io::{Read, Seek, SeekFrom};
 use tracing::{info, warn};
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
@@ -18,14 +18,15 @@ pub(crate) struct PsTrackInfo {
     pub gps_iso_6709: Option<String>,
 }
 
-pub fn parse_track_info<R: Read + Seek>(reader: R) -> Option<PsTrackInfo> {
+pub fn parse_track_info<R: Read + Seek>(mut reader: R) -> anyhow::Result<Option<PsTrackInfo>> {
+    reader.seek(SeekFrom::Start(0))?;
     let ms_r = MediaSource::seekable(reader);
     let Ok(ms) = ms_r else {
         warn!("Failed to read track media source");
-        return None;
+        return Ok(None);
     };
     if ms.kind() != MediaKind::Track {
-        return None;
+        return Ok(None);
     }
     let mut parser = MediaParser::new();
     let info: nom_exif::Result<TrackInfo> = parser.parse_track(ms);
@@ -33,7 +34,7 @@ pub fn parse_track_info<R: Read + Seek>(reader: R) -> Option<PsTrackInfo> {
     match info {
         Err(e) => {
             warn!("Failed to parse track metadata: {:?}", e);
-            None
+            Ok(None)
         }
         Ok(info) => {
             let ti = PsTrackInfo {
@@ -66,7 +67,7 @@ pub fn parse_track_info<R: Read + Seek>(reader: R) -> Option<PsTrackInfo> {
                 .for_each(|info| {
                     info!("Track Additional Metadata: {} = {}", info.0, info.1);
                 });
-            Some(ti)
+            Ok(Some(ti))
         }
     }
 }
@@ -100,7 +101,7 @@ mod tests {
         crate::test_util::setup_log();
         let c = OsFileSystem::new("test");
         let reader = c.open("Hello.mp4")?;
-        let meta = parse_track_info(reader).ok_or_else(|| anyhow!("Failed to parse track info"))?;
+        let meta = parse_track_info(reader)?.ok_or_else(|| anyhow!("Failed to parse track info"))?;
         assert_eq!(meta.width, Some(854));
         assert_eq!(meta.height, Some(480));
         assert_eq!(meta.duration_ms, Some(5000));

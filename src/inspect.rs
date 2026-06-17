@@ -125,8 +125,8 @@ pub(crate) fn analyze_file(
         supp_info_o = load_supplemental_info(&supp_info_path, root);
     }
 
-    let reader = root.open(&media_si.file_path.clone())?;
-    let hash_info_o = checksum_bytes(reader).ok();
+    let mut reader = root.open(&media_si.file_path.clone())?;
+    let hash_info_o = checksum_bytes(&mut reader).ok();
     let Some(hash_info) = hash_info_o else {
         debug!(
             "Could not calculate checksum for file: {:?}",
@@ -138,7 +138,8 @@ pub(crate) fn analyze_file(
         ));
     };
 
-    let media_info_r = media_file_info_from_readable(media_si, root, &supp_info_o, &hash_info);
+    let media_info_r =
+        media_file_info_from_readable(media_si, &mut reader, &supp_info_o, &hash_info);
     match media_info_r {
         Ok(media_info) => Ok(Some(media_info)),
         Err(_) => Ok(None),

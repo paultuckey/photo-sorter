@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::io::{Read, Seek};
+use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
 use strum_macros::Display;
 use tracing::{debug, warn};
@@ -99,30 +99,31 @@ pub(crate) fn file_type_from_content_type(ct: &str) -> AccurateFileType {
     }
 }
 
-pub(crate) fn determine_file_type<R: Read + Seek>(reader: R, name: &String) -> AccurateFileType {
+pub(crate) fn determine_file_type<R: Read + Seek>(mut reader: R, name: &String) -> anyhow::Result<AccurateFileType> {
     // take json files at face value
     if name.to_lowercase().ends_with(".json") {
-        return AccurateFileType::Json;
+        return Ok(AccurateFileType::Json);
     }
+    reader.seek(SeekFrom::Start(0))?;
     let fmt = match file_format::FileFormat::from_reader(reader) {
         Err(e) => {
             warn!("  could not determine file format for file:{name:?}, error:{e:?}");
-            return AccurateFileType::Unsupported;
+            return Ok(AccurateFileType::Unsupported);
         }
         Ok(fmt) => fmt,
     };
     let mt = fmt.media_type();
     if mt == "application/octet-stream" {
         debug!("  can not calculate mime type file:{name:?}");
-        return AccurateFileType::Unsupported;
+        return Ok(AccurateFileType::Unsupported);
     }
     if mt == "application/x-empty" {
         debug!("  file appears to be empty file:{name:?}");
-        return AccurateFileType::Unsupported;
+        return Ok(AccurateFileType::Unsupported);
     }
     let ft = file_type_from_content_type(mt);
     debug!("  file:{name:?}: mime type {mt:?}, file type {ft:?}");
-    ft
+    Ok(ft)
 }
 
 #[cfg(test)]
@@ -167,11 +168,11 @@ mod tests {
         let name = "Canon_40D.jpg".to_string();
         let root = OsFileSystem::new("test");
         let r = root.open(&name)?;
-        assert_eq!(determine_file_type(r, &name), AccurateFileType::Jpg);
+        assert_eq!(determine_file_type(r, &name)?, AccurateFileType::Jpg);
 
         let bad: Vec<u8> = vec![];
         assert_eq!(
-            determine_file_type(Cursor::new(&bad), &"bad.bad".to_string()),
+            determine_file_type(Cursor::new(&bad), &"bad.bad".to_string())?,
             AccurateFileType::Unsupported
         );
         Ok(())

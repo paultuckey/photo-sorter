@@ -4,14 +4,13 @@ use crate::file_type::{
     AccurateFileType, MetadataType, QuickFileType, determine_file_type, file_ext_from_file_type,
     metadata_type,
 };
-use crate::fs::FileSystem;
 use crate::supplemental_info::PsSupplementalInfo;
 use crate::track_util::{PsTrackInfo, parse_track_info};
 use crate::util::ScanInfo;
 use anyhow::anyhow;
 use chrono::{DateTime, Datelike, Timelike};
 use serde::{Deserialize, Serialize};
-use std::io::Seek;
+use std::io::{Read, Seek, SeekFrom};
 use tracing::warn;
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
@@ -40,29 +39,27 @@ pub(crate) struct MediaFileDerivedInfo {
     pub(crate) desired_media_extension: String,
 }
 
-pub(crate) fn media_file_info_from_readable(
+pub(crate) fn media_file_info_from_readable<R: Read + Seek>(
     si: &ScanInfo,
-    root: &dyn FileSystem,
+    reader: &mut R,
     supp_info: &Option<PsSupplementalInfo>,
     hash_info: &HashInfo,
 ) -> anyhow::Result<MediaFileInfo> {
     let name = &si.file_path;
-    let mut reader = root.open(&si.file_path.to_string())?;
-    let guessed_ff = determine_file_type(&mut reader, name);
+    let guessed_ff = determine_file_type(&mut *reader, name)?;
     if guessed_ff == AccurateFileType::Unsupported {
         warn!("Not a valid media file {name:?}");
         return Err(anyhow!("File is not a valid media file"));
     }
-    reader.seek(std::io::SeekFrom::Start(0))?;
 
     let mut exif_o = None;
     let mut track_o = None;
     match metadata_type(&guessed_ff) {
         MetadataType::ExifTags => {
-            exif_o = parse_exif_info(&mut reader);
+            exif_o = parse_exif_info(&mut *reader)?;
         }
         MetadataType::Track => {
-            track_o = parse_track_info(&mut reader);
+            track_o = parse_track_info(&mut *reader)?;
         }
         MetadataType::NoMetadata => {}
     }
@@ -220,7 +217,7 @@ impl MediaFileDerivedInfo {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::fs::OsFileSystem;
+    use crate::fs::{FileSystem, OsFileSystem};
 
     #[test]
     fn test_best_guess_taken_dt_timestamps() -> anyhow::Result<()> {
@@ -251,8 +248,8 @@ mod tests {
         use crate::util::checksum_bytes;
 
         let c = OsFileSystem::new("test");
-        let reader = c.open("Canon_40D.jpg")?;
-        let short_checksum = checksum_bytes(reader)?.short_checksum;
+        let mut reader = c.open("Canon_40D.jpg")?;
+        let short_checksum = checksum_bytes(&mut reader)?.short_checksum;
 
         assert_eq!(
             get_desired_media_path(&short_checksum, &None),
@@ -289,7 +286,8 @@ mod tests {
 
         let start = std::time::Instant::now();
         for _ in 0..100 {
-            let _ = media_file_info_from_readable(&si, &fs, &None, &hash_info);
+            let mut reader = fs.open(file_path)?;
+            let _ = media_file_info_from_readable(&si, &mut reader, &None, &hash_info);
         }
         let duration = start.elapsed();
         println!("Time taken for 100 iterations: {:?}", duration);

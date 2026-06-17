@@ -1,7 +1,7 @@
 use nom_exif::{ExifIter, ExifIterEntry, ExifTag, MediaKind, MediaParser, MediaSource};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::io::{Read, Seek};
+use std::io::{Read, Seek, SeekFrom};
 use tracing::{debug};
 
 /*
@@ -26,15 +26,16 @@ pub(crate) struct PsExifInfo {
     pub(crate) longitude: Option<f64>,
 }
 
-pub(crate) fn parse_exif_info<R: Read + Seek>(reader: R) -> Option<PsExifInfo> {
+pub(crate) fn parse_exif_info<R: Read + Seek>(mut reader: R) -> anyhow::Result<Option<PsExifInfo>> {
+    reader.seek(SeekFrom::Start(0))?;
     let ms = MediaSource::seekable(reader);
     let Ok(ms) = ms else {
         debug!("Could not create MediaSource");
-        return None;
+        return Ok(None);
     };
     if ms.kind() != MediaKind::Image {
         debug!("File does not mave exif metadata");
-        return None;
+        return Ok(None);
     }
     let mut m = HashMap::new();
     let mut parser = MediaParser::new();
@@ -70,12 +71,12 @@ pub(crate) fn parse_exif_info<R: Read + Seek>(reader: R) -> Option<PsExifInfo> {
             debug!("Could not read EXIF data: {e}");
         }
     }
-    Some(PsExifInfo {
+    Ok(Some(PsExifInfo {
         tags: m,
         gps: ps_gps_info,
         latitude: lat,
         longitude: long,
-    })
+    }))
 }
 
 fn field_to_opt_string(field: &ExifIterEntry) -> Option<String> {
@@ -127,7 +128,7 @@ mod tests {
         crate::test_util::setup_log();
         let c = OsFileSystem::new("test");
         let reader = c.open("Hello.mp4")?;
-        let t = parse_exif_info(reader);
+        let t = parse_exif_info(reader)?;
         assert!(t.is_none());
         Ok(())
     }
@@ -138,7 +139,7 @@ mod tests {
         crate::test_util::setup_log();
         let c = OsFileSystem::new("test");
         let reader = c.open("Canon_40D.jpg")?;
-        let t = parse_exif_info(reader)
+        let t = parse_exif_info(reader)?
             .ok_or_else(|| anyhow!("Failed to parse exif"))?
             .tags;
         assert_eq!(t.len(), 41);
@@ -213,7 +214,7 @@ mod tests {
         // GPSLatitude/GPSLongitude)
         let c = OsFileSystem::new("test");
         let reader = c.open("Canon_40D.jpg")?;
-        let info = parse_exif_info(reader).ok_or_else(|| anyhow!("Failed to parse exif"))?;
+        let info = parse_exif_info(reader)?.ok_or_else(|| anyhow!("Failed to parse exif"))?;
         assert_eq!(info.gps, None);
         assert_eq!(info.latitude, None);
         assert_eq!(info.longitude, None);
