@@ -6,7 +6,7 @@ use crate::util::{ScanInfo, dir_part, name_part};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::path::Path;
-use tracing::{debug, info, warn};
+use tracing::{debug, warn};
 
 pub(crate) fn parse_album(
     container: &dyn FileSystem,
@@ -25,7 +25,7 @@ fn parse_csv_album(
     si: &ScanInfo,
     all_scanned_files: &[ScanInfo],
 ) -> Option<Album> {
-    info!("Parse CSV album: {:?}", &si.file_path);
+    debug!("Parse CSV album: {:?}", &si.file_path);
     let reader_r = container.open(&si.file_path);
     let Ok(reader) = reader_r else {
         warn!("No bytes for album: {:?}", &si.file_path);
@@ -91,7 +91,7 @@ fn parse_csv_album(
         debug!("Album file has no name: {name:?}");
         return None;
     }
-    info!(
+    debug!(
         "Found album: {:?} with {:?} entries at {:?}",
         name_without_ext,
         files.len(),
@@ -136,7 +136,7 @@ fn parse_json_album(
             let t = title_value.as_str().unwrap_or("").trim().to_string();
             title = if t.is_empty() { None } else { Some(t) };
         } else {
-            warn!("Title not found in JSON, skipping {:?}", &si.file_path);
+            debug!("Title not found in JSON, skipping {:?}", &si.file_path);
             return None;
         }
     } else {
